@@ -2,7 +2,7 @@
 
 Steam DLC 是 AstrBot 游戏连结的独立 alpha 插件，包含 Steam 账号关联、Dota 2 查询，以及 CS2 和 Deadlock 的状态模块。候选兼容面为 Core 分支 `feat/steam-dlc-support`、canonical SDK `0.1.0a13`、模块 ABI `2.0`；DLC 分支为 `feat/steam-dlc-alpha`。这些分支尚未合并或发布，候选 ZIP 和验收记录以最终构建产物为准。
 
-**本轮 alpha 验收已完成**：安装包运行源为 DLC `a9a2a362` 与配对 Core `c11d5a54`，已通过真实 Host、实际 Core 页浏览器、同修订 CI 及 R6 独立审查（0 Blocker / 0 Important）。请使用完整摘要匹配的两个 ZIP，详情见[验收记录](docs/plan.md)。后续文档提交不重建或改变这组已验包的来源；分支尚待维护者合并发布。
+请使用精确配对的 Core 与 DLC ZIP，并核对包内 `BUILD.json` 的源提交和文件摘要。候选的兼容合同见[架构文档](docs/architecture.md)，合并与发布由维护者决定。
 
 ## 安装
 
@@ -38,18 +38,18 @@ CS2 和 Deadlock 当前只有模块接入、生命周期、帮助和真实状态
 
 在 Core 的“模块管理”中可查看四模块的实际运行状态。进入任一模块可查看命令帮助和业务范围；“进入设置”打开普通配置页。Dota2 提供 `timezone`（默认 `Asia/Shanghai`），四模块提供回复主题选择。主题选项由 Core 返回，“跟随核心”恢复继承。保存发生版本冲突时先重新读取，再确认更改。
 
-页面沿用稳定的公开合同和样式 token。Steam 账号关联仍使用私聊命令，Dota 查询仍使用命令或显式 ID 工具。dots 的新 UI 尚未同步。
+页面使用公开 Module UI contract v1 和样式 token，可由包含新管理界面的 Core 装配。Steam 账号关联仍使用私聊命令，Dota 查询仍使用命令或显式 ID 工具。
 
 此 alpha 的页面资源需要由 Core 构建时显式装配：在独立 Core 构建 staging 使用 `scripts/build_release.py --sdk-wheel <a13.whl> --external-page-package <本仓库/packages/steam_dlc> --output-dir <新产物目录>`。它只收录摘要匹配的静态资源，不把 DLC Python 业务复制进 Core。请安装精确匹配的两个候选并重启，再从宿主正式入口重新打开页面；DLC 页面或 manifest 更新后须重新构建配对资源。资源失配时页面拒绝装载，模块命令不因此获得额外权限。
 
 ## 数据与隐私边界
 
 - Steam 是唯一账号关联 owner。关联数据由 SDK USER records 保存；停用、重启或卸载 DLC 不触发自动删除。`unbind` 保留版本记录所需的 tombstone。
-- Steam 身份依赖只向 Dota 2 模块提供私有 identity 文档。Dota 查询结果保持 PUBLIC，只呈现本次查询所需的 Dota 账号，不输出 SteamID、关联状态或绑定 revision，也不生成默认身份模型 facts。
+- Steam 身份依赖只向 Dota 2 模块提供私有 identity 文档。Dota 查询结果保持 PUBLIC；默认本人关联查询抑制 SteamID、主页、关联状态、绑定 revision 及私有身份派生的模型 facts。显式账号的 profile 查询可以呈现 OpenDota 返回的公开 SteamID 和主页。
 - Dota 2 通过 SDK HTTP、配置和缓存接口访问固定 OpenDota 主机 `api.opendota.com`，仅使用固定 GET 查询路径，不提交 POST、不调用任意 URL。接口不可用、限流、超时或无记录时返回稳定错误；不自动重试。
 - 时间戳按 UTC 处理；展示时区由 Dota 配置 `timezone` 控制，默认 `Asia/Shanghai`。
 - Valve 官方简体中文英雄名称映射收录于源码 [hero_names.py](packages/steam_dlc/shared/hero_names.py)，共 127 条。来源为 [Dota 2 官方英雄数据接口](https://www.dota2.com/datafeed/herolist?language=schinese)，源响应 SHA-256 为 `c3d7e9ac5b145aa066857645dd89612f51643dd8b3354d2beccf41ddebb0f054`；未知 ID 使用显式编号回退。
-- 本 alpha 沿用 Core 的通用管理 UI 合同，没有同步主项目 dots 的页面与视觉资源。
+- DLC 使用独立的纯 DOM 页面，遵循 Core 的公开管理 UI 合同。
 
 ## 构建与验证
 
@@ -82,4 +82,4 @@ python scripts/smoke_two_plugins.py `
 
 另以新的工作目录和独立进程将 `--order` 设为 `dlc-first`，覆盖另一注册顺序。该 harness 使用真实 Host 插件管理与生命周期，但消息投递和 OpenDota HTTPS 响应为合成数据；它不证明真实 IM、浏览器 UI 或在线 OpenDota 验收。离线单测、包审计、Host harness、在线 API、真实 IM/UI 与发布是不同证据层，分别记录，不互相替代。
 
-本轮已验隔离 Host、实际 Core 页面与独立匿名 API 冒烟；浏览器父容器为显式合成桥。真实 IM、模型、完整 Dashboard 父壳及 Host SDK 在线调用仍待验。Core/DLC 保持开发分支候选，合并和发布由维护者决定。执行入口见[验收计划](docs/plan.md)、[架构合同](docs/architecture.md)和[协作约定](docs/collaboration.md)。
+自动化检查由仓库 CI 执行；真实 Dashboard、Host SDK 在线查询、IM 和模型调用需分别验收。构建与安装合同见[架构文档](docs/architecture.md)。

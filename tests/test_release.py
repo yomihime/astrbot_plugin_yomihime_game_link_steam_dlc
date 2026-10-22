@@ -62,6 +62,28 @@ class ReleaseResourcesTest(unittest.TestCase):
             files["packages/steam_dlc/pages/steam/entry.js"], self.asset.read_bytes()
         )
 
+    def test_local_process_paths_cannot_reenter_public_inputs(self):
+        for path in (
+            "AGENTS.md",
+            "docs/plan.md",
+            "docs/collaboration.md",
+            ".local-dev/ai/prompt.md",
+            "packages/steam_dlc/.local-dev/private.py",
+        ):
+            with self.subTest(path=path):
+                with self.assertRaisesRegex(ValueError, "local development material"):
+                    release.validate_public_paths((path,))
+        release.validate_public_paths(
+            ("docs/architecture.md", "packages/steam_dlc/runtime_prompt.py")
+        )
+
+    def test_recursive_python_collection_rejects_local_development_material(self):
+        local = self.package / ".local-dev/private.py"
+        local.parent.mkdir()
+        local.write_text("# development only\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "local development material"):
+            release.inventory(self.root)
+
     def test_changed_resource_fails_closed(self):
         self.asset.write_bytes(b"changed after manifest digest\n")
         with self.assertRaisesRegex(ValueError, "bytes differ"):

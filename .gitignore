@@ -8,3 +8,7 @@ __pycache__/
 build/
 dist/
 node_modules/
+/.local-dev/
+/AGENTS.md
+/docs/plan.md
+/docs/collaboration.md

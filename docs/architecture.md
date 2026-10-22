@@ -83,11 +83,11 @@ CS2 和 Deadlock 当前只注册真实 `status`、生命周期与帮助。状态
 
 普通设置草稿只缓存 set/clear 意图，按 owner/runtime/epoch/boundary 分区，最多 4 分区、key 最多 4096 字符、value 最多 256 字符。不缓存服务、DOM、秘密、账号或整份后端快照。正常切页保留，观察到身份/授权撤销时清除；同 owner 新身份驱逐旧分区，挂载 token 阻止旧异步回写。每次有效意图改变递增导航 version，撤销旧确认；相同意图不虚增。公开 scope v1 不提供 dispose 原因，仅 scope 撤销不能承诺即刻清所有物理分区；旧身份不可复用，fresh iframe 销毁原 realm。
 
-Core `c11d5a54` 提供通用固定配对静态投影：维护者显式传入 `--external-page-package`，只捕获完整合法 manifest 原字节及已声明、摘要匹配的静态资源，不导入/复制 DLC Python，也不放宽内置 FF14 Python 白名单。Core 的封闭 loader/样式表与资源在独立 staging 一并生成，原 dots 页面只读。可选 `external-page-projection.json` 限定构建时 manifest；运行时必须匹配当前完整 active lease 的原 manifest 摘要和模块声明，否则 catalog 清空 pages/resources，现有页面会话/配置授权边界拒绝。资源路径含完整 manifest 摘要，保留资源相对布局；不接受任意 URL。
+Core 提供通用固定配对静态投影：维护者显式传入 `--external-page-package`，只捕获完整合法 manifest 原字节及已声明、摘要匹配的静态资源，不导入/复制 DLC Python，也不放宽内置 FF14 Python 白名单。Core 的封闭 loader/样式表与资源在独立 staging 一并生成。可选 `external-page-projection.json` 限定构建时 manifest；运行时必须匹配当前完整 active lease 的原 manifest 摘要和模块声明，否则 catalog 清空 pages/resources，现有页面会话/配置授权边界拒绝。资源路径含完整 manifest 摘要，保留资源相对布局；不接受任意 URL。
 
-这组 alpha 必须同时安装匹配的 Core/DLC ZIP，manifest 或页面更新须重建配对资源并重新打开宿主页；不是任意外包动态页面装载。缺配对/失配只撤销外包 Web 页面，不扩大命令/Tool 权限。SDK a13、业务权限、既有公共前端合同均不变。具体冻结提交和完整包摘要见 plan。
+这组 alpha 必须同时安装匹配的 Core/DLC ZIP，manifest 或页面更新须重建配对资源并重新打开宿主页；不是任意外包动态页面装载。缺配对/失配只撤销外包 Web 页面，不扩大命令/Tool 权限。SDK a13、业务权限、既有公共前端合同均不变。具体源提交及文件摘要由包内 `BUILD.json` 标识。
 
-页面规范源为 `packages/steam_dlc/pages/entry.js`、`style.css`。包 ABI 要求资源路径在四模块间唯一，`scripts/sync_page_resources.py` 因此生成四份同字节、独立授权路径并更新 manifest SHA-256；`--check` 检查副本与摘要漂移。ZIP 仅收集 manifest 明确声明且位于固定模块路径的 JS/CSS，不收集规范源、测试依赖或任意静态文件。本轮不改主项目 `pages/**` 或 `modules/ff14/pages/**` dots，不声称已同步 dots 新视觉。
+页面规范源为 `packages/steam_dlc/pages/entry.js`、`style.css`。包 ABI 要求资源路径在四模块间唯一，`scripts/sync_page_resources.py` 因此生成四份同字节、独立授权路径并更新 manifest SHA-256；`--check` 检查副本与摘要漂移。ZIP 仅收集 manifest 明确声明且位于固定模块路径的 JS/CSS，不收集规范源、测试依赖或任意静态文件。Core shell 与内置 FF14 使用 Core 自身的构建流程，DLC 页面保持独立。
 
 ## 构建、测试与验收证据
 

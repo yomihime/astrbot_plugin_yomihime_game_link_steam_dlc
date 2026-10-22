@@ -21,6 +21,7 @@ ROOT_FILES = (
     "LICENSE",
     "README.md",
 )
+LOCAL_PROCESS_PATHS = {"agents.md", "docs/plan.md", "docs/collaboration.md"}
 FORBIDDEN_IMPORTS = {
     "requests",
     "httpx",
@@ -36,8 +37,21 @@ FORBIDDEN_IMPORTS = {
 }
 
 
+def validate_public_paths(paths):
+    for path in paths:
+        normalized = str(path).replace("\\", "/").casefold()
+        if ".local-dev" in normalized.split("/") or normalized in LOCAL_PROCESS_PATHS:
+            raise ValueError(f"local development material is not public input: {path}")
+
+
+def validate_tracked_paths(root):
+    tracked = subprocess.check_output(["git", "-C", str(root), "ls-files", "-z"])
+    validate_public_paths(tracked.decode("utf-8").split("\0"))
+
+
 def source_bytes(path, root):
     relative = path.relative_to(root).as_posix()
+    validate_public_paths((relative,))
     for part in (path, *path.parents):
         if not part.is_relative_to(root):
             break
@@ -133,6 +147,7 @@ def inventory(root):
 
 def build(root=ROOT, output=None, *, allow_dirty=False):
     root = Path(root).resolve(strict=True)
+    validate_tracked_paths(root)
     files = inventory(root)
     revision = subprocess.check_output(
         ["git", "-C", str(root), "rev-parse", "HEAD"], text=True
