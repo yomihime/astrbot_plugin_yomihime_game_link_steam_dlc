@@ -32,6 +32,12 @@ Dota 2 `recent` 和 `profile` 省略账号时，会读取发起命令的当前�
 
 CS2 和 Deadlock 当前只有模块接入、生命周期、帮助和真实状态报告，没有游戏数据查询能力。
 
+## 管理与设置
+
+在 Core 的“模块管理”中可查看四模块的实际运行状态。进入任一模块可查看命令帮助和业务范围；“进入设置”打开普通配置页。Dota2 提供 `timezone`（默认 `Asia/Shanghai`），四模块提供回复主题选择。主题选项由 Core 返回，“跟随核心”恢复继承。保存发生版本冲突时先重新读取，再确认更改。
+
+页面沿用稳定的公开合同和样式 token。Steam 账号关联仍使用私聊命令，Dota 查询仍使用命令或显式 ID 工具。dots 的新 UI 尚未同步。
+
 ## 数据与隐私边界
 
 - Steam 是唯一账号关联 owner。关联数据由 SDK USER records 保存；停用、重启或卸载 DLC 不触发自动删除。`unbind` 保留版本记录所需的 tombstone。
@@ -47,12 +53,17 @@ CS2 和 Deadlock 当前只有模块接入、生命周期、帮助和真实状态
 
 ```powershell
 python -m unittest discover -s tests
+npm ci --ignore-scripts
+npm run test:pages
+python scripts/sync_page_resources.py --check
 ruff check packages/steam_dlc tests scripts
 ruff format --check packages/steam_dlc tests scripts
 python scripts/build_release.py
 ```
 
 最终构建要求源码已提交且工作区干净；构建脚本会审计 ZIP 内容并输出构建收据。开发中的脏工作区仅供本地临时 harness 使用 `--allow-dirty`，不得作为最终安装包证据。
+
+修改页面规范源 `packages/steam_dlc/pages/entry.js` 或 `style.css` 后，先运行 `python scripts/sync_page_resources.py` 生成四模块独立资源副本及 manifest 摘要。不要手工修改生成副本。Node 24 与锁定的 jsdom 仅用于页面测试，不进入安装包。
 
 双插件离线 Host harness 需要 Core ZIP、DLC ZIP、AstrBot 4.29.1 源码和新的隔离工作目录：
 

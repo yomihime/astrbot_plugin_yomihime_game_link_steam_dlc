@@ -120,6 +120,43 @@
           "schema_version": 1,
           "owner_kind": "user"
         }
+      ],
+      "pages": [
+        {
+          "route_id": "home",
+          "role": "home",
+          "title": "帮助与状态",
+          "order": 0,
+          "entry": "pages/steam/entry.js",
+          "styles": [
+            "pages/steam/style.css"
+          ],
+          "access": "public_web"
+        },
+        {
+          "route_id": "settings",
+          "role": "config",
+          "title": "设置",
+          "order": 10,
+          "config_fields": [
+            "reply_theme"
+          ],
+          "entry": "pages/steam/entry.js",
+          "styles": [
+            "pages/steam/style.css"
+          ],
+          "access": "public_web"
+        }
+      ],
+      "resources": [
+        {
+          "path": "pages/steam/entry.js",
+          "sha256": "31f5b3c3c5658f3f1ac8cef62419f80260a2c3f827852c9f80da7c0524f4b783"
+        },
+        {
+          "path": "pages/steam/style.css",
+          "sha256": "e5c806985a0352166cba9a08cdbb552acd49b8a24547cab5bbda22058db2b267"
+        }
       ]
     },
     {
@@ -317,6 +354,44 @@
             "maxLength": 64
           }
         }
+      ],
+      "pages": [
+        {
+          "route_id": "home",
+          "role": "home",
+          "title": "帮助与状态",
+          "order": 0,
+          "entry": "pages/dota2/entry.js",
+          "styles": [
+            "pages/dota2/style.css"
+          ],
+          "access": "public_web"
+        },
+        {
+          "route_id": "settings",
+          "role": "config",
+          "title": "设置",
+          "order": 10,
+          "config_fields": [
+            "timezone",
+            "reply_theme"
+          ],
+          "entry": "pages/dota2/entry.js",
+          "styles": [
+            "pages/dota2/style.css"
+          ],
+          "access": "public_web"
+        }
+      ],
+      "resources": [
+        {
+          "path": "pages/dota2/entry.js",
+          "sha256": "31f5b3c3c5658f3f1ac8cef62419f80260a2c3f827852c9f80da7c0524f4b783"
+        },
+        {
+          "path": "pages/dota2/style.css",
+          "sha256": "e5c806985a0352166cba9a08cdbb552acd49b8a24547cab5bbda22058db2b267"
+        }
       ]
     },
     {
@@ -351,7 +426,44 @@
       "display": {
         "default_name": "CS2",
         "short_name": "CS2"
-      }
+      },
+      "pages": [
+        {
+          "route_id": "home",
+          "role": "home",
+          "title": "帮助与状态",
+          "order": 0,
+          "entry": "pages/cs2/entry.js",
+          "styles": [
+            "pages/cs2/style.css"
+          ],
+          "access": "public_web"
+        },
+        {
+          "route_id": "settings",
+          "role": "config",
+          "title": "设置",
+          "order": 10,
+          "config_fields": [
+            "reply_theme"
+          ],
+          "entry": "pages/cs2/entry.js",
+          "styles": [
+            "pages/cs2/style.css"
+          ],
+          "access": "public_web"
+        }
+      ],
+      "resources": [
+        {
+          "path": "pages/cs2/entry.js",
+          "sha256": "31f5b3c3c5658f3f1ac8cef62419f80260a2c3f827852c9f80da7c0524f4b783"
+        },
+        {
+          "path": "pages/cs2/style.css",
+          "sha256": "e5c806985a0352166cba9a08cdbb552acd49b8a24547cab5bbda22058db2b267"
+        }
+      ]
     },
     {
       "module_id": "deadlock",
@@ -385,7 +497,44 @@
       "display": {
         "default_name": "Deadlock",
         "short_name": "Deadlock"
-      }
+      },
+      "pages": [
+        {
+          "route_id": "home",
+          "role": "home",
+          "title": "帮助与状态",
+          "order": 0,
+          "entry": "pages/deadlock/entry.js",
+          "styles": [
+            "pages/deadlock/style.css"
+          ],
+          "access": "public_web"
+        },
+        {
+          "route_id": "settings",
+          "role": "config",
+          "title": "设置",
+          "order": 10,
+          "config_fields": [
+            "reply_theme"
+          ],
+          "entry": "pages/deadlock/entry.js",
+          "styles": [
+            "pages/deadlock/style.css"
+          ],
+          "access": "public_web"
+        }
+      ],
+      "resources": [
+        {
+          "path": "pages/deadlock/entry.js",
+          "sha256": "31f5b3c3c5658f3f1ac8cef62419f80260a2c3f827852c9f80da7c0524f4b783"
+        },
+        {
+          "path": "pages/deadlock/style.css",
+          "sha256": "e5c806985a0352166cba9a08cdbb552acd49b8a24547cab5bbda22058db2b267"
+        }
+      ]
     }
   ]
 }

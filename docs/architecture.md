@@ -75,11 +75,17 @@ OpenDota source id 为 `opendota`，host 固定为 `api.opendota.com`。唯一�
 
 ## CS2、Deadlock 与 UI 范围
 
-CS2 和 Deadlock 当前只注册真实 `status`、生命周期与帮助。状态说明数据查询尚未实现；不提供虚构战绩或工具能力。状态展示使用现有 Core 通用管理 UI 合同。本轮不改主项目 `pages/**` 或 `modules/ff14/pages/**` dots，不声称这些页面已同步。
+CS2 和 Deadlock 当前只注册真实 `status`、生命周期与帮助。状态说明数据查询尚未实现；不提供虚构战绩或工具能力。Core 通用管理界面显示实际运行健康；DLC 帮助页另说明业务完成度，不把运行正常当作游戏数据已实现。
+
+四模块各声明 `home` 帮助/状态页和 `settings` 普通设置页，使用 Core `8981ee2` 上已有的 `PageModule.mount`、`ModulePageServices.config`、scope 与样式 token，不导入主壳私有组件、不建立 HTTP 客户端。每个设置页只授权 `reply_theme`，Dota 另外授权 `timezone`。字段说明、当前值、版本和主题选项均来自配置服务；跟随 Core 的主题使用 `clear`，不持久化一个伪造默认值。账号关联与查询仍通过命令入口。
+
+页面只读当前模块配置，并用 expected revision 保存；CAS 冲突后要求重新读取，未知写入结果不自动重试。异步回调同时检查 scope、owner/runtime/epoch/boundary，页面失效或销毁后不提交旧响应，销毁页面创建的监听和 DOM。未保存修改和待完成操作通过公开 `navigationImpact` 通知 shell。
+
+页面规范源为 `packages/steam_dlc/pages/entry.js`、`style.css`。包 ABI 要求资源路径在四模块间唯一，`scripts/sync_page_resources.py` 因此生成四份同字节、独立授权路径并更新 manifest SHA-256；`--check` 检查副本与摘要漂移。ZIP 仅收集 manifest 明确声明且位于固定模块路径的 JS/CSS，不收集规范源、测试依赖或任意静态文件。本轮不改主项目 `pages/**` 或 `modules/ff14/pages/**` dots，不声称已同步 dots 新视觉。
 
 ## 构建、测试与验收证据
 
-包构建脚本显式收集 AstrBot 外层入口、manifest 和捕获 Python 文件，不包含 canonical SDK。最终构建要求已提交且干净的源码；脚本生成 `BUILD.json`，记录 SDK、ABI、提交和文件 SHA-256，并审计 ZIP 内容。`--allow-dirty` 只供本地临时 harness，不形成可发布构建证据。
+包构建脚本显式收集 AstrBot 外层入口、manifest、捕获 Python 文件及已声明的 JS/CSS，不包含 canonical SDK。最终构建要求已提交且干净的源码；脚本生成 `BUILD.json`，记录 SDK、ABI、提交和文件 SHA-256，并审计 ZIP 内容。`--allow-dirty` 只供本地临时 harness，不形成可发布构建证据。
 
 建议验证入口：
 

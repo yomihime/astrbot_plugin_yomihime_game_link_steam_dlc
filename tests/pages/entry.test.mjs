@@ -1,0 +1,302 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { JSDOM } from 'jsdom';
+import { mount } from '../../packages/steam_dlc/pages/entry.js';
+
+const clone = value => structuredClone(value);
+const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+const deferred = () => {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+};
+function snapshot(moduleId = 'dota2') {
+  const value = {
+    revision: 7,
+    fields: { reply_theme: { value: 'violet', state: 'valid', present: true, source: 'sqlite' } },
+    descriptors: {
+      reply_theme: {
+        description: '选择本模块回复主题。', default: null, value_schema: { type: ['string', 'null'] },
+        choices: [{ value: null, label: '跟随核心' }, { value: 'violet', label: '紫罗兰' }, { value: 'forest', label: '林间' }],
+      },
+    },
+  };
+  if (moduleId === 'dota2') {
+    value.fields.timezone = { value: 'Asia/Shanghai', state: 'valid', present: false, source: 'default' };
+    value.descriptors.timezone = {
+      description: '命令输出时区（IANA 名称）。', default: 'Asia/Shanghai',
+      value_schema: { type: 'string', minLength: 1, maxLength: 64 },
+    };
+  }
+  return value;
+}
+function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, service = {} } = {}) {
+  const dom = new JSDOM('<!doctype html><div id="root"></div>');
+  const container = dom.window.document.querySelector('#root');
+  const abort = new AbortController();
+  let scopeCurrent = true, state = snapshot(moduleId), notifications = 0;
+  const disposal = new Set(), calls = [];
+  const context = { owner: `steam_dlc/${moduleId}`, runtimeId: 'runtime-a', epoch: 3, boundary: 'boundary-a', available, theme: 'light', locale: 'zh-CN' };
+  const config = {
+    async current() { calls.push(['current']); return clone(state); },
+    async save(revision, values) {
+      calls.push(['save', revision, clone(values)]);
+      assert.equal(revision, state.revision);
+      for (const [name, value] of Object.entries(values)) state.fields[name] = { value, state: 'valid', present: true, source: 'sqlite' };
+      return { revision: ++state.revision };
+    },
+    async clear(revision, fields) {
+      calls.push(['clear', revision, clone(fields)]);
+      assert.equal(revision, state.revision);
+      for (const name of fields) state.fields[name] = { value: state.descriptors[name].default, state: 'valid', present: false, source: 'default' };
+      return { revision: ++state.revision };
+    },
+    ...service,
+  };
+  const page = mount(container, {
+    routeId, context,
+    services: { config, invoke() { assert.fail('business invoke forbidden'); }, credentials: new Proxy({}, { get() { assert.fail('credentials forbidden'); } }) },
+    scope: { signal: abort.signal, isCurrent: () => scopeCurrent, onDispose(callback) { disposal.add(callback); return () => disposal.delete(callback); } },
+    onNavigationStateChange() { notifications++; },
+  });
+  const input = (name, value) => {
+    const control = container.querySelector(`[name="${name}"]`);
+    assert.ok(control, `missing ${name}`);
+    control.value = value;
+    control.dispatchEvent(new dom.window.Event(control.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
+  };
+  const click = action => container.querySelector(`[data-action="${action}"]`).click();
+  const submit = () => container.querySelector('form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  return {
+    dom, container, page, context, calls, input, click, submit, config,
+    get state() { return state; }, set state(next) { state = next; },
+    get notifications() { return notifications; },
+    revokeScope() { scopeCurrent = false; },
+    abort() { abort.abort(); },
+    disposeScope() { for (const callback of disposal) callback(); },
+    text: () => container.textContent,
+    close() { page.dispose(); dom.window.close(); },
+  };
+}
+
+for (const moduleId of ['steam', 'dota2', 'cs2', 'deadlock']) {
+  test(`${moduleId} home has actual command help and availability, without API calls`, () => {
+    const f = fixture({ moduleId, routeId: 'home' });
+    assert.match(f.text(), new RegExp(`/ygl ${moduleId} `));
+    assert.match(f.text(), /运行健康请在模块管理中查看/);
+    if (['cs2', 'deadlock'].includes(moduleId)) assert.match(f.text(), /游戏数据功能待实现/);
+    f.page.update({ ...f.context, available: false });
+    assert.match(f.text(), /当前页面入口不可用/);
+    assert.deepEqual(f.calls, []);
+    assert.deepEqual(Object.keys(f.page.navigationImpact()).sort(), ['credentials', 'ordinary', 'pending', 'version']);
+    f.close();
+  });
+  test(`${moduleId} settings render only declared dynamic fields`, async () => {
+    const f = fixture({ moduleId });
+    await settle();
+    assert.equal(f.container.querySelectorAll('input,select').length, moduleId === 'dota2' ? 2 : 1);
+    assert.equal(f.container.querySelector('select option:last-child').textContent, '林间');
+    assert.equal(f.container.querySelector('select').value, '1');
+    assert.ok(!f.container.querySelector('input[type=password]'));
+    assert.equal(f.page.navigationImpact().ordinary, false);
+    f.close();
+  });
+}
+
+test('timezone save and follow-Core clear use exact sequential CAS revisions', async () => {
+  const f = fixture(); await settle();
+  f.input('timezone', 'Europe/London'); f.input('reply_theme', '0');
+  const version = f.page.navigationImpact().version;
+  assert.equal(f.page.navigationImpact().ordinary, true);
+  f.submit(); f.submit(); await settle();
+  assert.deepEqual(f.calls, [ ['current'], ['save', 7, { timezone: 'Europe/London' }], ['clear', 8, ['reply_theme']], ['current'] ]);
+  assert.match(f.text(), /已保存/);
+  assert.equal(f.page.navigationImpact().ordinary, false);
+  assert.ok(f.page.navigationImpact().version > version);
+  assert.equal(f.page.navigationImpact().credentials, false);
+  f.close();
+});
+
+test('restoring timezone is a clear draft, not an immediate write', async () => {
+  const f = fixture(); await settle();
+  f.state.fields.timezone = { value: 'UTC', state: 'valid', present: true, source: 'sqlite' };
+  f.click('refresh'); await settle(); f.click('reset-timezone');
+  assert.equal(f.container.querySelector('[name=timezone]').value, 'Asia/Shanghai');
+  assert.equal(f.calls.some(call => call[0] === 'clear'), false);
+  f.submit(); await settle();
+  assert.deepEqual(f.calls.filter(call => call[0] === 'clear'), [['clear', 7, ['timezone']]]);
+  f.close();
+});
+
+test('timezone validation blocks malformed and descriptor-overlength values', async () => {
+  const f = fixture(); await settle();
+  for (const value of ['Not/AZone', 'x'.repeat(65)]) {
+    f.input('timezone', value); f.submit(); await settle();
+    assert.match(f.text(), /IANA 时区/);
+  }
+  assert.deepEqual(f.calls, [['current']]); f.close();
+});
+
+test('refresh keeps edits made before and during a delayed read', async () => {
+  const f = fixture(); await settle();
+  const read = deferred(); f.config.current = () => read.promise;
+  f.input('timezone', 'UTC'); f.click('refresh');
+  f.input('timezone', 'Europe/London');
+  read.resolve(snapshot()); await settle();
+  assert.equal(f.container.querySelector('[name=timezone]').value, 'Europe/London');
+  assert.match(f.text(), /草稿已保留/); f.close();
+});
+
+test('edits during save survive receipt and readback', async () => {
+  const f = fixture(); await settle();
+  const write = deferred();
+  f.config.save = (revision, values) => {
+    f.calls.push(['save', revision, values]);
+    f.state.revision = 8;
+    f.state.fields.timezone = { value: values.timezone, present: true, state: 'valid', source: 'sqlite' };
+    return write.promise;
+  };
+  f.input('timezone', 'UTC'); f.submit();
+  f.input('timezone', 'Europe/London');
+  write.resolve({ revision: 8 }); await settle();
+  assert.equal(f.container.querySelector('[name=timezone]').value, 'Europe/London');
+  assert.equal(f.page.navigationImpact().ordinary, true);
+  assert.match(f.text(), /新的未保存修改/); f.close();
+});
+
+for (const action of ['reset', 'baseline-value']) {
+  test(`${action} during a pending save preserves the newer draft intent`, async () => {
+    const f = fixture(); await settle();
+    const write = deferred();
+    f.config.save = (_revision, values) => {
+      f.state.revision = 8;
+      f.state.fields.timezone = { value: values.timezone, present: true, state: 'valid', source: 'sqlite' };
+      return write.promise;
+    };
+    f.input('timezone', 'UTC'); f.submit();
+    if (action === 'reset') f.click('reset-timezone');
+    else f.input('timezone', 'Asia/Shanghai');
+    write.resolve({ revision: 8 }); await settle();
+    assert.equal(f.container.querySelector('[name=timezone]').value, 'Asia/Shanghai');
+    assert.equal(f.page.navigationImpact().ordinary, true);
+    f.config.save = async (revision, values) => {
+      f.calls.push(['save', revision, values]);
+      f.state.revision = revision + 1;
+      f.state.fields.timezone = { value: values.timezone, present: true, state: 'valid', source: 'sqlite' };
+      return { revision: f.state.revision };
+    };
+    f.submit(); await settle();
+    if (action === 'reset') assert.deepEqual(f.calls.filter(call => call[0] === 'clear'), [['clear', 8, ['timezone']]]);
+    else assert.deepEqual(f.calls.filter(call => call[0] === 'save'), [['save', 8, { timezone: 'Asia/Shanghai' }]]);
+    f.close();
+  });
+}
+
+for (const key of ['owner', 'runtimeId', 'epoch', 'boundary']) {
+  test(`${key} change fences delayed reads and prevents reuse`, async () => {
+    const read = deferred();
+    const f = fixture({ service: { current: () => read.promise } });
+    f.page.update({ ...f.context, [key]: key === 'epoch' ? 4 : 'changed' });
+    read.resolve(snapshot()); await settle();
+    assert.equal(f.container.querySelector('input'), null);
+    assert.match(f.text(), /上下文已变化/);
+    f.click('refresh'); await settle();
+    assert.equal(f.page.navigationImpact().pending, false);
+    f.close();
+  });
+}
+
+test('unavailable update fences an outstanding write before a subsequent clear', async () => {
+  const f = fixture(); await settle();
+  const write = deferred(); let clearCount = 0;
+  f.config.save = () => write.promise;
+  f.config.clear = async () => { clearCount++; return { revision: 9 }; };
+  f.input('timezone', 'UTC'); f.input('reply_theme', '0'); f.submit();
+  f.page.update({ ...f.context, available: false });
+  write.resolve({ revision: 8 }); await settle();
+  assert.equal(clearCount, 0);
+  assert.equal(f.page.navigationImpact().ordinary, true);
+  assert.match(f.text(), /当前页面入口不可用/); f.close();
+});
+
+for (const disposal of ['disposeScope', 'abort', 'revokeScope']) {
+  test(`${disposal} prevents late read DOM commits`, async () => {
+    const read = deferred();
+    const f = fixture({ service: { current: () => read.promise } });
+    f[disposal]();
+    const previous = f.container.innerHTML;
+    read.resolve(snapshot()); await settle();
+    assert.equal(f.container.innerHTML, previous);
+    f.close();
+  });
+}
+
+test('dispose removes listeners and rejects events retained by old DOM references', async () => {
+  const f = fixture(); await settle();
+  const form = f.container.querySelector('form'), refresh = f.container.querySelector('[data-action=refresh]');
+  f.input('timezone', 'UTC'); f.page.dispose();
+  form.dispatchEvent(new f.dom.window.Event('submit', { cancelable: true })); refresh.click(); await settle();
+  assert.deepEqual(f.calls, [['current']]); assert.equal(f.container.children.length, 0); f.close();
+});
+
+test('CAS conflict preserves draft and blocks writes until explicit refresh', async () => {
+  const f = fixture(); await settle();
+  let attempts = 0;
+  f.config.save = async () => { attempts++; throw Error('revision_conflict'); };
+  f.input('timezone', 'UTC'); f.submit(); await settle();
+  assert.match(f.text(), /其他操作修改/); f.submit(); await settle();
+  assert.equal(attempts, 1);
+  assert.equal(f.container.querySelector('[name=timezone]').value, 'UTC');
+  f.click('refresh'); await settle();
+  assert.match(f.text(), /草稿已保留/); f.submit(); await settle();
+  assert.equal(attempts, 2); f.close();
+});
+
+test('unknown write failure is not retried and never renders arbitrary errors', async () => {
+  const f = fixture(); await settle(); let attempts = 0;
+  f.config.save = async () => { attempts++; throw Error('<secret diagnostic>'); };
+  f.input('timezone', 'UTC'); f.submit(); await settle(); f.submit(); await settle();
+  assert.equal(attempts, 1); assert.match(f.text(), /保存结果尚未确认/);
+  assert.doesNotMatch(f.text(), /secret diagnostic/); f.close();
+});
+
+test('accepted write followed by failed readback remains unverified, manual refresh reconciles', async () => {
+  const f = fixture(); await settle(); let reads = 0;
+  f.config.current = async () => { if (++reads === 1) throw Error('offline'); return clone(f.state); };
+  f.input('timezone', 'UTC'); f.submit(); await settle();
+  assert.match(f.text(), /状态暂未核实/);
+  f.submit(); await settle();
+  assert.equal(f.calls.filter(call => call[0] === 'save').length, 1);
+  f.click('refresh'); await settle();
+  assert.equal(f.page.navigationImpact().ordinary, false);
+  assert.equal(f.container.querySelector('[name=timezone]').value, 'UTC'); f.close();
+});
+
+test('save accepted then clear conflict does not conceal partial write', async () => {
+  const f = fixture(); await settle(); let clears = 0;
+  f.config.clear = async () => { clears++; throw Error('revision_conflict'); };
+  f.input('timezone', 'UTC'); f.input('reply_theme', '0'); f.submit(); await settle();
+  assert.match(f.text(), /部分或全部修改已提交/);
+  f.submit(); await settle(); assert.equal(clears, 1);
+  f.click('refresh'); await settle();
+  f.config.clear = async revision => { assert.equal(revision, 8); return { revision: 9 }; };
+  assert.equal(f.page.navigationImpact().ordinary, true); f.close();
+});
+
+test('stale or mismatched post-write readback cannot claim success', async () => {
+  const f = fixture(); await settle();
+  f.config.save = async () => ({ revision: 8 });
+  f.input('timezone', 'UTC'); f.submit(); await settle();
+  assert.match(f.text(), /状态暂未核实/); assert.equal(f.page.navigationImpact().ordinary, true); f.close();
+});
+
+test('missing descriptors disables editing without fabricating theme choices', async () => {
+  const f = fixture({ service: { current: async () => ({ revision: 1, fields: {} }) } }); await settle();
+  assert.match(f.text(), /配置读取未完成/); assert.equal(f.container.querySelectorAll('select').length, 0); f.close();
+});
+
+test('unavailable mount makes no config calls and permits later fresh read', async () => {
+  const f = fixture({ available: false }); await settle(); assert.deepEqual(f.calls, []);
+  f.page.update({ ...f.context, available: true }); await settle();
+  assert.deepEqual(f.calls, [['current']]); f.close();
+});

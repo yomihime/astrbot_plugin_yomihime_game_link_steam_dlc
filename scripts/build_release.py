@@ -4,6 +4,7 @@ import argparse
 import ast
 import hashlib
 import json
+import re
 import stat
 import subprocess
 import zipfile
@@ -35,22 +36,68 @@ FORBIDDEN_IMPORTS = {
 }
 
 
+def source_bytes(path, root):
+    relative = path.relative_to(root).as_posix()
+    for part in (path, *path.parents):
+        if not part.is_relative_to(root):
+            break
+        info = part.lstat()
+        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+            raise ValueError(f"release source traverses a link: {relative}")
+    if path.resolve(strict=True) != path.absolute():
+        raise ValueError(f"release source traverses a link: {relative}")
+    metadata = path.lstat()
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink > 1:
+        raise ValueError(f"release source must be a regular file: {relative}")
+    return path.read_bytes()
+
+
 def inventory(root):
     package = root / "packages/steam_dlc"
+    manifest = json.loads(source_bytes(package / "yomihime.manifest.json", root))
+    resources = {}
+    for module in manifest["modules"]:
+        declared = set()
+        for resource in module.get("resources", []):
+            relative = resource["path"]
+            if (
+                not isinstance(relative, str)
+                or re.fullmatch(
+                    r"pages/(steam|dota2|cs2|deadlock)/(entry\.js|style\.css)",
+                    relative,
+                )
+                is None
+                or relative.split("/")[1] != module["module_id"]
+                or relative.casefold() in resources
+                or re.fullmatch(r"[0-9a-f]{64}", resource["sha256"]) is None
+            ):
+                raise ValueError("page resource is outside the release allowlist")
+            resources[relative.casefold()] = resource["sha256"]
+            declared.add(relative)
+        pages = module.get("pages", [])
+        referenced = {
+            name for page in pages for name in (page["entry"], *page.get("styles", []))
+        }
+        if referenced != declared:
+            raise ValueError("page resource declarations must match page references")
     files = [root / name for name in ROOT_FILES]
     files += [root / "packages/__init__.py", package / "yomihime.manifest.json"]
     files += sorted(package.rglob("*.py"))
+    files += [package / name for name in sorted(resources)]
     result = {}
     for path in files:
         relative = path.relative_to(root).as_posix()
         if "__pycache__" in path.parts:
             continue
-        if path.resolve(strict=True) != path.absolute():
-            raise ValueError(f"release source traverses a link: {relative}")
-        metadata = path.lstat()
-        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink > 1:
-            raise ValueError(f"release source must be a regular file: {relative}")
-        payload = path.read_bytes()
+        payload = source_bytes(path, root)
+        resource_name = (
+            path.relative_to(package).as_posix() if path.is_relative_to(package) else ""
+        )
+        if resource_name in resources and (
+            len(payload) > 4 * 1024 * 1024
+            or hashlib.sha256(payload).hexdigest() != resources[resource_name]
+        ):
+            raise ValueError(f"page resource bytes differ from manifest: {relative}")
         if path.suffix == ".py":
             tree = ast.parse(payload, filename=relative)
             if relative.startswith("packages/steam_dlc/"):

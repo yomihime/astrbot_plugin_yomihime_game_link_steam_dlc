@@ -1,6 +1,6 @@
 # Steam DLC alpha 执行与验收
 
-当前结论：候选尚未完整通过验收。第二轮复审后的额外浏览器验证发现 R4-I1（Important）：DLC 未声明页面，Dota2 的“进入设置”落到空主页，时区设置不可达。既有 API、业务、生命周期与包审计通过记录仍成立；不能由此宣布完整 alpha 交付通过。两轮修复额度已用完，待新增范围/预算决定。
+当前结论：候选尚未完整通过验收。用户已批准追加 1 轮，仅修 R4-I1 的 DLC 页面适配及其验收。既有 API、业务、生命周期与包审计通过记录保留。Core `8981ee2` 完整 CI 随后结束为 failure：2515 项中 3 errors、87 skipped，均在安装样例状态调用；Windows 检查通过，build skipped，正在单独诊断。页面修复与 Core CI 分别记录，不能由局部门禁宣布完整 alpha 交付通过。
 
 任务书：`Steam_DLC_Codex_Taskbook.txt`。[public alpha 分支](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/tree/feat/steam-dlc-alpha)位于指定的 `astrbot_plugin_yomihime_game_link_steam_dlc` checkout。main 保留建库初始提交 `01457b2f80ab18ecf735109c76b9575ef7d34890`；安装使用已审计 ZIP。
 
@@ -74,10 +74,18 @@ root 串行维护公共合同及共享文件，未修改全局 Codex 配置或�
 
 合并建议：Core 通用变更的 R3 审查通过，仍须等待同提交完整 CI，由维护者决定 PR #11；DLC 整体因新增 R4-I1 尚不可宣布验收通过。DLC 严格要求 SDK a13，不能混用旧同版本 Core ZIP。
 
-## 待决定的追加修复
+## 已批准的追加修复
+
+用户已明确选择“追加 1 轮，仅修 DLC 页面适配”。原两轮修复与历史失败保留，追加额度仅为 1 轮；当前继续实施下述 DLC 页面适配、浏览器验收及独立复审，不扩大 Core/dots 页面或业务权限范围。
 
 根因已收敛：manifest 的 `pages=[]`，后端普通配置字段仍存在；管理列表依据字段显示“进入设置”，稳定 shell 的 `selectSettings(owner)` 只找 `role=config` 的已声明页面，找不到便退回模块主页。全局设置只显示 Core owner，不能替代 DLC 配置页。父桥、JWT、管理 API 与数据库 CAS 均不是根因。
 
 建议追加 1 轮修复与独立复审，继续最多两个活跃子任务、单 writer、实际模型/费用 unknown、无额外收费加速。实现限 DLC：按已有 `PageModule.mount` / `ModulePageServices.config` 公共合同提供最小首页帮助/状态与普通配置页，声明各模块 home/config 页面及固定资源摘要，更新显式 ZIP 资源清单。四模块共享最小页面代码但不共享可变业务状态；不新增账号 GUI、不改 Core/dots 页面、SDK 或 Steam/Dota 业务权限。
 
-新增门禁为真实浏览器导航、Dota 时区读取/保存 UTC 后恢复、CAS 冲突、页面 owner/epoch 失效与卸载清理；重新冻结 ZIP、运行受影响包/页面/Host 检查并独立复审。无需因纯 DLC 页面改动重跑未改 Core 的全套；Core 现有完整 CI 继续。若这一追加轮仍有 Blocker/Important，再报告剩余问题，不重置预算或降低标准。
+新增门禁为真实浏览器导航、Dota 时区读取/保存 UTC 后恢复、CAS 冲突、页面 owner/epoch 失效与卸载清理；重新冻结 ZIP、运行受影响包/页面/Host 检查并独立复审。无需因纯 DLC 页面改动重跑未改 Core 的全套；Core 现有完整 CI 另记。若这一追加轮仍有 Blocker/Important，再报告剩余问题，不重置预算或降低标准。
+
+## Core 完整 CI 的新增测试合同问题
+
+[Core run 39760759331](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/actions/runs/39760759331) 最终 2515 项、3 errors、87 skipped。三个失败共用 `tests/fixtures/core_hardening.py:672` 前置流程：先启用样例，主动停用 source，验证依赖拒绝。Core `8981ee2` 将这一准入拒绝精确表示为 `HostIngressUnavailable`；夹具仍仅捕获 `PermissionError`，因此新信号逃逸。初始启用与独立 status 发送已通过，无证据表明产品错误放行或错误禁用。
+
+用户随后明确选择“扩展本轮，仅适配 Core 测试夹具”。本轮追加额度仍为 1 轮，新增范围仅是导入现有 `HostIngressUnavailable`，让依赖拒绝和缺配置拒绝两处精确捕获该类型，保留原权限/状态/输出断言。运行时代码、SDK、业务权限和 dots 页面不变。补跑三个安装样例场景及相关准入测试，再提交推送同一 Core Draft PR、执行 CI 并独立复审。补丁保存在本地证据目录 `core-ci-fixture-proposal.patch`，不修改未声明 Tool 权限拒绝的原 `PermissionError` 检查。
