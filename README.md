@@ -2,7 +2,7 @@
 
 Steam DLC 是 AstrBot 游戏连结的独立 alpha 插件，包含 Steam 账号关联、Dota 2 查询，以及 CS2 和 Deadlock 的状态模块。候选兼容面为 Core 分支 `feat/steam-dlc-support`、canonical SDK `0.1.0a13`、模块 ABI `2.0`；DLC 分支为 `feat/steam-dlc-alpha`。这些分支尚未合并或发布，候选 ZIP 和验收记录以最终构建产物为准。
 
-**当前处于配对候选验收**：旧 Core `8981ee2` 未装配外包页面，不能用于验证新增帮助/设置页。固定配对资源的真实 Host 探针已加载页面并完成 UTC 保存/回读；正式候选仍需通过包、浏览器与独审，详情见[验收计划](docs/plan.md)。
+**本轮 alpha 验收已完成**：安装包运行源为 DLC `a9a2a362` 与配对 Core `c11d5a54`，已通过真实 Host、实际 Core 页浏览器、同修订 CI 及 R6 独立审查（0 Blocker / 0 Important）。请使用完整摘要匹配的两个 ZIP，详情见[验收记录](docs/plan.md)。后续文档提交不重建或改变这组已验包的来源；分支尚待维护者合并发布。
 
 ## 安装
 
@@ -82,4 +82,4 @@ python scripts/smoke_two_plugins.py `
 
 另以新的工作目录和独立进程将 `--order` 设为 `dlc-first`，覆盖另一注册顺序。该 harness 使用真实 Host 插件管理与生命周期，但消息投递和 OpenDota HTTPS 响应为合成数据；它不证明真实 IM、浏览器 UI 或在线 OpenDota 验收。离线单测、包审计、Host harness、在线 API、真实 IM/UI 与发布是不同证据层，分别记录，不互相替代。
 
-当前 README 与架构合同是候选使用说明，不表示 Core/DLC 已合并、Release 已发布或真实 Host/IM/API 验收已通过。执行入口见[验收计划](docs/plan.md)、[架构合同](docs/architecture.md)和[协作约定](docs/collaboration.md)。
+本轮已验隔离 Host、实际 Core 页面与独立匿名 API 冒烟；浏览器父容器为显式合成桥。真实 IM、模型、完整 Dashboard 父壳及 Host SDK 在线调用仍待验。Core/DLC 保持开发分支候选，合并和发布由维护者决定。执行入口见[验收计划](docs/plan.md)、[架构合同](docs/architecture.md)和[协作约定](docs/collaboration.md)。
