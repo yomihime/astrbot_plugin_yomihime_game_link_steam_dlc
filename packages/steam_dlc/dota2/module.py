@@ -42,6 +42,8 @@ from ..shared.hero_names import HERO_NAMES
 from ..shared.output import failure, success
 from ..shared.steam_ids import account_id32, parse_dota_account, parse_steam_id
 from .normalization import normalize_match, normalize_profile, normalize_recent
+from .presentation import report_result
+from .statistics import project_stats
 
 _SOURCE = "opendota"
 _MAX_RESPONSE_BYTES = 1_000_000
@@ -66,6 +68,10 @@ class Dota2Module:
                 "recent": _Query(self, "recent"),
                 "profile": _Query(self, "profile"),
                 "match": _Query(self, "match"),
+                "stats": _Query(self, "stats"),
+                "stats_explicit": _Query(self, "stats"),
+                "last": _Query(self, "last"),
+                "last_explicit": _Query(self, "last"),
                 "status": _Status(),
             },
             collectors={},
@@ -84,7 +90,16 @@ class Dota2Module:
         return HealthReport(
             capabilities={
                 capability: CapabilityHealth(status=state, reason=reason)
-                for capability in ("recent", "profile", "match", "status")
+                for capability in (
+                    "recent",
+                    "profile",
+                    "match",
+                    "stats",
+                    "stats_explicit",
+                    "last",
+                    "last_explicit",
+                    "status",
+                )
             }
         )
 
@@ -94,7 +109,9 @@ class _Status:
         del context, parameters
         return success(
             "Dota 2 状态",
-            ["最近战绩、玩家资料和单场摘要已实现；查询使用 OpenDota 公开数据。"],
+            [
+                "最近战绩、近期样本统计、玩家资料、上一场和指定玩家战报已实现；使用 OpenDota 公开数据，不提交解析。"
+            ],
             {"module": "dota2", "implemented": True, "source": _SOURCE},
         )
 
@@ -107,23 +124,35 @@ class _Query:
     async def invoke(self, context: InvocationView, parameters: ygl.JsonObject):
         if not self.owner._started:
             return failure(ErrorCode.MODULE_UNAVAILABLE, "Dota 2 模块当前未运行。")
+        selected_last = False
         try:
             target, limit, match_id, default_target = await _resolve_input(
                 self.owner._services, context, parameters, self.operation
             )
             scope = await self.owner._services.scopes.bind(context)
-            key = _cache_key(self.operation, target, limit, match_id)
-            cached = await _cache_get(scope, key)
-            if cached is not None:
-                projection = cached
+            if self.operation == "last":
+                selection = await _load_projection(scope, "last", target, 20, None)
+                selected_last = True
+                projection = await _load_projection(
+                    scope, "match", None, None, selection["match_id"]
+                )
+                projection = {**projection, "last": selection}
             else:
-                payload = await _fetch(scope, self.operation, target, limit, match_id)
-                projection = _project(self.operation, payload, target, limit, match_id)
-                await _cache_put(scope, key, projection)
+                projection = await _load_projection(
+                    scope, self.operation, target, limit, match_id
+                )
+            if self.operation in ("last", "match") and target is not None:
+                projection = {
+                    **projection,
+                    "focus": _focus(projection["match"], target),
+                }
             timezone_name = await _timezone_name(self.owner._services)
             return _result(self.operation, projection, default_target, timezone_name)
         except _QueryFailure as exc:
-            return failure(exc.code, exc.message)
+            message = exc.message
+            if selected_last:
+                message += " 最近列表首条有效比赛的详情未能取得；未改查更早比赛。"
+            return failure(exc.code, message)
         except SourceHttpError as exc:
             return _source_failure(exc)
         except OperationTimeout:
@@ -174,11 +203,17 @@ async def _resolve_input(services, context, parameters, operation):
             if not isinstance(raw, str):
                 raise _QueryFailure(ErrorCode.PARAMETER_ERROR, "请提供比赛 ID。")
             args = _command_tokens(raw)
-            if len(args) != 1 or not _MATCH_ID.fullmatch(args[0]):
+            if (
+                len(args) not in (1, 3)
+                or not _MATCH_ID.fullmatch(args[0])
+                or (len(args) == 3 and args[1] != "--account")
+            ):
                 raise _QueryFailure(
-                    ErrorCode.PARAMETER_ERROR, "用法：/ygl dota2 match <比赛ID>"
+                    ErrorCode.PARAMETER_ERROR,
+                    "用法：/ygl dota2 match <比赛ID> [--account <账号>]",
                 )
-            return None, None, args[0], False
+            target = _explicit_account(args[2]) if len(args) == 3 else None
+            return target, None, args[0], False
         match_id = parameters.get("match_id")
         if not isinstance(match_id, (str, int)) or isinstance(match_id, bool):
             raise _QueryFailure(
@@ -187,21 +222,33 @@ async def _resolve_input(services, context, parameters, operation):
         match_id = str(match_id)
         if not _MATCH_ID.fullmatch(match_id):
             raise _QueryFailure(ErrorCode.PARAMETER_ERROR, "比赛 ID 必须是正整数。")
-        return None, None, match_id, False
+        target = (
+            _explicit_account(parameters["account"])
+            if "account" in parameters
+            else None
+        )
+        return target, None, match_id, False
 
     if context.origin is InvocationOrigin.COMMAND:
         raw = parameters.get("command")
         if not isinstance(raw, str):
             raise _QueryFailure(ErrorCode.PARAMETER_ERROR, "命令参数格式无效。")
         args = _command_tokens(raw)
-        if operation == "recent":
-            account_text, limit = _parse_recent_args(args)
+        if operation in ("recent", "stats"):
+            account_text, limit = _parse_recent_args(
+                args,
+                default=20 if operation == "stats" else 5,
+                operation=operation,
+            )
         else:
             if len(args) > 1:
                 raise _QueryFailure(
-                    ErrorCode.PARAMETER_ERROR, "用法：/ygl dota2 profile [账号]"
+                    ErrorCode.PARAMETER_ERROR, f"用法：/ygl dota2 {operation} [账号]"
                 )
-            account_text, limit = (args[0] if args else None), None
+            account_text, limit = (
+                (args[0] if args else None),
+                20 if operation == "last" else 5,
+            )
         if account_text is None:
             identity = await _default_identity(services, context)
             return identity["account_id32"], limit or 5, None, True
@@ -221,9 +268,9 @@ async def _resolve_input(services, context, parameters, operation):
         raise _QueryFailure(
             ErrorCode.PARAMETER_ERROR, "账号必须是合法 Dota ID32 或 SteamID64。"
         ) from None
-    limit = 5
-    if operation == "recent":
-        value = parameters.get("limit", 5)
+    limit = 20 if operation in ("stats", "last") else 5
+    if operation in ("recent", "stats"):
+        value = parameters.get("limit", limit)
         if isinstance(value, bool):
             raise _QueryFailure(
                 ErrorCode.PARAMETER_ERROR, "场次数量必须是 1 到 20 的整数。"
@@ -247,9 +294,24 @@ def _command_tokens(raw: str) -> list[str]:
         raise _QueryFailure(ErrorCode.PARAMETER_ERROR, "命令参数格式无效。") from None
 
 
-def _parse_recent_args(args: list[str]) -> tuple[str | None, int]:
+def _explicit_account(value):
+    if not isinstance(value, str):
+        raise _QueryFailure(
+            ErrorCode.PARAMETER_ERROR, "账号必须是 Dota ID32 或 SteamID64 字符串。"
+        )
+    try:
+        return parse_dota_account(value)
+    except ValueError:
+        raise _QueryFailure(
+            ErrorCode.PARAMETER_ERROR, "账号必须是合法 Dota ID32 或 SteamID64。"
+        ) from None
+
+
+def _parse_recent_args(
+    args: list[str], *, default=5, operation="recent"
+) -> tuple[str | None, int]:
     account = None
-    limit = 5
+    limit = default
     limit_seen = False
     index = 0
     while index < len(args):
@@ -271,7 +333,8 @@ def _parse_recent_args(args: list[str]) -> tuple[str | None, int]:
             index += 1
         else:
             raise _QueryFailure(
-                ErrorCode.PARAMETER_ERROR, "用法：/ygl dota2 recent [账号] [--limit N]"
+                ErrorCode.PARAMETER_ERROR,
+                f"用法：/ygl dota2 {operation} [账号] [--limit N]",
             )
     if not 1 <= limit <= 20:
         raise _QueryFailure(ErrorCode.PARAMETER_ERROR, "场次数量必须是 1 到 20。")
@@ -360,7 +423,7 @@ async def _default_identity(services, context) -> dict[str, Any]:
 
 async def _fetch(scope, operation, target, limit, match_id):
     query: tuple[tuple[str, str], ...]
-    if operation == "recent":
+    if operation in ("recent", "stats", "last"):
         path = f"/api/players/{target}/matches"
         query = (("significant", "0"), ("limit", str(limit)))
     elif operation == "profile":
@@ -410,7 +473,38 @@ def _safe_retry_after(value):
 
 
 def _cache_key(operation, target, limit, match_id):
+    if operation == "match":
+        return f"opendota:match:v2:{match_id}"
+    if operation in ("stats", "last"):
+        return f"opendota:{operation}:v1:{target}:{limit}"
     return f"opendota:{operation}:{target if target is not None else match_id}:{limit if limit is not None else '-'}"
+
+
+async def _load_projection(scope, operation, target, limit, match_id):
+    key = _cache_key(operation, target, limit, match_id)
+    projection = await _cache_get(scope, key)
+    hit = projection is not None
+    if projection is None:
+        payload = await _fetch(scope, operation, target, limit, match_id)
+        projection = _project(operation, payload, target, limit, match_id)
+        if operation in ("stats", "last", "match"):
+            projection["fetched_at"] = datetime.now(UTC).isoformat()
+        await _cache_put(scope, key, projection)
+    if operation in ("stats", "last", "match"):
+        return {**projection, "cache_hit": hit}
+    return projection
+
+
+def _focus(match, target):
+    account = str(target)
+    found = [p for p in match["players"] if p["account_id32"] == account]
+    status = "found" if len(found) == 1 else "ambiguous" if found else "not_found"
+    return {
+        "account_id32": account,
+        "status": status,
+        "player": found[0] if status == "found" else None,
+        "anonymous_players": sum(p["account_id32"] is None for p in match["players"]),
+    }
 
 
 async def _cache_get(scope, key):
@@ -437,6 +531,26 @@ async def _cache_put(scope, key, projection):
 
 
 def _project(operation, payload, target, limit, match_id):
+    if operation in ("stats", "last"):
+        stats = project_stats(payload, limit=limit)
+        if operation == "stats":
+            return {"account_id32": str(target), "stats": stats}
+        rows = normalize_recent(payload, limit=limit)
+        if not rows:
+            raise _QueryFailure(
+                ErrorCode.NO_RECORDS,
+                "OpenDota 返回的最近20场范围内没有有效比赛；未继续查找更早比赛。",
+            )
+        return {
+            "account_id32": str(target),
+            "match_id": rows[0].match_id,
+            "requested_limit": limit,
+            "received_count": stats["received_count"],
+            "sample_count": stats["sample_count"],
+            "invalid_count": stats["invalid_count"],
+            "duplicate_count": stats["duplicate_count"],
+            "coverage": stats["coverage"],
+        }
     if operation == "recent":
         rows = normalize_recent(payload, limit=limit)
         if not rows:
@@ -521,6 +635,18 @@ def _player_dict(player):
             "deaths",
             "assists",
             "outcome",
+            "name",
+            "level",
+            "gold_per_min",
+            "xp_per_min",
+            "last_hits",
+            "denies",
+            "hero_damage",
+            "tower_damage",
+            "hero_healing",
+            "items",
+            "backpack",
+            "neutral_item",
         )
     }
     if result["account_id32"] is not None:
@@ -540,6 +666,8 @@ def _match_dict(match: MatchSummary):
 
 
 def _result(operation, projection, default_target, timezone_name):
+    if operation in ("stats", "last", "match"):
+        return report_result(operation, projection, default_target, timezone_name)
     if operation == "recent":
         account = projection["account_id32"]
         label = "本次查询账号" if default_target else "账号"
@@ -568,8 +696,10 @@ def _result(operation, projection, default_target, timezone_name):
         lines.append(f"昵称：{profile['name'] or '未提供'}")
         if not default_target:
             lines.append(f"SteamID64：{profile['steam_id64'] or '未提供'}")
+        from .labels import rank_label
+
         lines.append(
-            f"段位：{profile['rank_tier'] if profile['rank_tier'] is not None else '未提供'}"
+            f"段位：{rank_label(profile['rank_tier'])}（原始值 {profile['rank_tier'] if profile['rank_tier'] is not None else '未提供'}）"
         )
         lines.append(
             f"排行榜名次：{profile['leaderboard_rank'] if profile['leaderboard_rank'] is not None else '未提供'}"
@@ -578,24 +708,6 @@ def _result(operation, projection, default_target, timezone_name):
             lines.append(f"主页：{profile['profile_url']}")
         facts = {"account_id32": account, "profile": profile}
         return success("Dota 2 玩家资料", lines, None if default_target else facts)
-    match = projection["match"]
-    lines = [f"Dota 2 比赛摘要：{match['match_id']}"]
-    lines.append(f"开始时间：{_format_time(match['start_time'], timezone_name)}")
-    lines.append(
-        f"时长：{_duration(match['duration'])}；模式：{_mode(match['game_mode'])}"
-    )
-    lines.append(
-        f"天辉胜利：{'是' if match['radiant_win'] is True else '否' if match['radiant_win'] is False else '未知'}"
-    )
-    for player in match["players"][:10]:
-        account = player["account_id32"] or "匿名/未公开"
-        lines.append(
-            f"{account} | {_hero(player['hero_id'])} | {_outcome_label(player['outcome'])} | "
-            f"{player['kills'] if player['kills'] is not None else '?'}-"
-            f"{player['deaths'] if player['deaths'] is not None else '?'}-"
-            f"{player['assists'] if player['assists'] is not None else '?'}"
-        )
-    return success("Dota 2 比赛摘要", lines, {"match": match})
 
 
 async def _timezone_name(services):
@@ -653,10 +765,6 @@ def _retry_after_seconds(value):
 
 
 def _mode(value):
-    if value == 23:
-        return "Turbo"
-    return (
-        f"模式#{value}"
-        if isinstance(value, int) and not isinstance(value, bool)
-        else "模式未提供"
-    )
+    from .labels import mode_label
+
+    return mode_label(value)

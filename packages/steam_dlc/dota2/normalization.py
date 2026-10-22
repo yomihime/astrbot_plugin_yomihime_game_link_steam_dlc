@@ -204,6 +204,25 @@ def normalize_match(payload: object, match_id: str) -> MatchSummary:
                 deaths=_int(row.get("deaths"), maximum=1_000_000),
                 assists=_int(row.get("assists"), maximum=1_000_000),
                 outcome=_outcome(slot, payload.get("radiant_win")),
+                name=_bounded_text(row.get("personaname"), _MAX_NAME)
+                or _bounded_text(row.get("name"), _MAX_NAME),
+                level=_int(row.get("level"), maximum=1_000),
+                gold_per_min=_int(row.get("gold_per_min"), maximum=1_000_000),
+                xp_per_min=_int(row.get("xp_per_min"), maximum=1_000_000),
+                last_hits=_int(row.get("last_hits"), maximum=1_000_000),
+                denies=_int(row.get("denies"), maximum=1_000_000),
+                hero_damage=_int(row.get("hero_damage")),
+                tower_damage=_int(row.get("tower_damage")),
+                hero_healing=_int(row.get("hero_healing")),
+                items=tuple(
+                    _int(row.get(f"item_{index}"), maximum=1_000_000)
+                    for index in range(6)
+                ),
+                backpack=tuple(
+                    _int(row.get(f"backpack_{index}"), maximum=1_000_000)
+                    for index in range(3)
+                ),
+                neutral_item=_int(row.get("item_neutral"), maximum=1_000_000),
             )
         )
     return MatchSummary(

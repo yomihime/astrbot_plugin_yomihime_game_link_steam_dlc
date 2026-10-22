@@ -76,6 +76,15 @@ def steam_id64_from_account(account: str | int) -> str:
     return str(_STEAM_ID_BASE + account_id)
 
 
+def parse_steam_binding_target(value: str) -> str:
+    """Normalize an explicit ID32 or legacy Steam profile binding target."""
+    if isinstance(value, str) and _DECIMAL.fullmatch(value):
+        number = int(value)
+        if str(number) == value and 1 <= number <= _UINT32_MAX:
+            return steam_id64_from_account(value)
+    return parse_steam_id(value)
+
+
 def parse_dota_account(value: str | int) -> int:
     """Parse an explicit Dota target as ID32 or public individual SteamID64."""
     if isinstance(value, bool):

@@ -5,7 +5,7 @@ const MODULES = Object.freeze({
     title: 'Steam',
     summary: '共享账号关联已实现。关联由用户声明，不代表已验证 Steam 账号所有权。',
     commands: [
-      ['/ygl steam bind <SteamID64 或 profiles URL>', '在私聊中关联当前用户的 Steam 账号。'],
+      ['/ygl steam bind <Dota ID32、SteamID64 或 profiles URL>', '在私聊中关联当前用户的 Steam 账号。'],
       ['/ygl steam binding', '在私聊中查看当前用户关联。'],
       ['/ygl steam unbind', '在私聊中解除当前用户关联。'],
       ['/ygl steam status', '查看使用说明。'],
@@ -13,11 +13,13 @@ const MODULES = Object.freeze({
   },
   dota2: {
     title: 'Dota2',
-    summary: '最近战绩、玩家资料和单场基础摘要已实现，使用 OpenDota 公开数据。',
+    summary: '近期战绩、样本统计、可读资料与个人战报已实现，使用 OpenDota 公开数据，不提交解析。',
     commands: [
       ['/ygl dota2 recent [账号] [--limit N]', '默认 5 场，最多 20 场；省略账号时使用当前用户的 Steam 关联。'],
       ['/ygl dota2 profile [账号]', '查看精简玩家资料；省略账号时使用当前用户的 Steam 关联。'],
-      ['/ygl dota2 match <match_id>', '查看已有比赛摘要，不提交比赛解析。'],
+      ['/ygl dota2 stats [账号] [--limit N]', '默认20场，范围1–20；显示实际有效样本、独立分母和本次英雄/模式分布。'],
+      ['/ygl dota2 last [账号]', '查询该玩家上一场基础结算；省略账号时使用当前用户关联。'],
+      ['/ygl dota2 match <match_id> [--account <账号>]', '指定账号查看个人焦点，无账号保持全场概览；不读取默认关联，不提交解析。'],
       ['/ygl dota2 status', '查看功能说明。'],
     ],
   },

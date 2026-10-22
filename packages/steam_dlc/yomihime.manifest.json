@@ -86,7 +86,7 @@
           "operation_path": "bind",
           "capability_id": "bind",
           "parameter_mapping": {},
-          "help_text": "私聊关联 SteamID64 或标准 profiles URL；用户声明，不验证所有权。",
+          "help_text": "私聊关联 Dota ID32、SteamID64 或标准 profiles URL；用户声明，不验证所有权。",
           "parameter_mode": "raw_tail",
           "raw_tail_parameter": "steam_id"
         },
@@ -151,7 +151,7 @@
       "resources": [
         {
           "path": "pages/steam/entry.js",
-          "sha256": "36445e6b184616e9895b40fad8e926d059824938cb45fb49ffc73b961f732e41"
+          "sha256": "f42af7e990ed02140ffad564238a7236af00faf346dc488c5933b7dc7c80cc2f"
         },
         {
           "path": "pages/steam/style.css",
@@ -247,6 +247,11 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
               }
             },
             "required": [],
@@ -270,6 +275,124 @@
           "invocation_policy": "command_only",
           "effect": "read_only",
           "privacy_floor": "public"
+        },
+        {
+          "capability_id": "stats",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "command": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_capabilities": [
+            {
+              "module_id": "steam_dlc/steam",
+              "capability_id": "identity"
+            }
+          ],
+          "required_sources": [
+            "opendota"
+          ]
+        },
+        {
+          "capability_id": "stats_explicit",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              }
+            },
+            "required": [
+              "account"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "opendota"
+          ]
+        },
+        {
+          "capability_id": "last",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "command": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_capabilities": [
+            {
+              "module_id": "steam_dlc/steam",
+              "capability_id": "identity"
+            }
+          ],
+          "required_sources": [
+            "opendota"
+          ]
+        },
+        {
+          "capability_id": "last_explicit",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              }
+            },
+            "required": [
+              "account"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "opendota"
+          ]
         }
       ],
       "commands": [
@@ -293,7 +416,7 @@
           "operation_path": "match",
           "capability_id": "match",
           "parameter_mapping": {},
-          "help_text": "单场基础摘要 <match_id>；不提交解析。",
+          "help_text": "单场基础摘要 <match_id> [--account <账号>]；无账号为全场概览，不隐式读取绑定，不提交解析。",
           "parameter_mode": "raw_tail",
           "raw_tail_parameter": "command"
         },
@@ -302,6 +425,22 @@
           "capability_id": "status",
           "parameter_mapping": {},
           "help_text": "查看 Dota2 查询状态。"
+        },
+        {
+          "operation_path": "stats",
+          "capability_id": "stats",
+          "parameter_mapping": {},
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "command",
+          "help_text": "近期样本统计 [账号] [--limit N]；默认20，范围1–20；不是全生涯。"
+        },
+        {
+          "operation_path": "last",
+          "capability_id": "last",
+          "parameter_mapping": {},
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "command",
+          "help_text": "该玩家上一场 [账号]；最近20条内选首条有效记录，最多请求一次详情，不提交解析。"
         }
       ],
       "tools": [
@@ -326,9 +465,27 @@
           "name": "steam_dlc_dota2_match",
           "capability_id": "match",
           "parameter_mapping": {
-            "match_id": "match_id"
+            "match_id": "match_id",
+            "account": "account"
           },
-          "description": "查询明确 match_id 的已有基础比赛数据；不提交解析。"
+          "description": "查询用户明确提供的 match_id 基础比赛数据；可选 account 精确定位该玩家，无账号仅全场概览，从不读取默认绑定，不提交解析。只解释实际返回数据，缺项不能补造。"
+        },
+        {
+          "name": "steam_dlc_dota2_stats",
+          "capability_id": "stats_explicit",
+          "parameter_mapping": {
+            "account": "account",
+            "limit": "limit"
+          },
+          "description": "查询明确账号最近N场实际样本统计（默认20，最多20），各指标独立有效分母，不是生涯或完整日期战绩。必须由用户明确提供 account；不能读取或推导我的默认绑定；只解释返回的事实，未知字段不能补造。"
+        },
+        {
+          "name": "steam_dlc_dota2_last",
+          "capability_id": "last_explicit",
+          "parameter_mapping": {
+            "account": "account"
+          },
+          "description": "查询明确账号来源列表第一条有效比赛及该玩家基础结算，最多20条列表和一次详情，无录像解析。必须由用户明确提供 account；不能读取或推导我的默认绑定；只解释返回的事实，未知字段不能补造。"
         }
       ],
       "display": {
@@ -386,7 +543,7 @@
       "resources": [
         {
           "path": "pages/dota2/entry.js",
-          "sha256": "36445e6b184616e9895b40fad8e926d059824938cb45fb49ffc73b961f732e41"
+          "sha256": "f42af7e990ed02140ffad564238a7236af00faf346dc488c5933b7dc7c80cc2f"
         },
         {
           "path": "pages/dota2/style.css",
@@ -457,7 +614,7 @@
       "resources": [
         {
           "path": "pages/cs2/entry.js",
-          "sha256": "36445e6b184616e9895b40fad8e926d059824938cb45fb49ffc73b961f732e41"
+          "sha256": "f42af7e990ed02140ffad564238a7236af00faf346dc488c5933b7dc7c80cc2f"
         },
         {
           "path": "pages/cs2/style.css",
@@ -528,7 +685,7 @@
       "resources": [
         {
           "path": "pages/deadlock/entry.js",
-          "sha256": "36445e6b184616e9895b40fad8e926d059824938cb45fb49ffc73b961f732e41"
+          "sha256": "f42af7e990ed02140ffad564238a7236af00faf346dc488c5933b7dc7c80cc2f"
         },
         {
           "path": "pages/deadlock/style.css",

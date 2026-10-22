@@ -2,7 +2,7 @@
 
 Steam DLC 是 AstrBot 游戏连结的独立 alpha 插件，包含 Steam 账号关联、Dota 2 查询，以及 CS2 和 Deadlock 的状态模块。候选兼容面为 Core 分支 `feat/steam-dlc-support`、canonical SDK `0.1.0a13`、模块 ABI `2.0`；DLC 分支为 `feat/steam-dlc-alpha`。这些分支尚未合并或发布，候选 ZIP 和验收记录以最终构建产物为准。
 
-请使用精确配对的 Core 与 DLC ZIP，并核对包内 `BUILD.json` 的源提交和文件摘要。候选的兼容合同见[架构文档](docs/architecture.md)，合并与发布由维护者决定。
+请使用精确配对的 Core 与 DLC ZIP，DLC ZIP 的 `BUILD.json` 记录其源提交和文件摘要；Core ZIP 的来源、构建输入与摘要由配对交付记录证明。候选的兼容合同见[架构文档](docs/architecture.md)，合并与发布由维护者决定。
 
 ## 安装
 
@@ -18,19 +18,29 @@ Steam DLC 是 AstrBot 游戏连结的独立 alpha 插件，包含 Steam 账号�
 
 | 命令 | 用途 |
 | --- | --- |
-| `/ygl steam bind <SteamID64 或标准 profiles URL>` | 私聊中关联默认 Steam 账号 |
+| `/ygl steam bind <Dota ID32、SteamID64 或标准 profiles URL>` | 私聊中关联默认 Steam 账号 |
 | `/ygl steam binding` | 私聊查看当前关联状态 |
 | `/ygl steam unbind` | 私聊解除当前关联 |
 | `/ygl dota2 recent [账号] [--limit N]` | 查询最近战绩；默认 5 场，最多 20 场 |
 | `/ygl dota2 profile [账号]` | 查询精简玩家资料 |
-| `/ygl dota2 match <match_id>` | 查询单场基础摘要 |
+| `/ygl dota2 stats [账号] [--limit N]` | 最近 N 场实际样本统计；默认20，范围1–20 |
+| `/ygl dota2 last [账号]` | 最近列表首条有效比赛的个人战报 |
+| `/ygl dota2 match <match_id> [--account <账号>]` | 单场概览；可显式指定玩家焦点 |
 | `/ygl dota2 status` | 查看 Dota 2 能力状态 |
 | `/ygl cs2 status` | 查看 CS2 模块状态 |
 | `/ygl deadlock status` | 查看 Deadlock 模块状态 |
 
 Steam 的 `bind`、`binding`、`unbind` 仅允许私聊。关联是用户主动声明（`self_asserted`），插件不验证账号所有权，也不提供 Steam 登录或 OpenID 验证。
 
-Dota 2 `recent` 和 `profile` 省略账号时，会读取发起命令的当前用户默认关联；因此可在群聊中使用，但只查询发起者自己的关联。指定账号可用 Dota ID32 或 SteamID64。最近场次的 `--limit` 范围是 1–20。命令参数不接受任意 URL。模型工具 `steam_dlc_dota2_recent`、`steam_dlc_dota2_profile` 必须显式提供 `account`；`steam_dlc_dota2_match` 必须显式提供 `match_id`，工具不会代用户读取默认关联。
+Dota 2 `recent`、`profile`、`stats` 和 `last` 省略账号时，会读取发起命令的当前用户默认关联；因此可在群聊中使用，但只查询发起者自己的关联。指定账号可用 Dota ID32 或 SteamID64。最近场次的 `--limit` 范围是 1–20。命令参数不接受任意 URL。模型工具 `steam_dlc_dota2_recent`、`steam_dlc_dota2_profile`、`steam_dlc_dota2_stats`、`steam_dlc_dota2_last` 必须显式提供 `account`；`steam_dlc_dota2_match` 必须显式提供 `match_id`，可选 `account` 为单场焦点；工具不会代用户读取默认关联。旧 `match` 不带焦点仍为全场概览，从不隐式读取绑定。
+
+Steam bind 接受规范 ASCII ID32（1–4294967295，支持短值和十位值）、合法 SteamID64 和标准 HTTPS profiles URL；ID32 URL、前导零、Unicode 数字等拒绝。只保存同一 Steam 身份，不新增 Dota 绑定副本；这是本人声明，不能证明账号所有权。
+
+`stats` 只用一次最多20条的近期请求，按有效比赛 ID 去重，列出请求/返回/有效、无效/重复以及胜负未知数。胜率分母为胜+负，K/D/A 和时长均值各有自己的有效样本数；英雄与模式分布只代表本次样本，Turbo 分开统计。时间不足或顺序不确定时不推算连续胜负；没有全生涯、固定日期完整战绩或评分承诺。资料显示可读段位/星级及原始值，不估算 MMR。
+
+`last` 在最多20条近期记录中选来源第一条有效比赛，最多再取一次详情；详情缺失或失败不改查更早比赛，时间顺序不明会提示。焦点仅按明确账号匹配，匿名或不在场不猜人。基础详情有字段才显示等级、经济、伤害和物品；0与未提供严格区分，物品为最终槽位而非购买时间线，不会提交录像解析。
+
+统计与战报使用公开 SDK DisplayDocument/结构化 blocks/cards，由 Core 排版、字体与主题渲染；相同投影保留完整文字回退。所有默认关联路径整份 `model_facts=None`，只有显式公开输入可供宿主模型解释有界事实。缓存说明取数时间与命中；扩展比赛详情使用 v2、新统计/上一场使用 v1 键，旧详情缺项不当作0。
 
 CS2 和 Deadlock 当前只有模块接入、生命周期、帮助和真实状态报告，没有游戏数据查询能力。
 

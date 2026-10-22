@@ -46,6 +46,18 @@ class MatchPlayer:
     deaths: int | None
     assists: int | None
     outcome: Outcome
+    name: str | None = None
+    level: int | None = None
+    gold_per_min: int | None = None
+    xp_per_min: int | None = None
+    last_hits: int | None = None
+    denies: int | None = None
+    hero_damage: int | None = None
+    tower_damage: int | None = None
+    hero_healing: int | None = None
+    items: tuple[int | None, ...] = (None, None, None, None, None, None)
+    backpack: tuple[int | None, ...] = (None, None, None)
+    neutral_item: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -3,7 +3,11 @@
 import yomihime_game_link_sdk as ygl
 
 from ..shared.output import failure, success
-from ..shared.steam_ids import account_id32, parse_steam_id
+from ..shared.steam_ids import (
+    account_id32,
+    parse_steam_binding_target,
+    parse_steam_id,
+)
 
 _PRIVATE = ygl.Privacy.PRIVATE
 _CAPABILITIES = ("bind", "binding", "unbind", "identity", "status")
@@ -81,7 +85,7 @@ class _Handler:
                 value = parameters.get("steam_id")
                 if not isinstance(value, str):
                     raise ValueError
-                steam_id = parse_steam_id(value.strip())
+                steam_id = parse_steam_binding_target(value.strip())
                 payload = {"steam_id64": steam_id, "association": "self_asserted"}
                 if record is None:
                     saved = await collection.create("default", payload)
@@ -93,6 +97,7 @@ class _Handler:
                     "游戏连结 · Steam · 关联",
                     (
                         f"已关联 SteamID64：{steam_id}",
+                        f"Dota ID32：{account_id32(steam_id)}",
                         "关联方式：self_asserted（用户声明，未验证所有权）。",
                         f"绑定修订：{saved.revision}",
                     ),
@@ -118,7 +123,7 @@ class _Handler:
             if record is None or record.value.get("steam_id64") is None:
                 return failure(
                     ygl.ErrorCode.UNBOUND,
-                    "尚未关联 Steam 账号，请私聊使用 /ygl steam bind <SteamID64>。",
+                    "尚未关联 Steam 账号，请私聊使用 /ygl steam bind <ID32|SteamID64>。",
                     privacy=_PRIVATE,
                 )
             steam_id = parse_steam_id(record.value["steam_id64"])
@@ -165,7 +170,8 @@ class _Handler:
         except ValueError:
             return failure(
                 ygl.ErrorCode.PARAMETER_ERROR,
-                "请输入有效的个人 SteamID64 或标准 https://steamcommunity.com/profiles/数字ID 地址。",
+                "请输入有效的 Dota ID32（1..4294967295）、个人 SteamID64 "
+                "或标准 https://steamcommunity.com/profiles/SteamID64 地址。",
                 privacy=_PRIVATE,
             )
         except ygl.ServiceUnavailable:

@@ -15,6 +15,7 @@ DLC 只使用 Core 安装的 canonical SDK、Python 标准库和捕获包内纯�
 `shared/steam_ids.py` 提供以下纯函数：
 
 ```python
+parse_steam_binding_target(value: str) -> str
 parse_steam_id(value: str) -> str
 account_id32(steam_id64: str) -> int
 steam_id64_from_account(account: str | int) -> str
@@ -52,16 +53,18 @@ Steam 关联数据保存在 SDK USER collection `binding`，其中 `default` 是
 
 ## Dota 2 能力
 
-`dota2.module:Factory` 注册 `recent`、`profile`、`match`、`status` handlers，collector/evaluator 为空。模块具有真实 `start`、`stop`、`check_health` 生命周期。所有 Dota 能力结果均为 PUBLIC；PRIVATE identity 仅用于解析默认查询目标，不向模型 facts 输出 SteamID、关联信息或 binding revision。默认查询呈现本次公开 Dota 账号目标即可。
+`dota2.module:Factory` 注册 `recent`、`profile`、`stats`、`last`、`match`、`status` handlers；`stats_explicit`/`last_explicit` 是同一查询的显式账号 Tool 入口，schema 必填 account 且不声明私有 identity 依赖，collector/evaluator 为空。模块具有真实 `start`、`stop`、`check_health` 生命周期。所有 Dota 能力结果均为 PUBLIC；PRIVATE identity 仅用于解析默认查询目标，不向模型 facts 输出 SteamID、关联信息或 binding revision。默认查询呈现本次公开 Dota 账号目标即可。
 
 | 能力 | COMMAND 参数 | Tool 参数 | 默认身份 | 数据源 |
 | --- | --- | --- | --- | --- |
 | `recent` | raw-tail `command`：可选账号与 `--limit N`，默认 5，范围 1–20 | `account` 必填，`limit` 可选 | 省略账号时读取当前 COMMAND actor 的关联 | OpenDota |
 | `profile` | raw-tail `command`：可选账号 | `account` 必填 | 省略账号时读取当前 COMMAND actor 的关联 | OpenDota |
-| `match` | raw-tail `command`：显式 match ID | `match_id` 必填 | 不适用 | OpenDota |
+| `stats` | raw-tail 可选账号及 `--limit N`，默认20，范围1–20 | `account` 必填，limit可选 | 只限省略账号的COMMAND | OpenDota一次列表 |
+| `last` | raw-tail 可选账号 | `account` 必填 | 只限省略账号的COMMAND | 最多20条列表+一次详情 |
+| `match` | raw-tail `command`：显式 match ID，可选 `--account` | `match_id` 必填，account可选 | 从不读取绑定 | OpenDota |
 | `status` | 无参数 | 无 Tool | 不适用 | 本地模块状态 |
 
-默认 recent/profile 查询可在群聊中发起，但只使用当前发起者自己的账号关联。显式账号路径不调用 identity 依赖。Tool 路径必须给出显式 `account` 或 `match_id`，不能省略账号、推导 actor 或接受任意 URL。Dota 账号接受规范的 ID32 或 SteamID64。
+默认 recent/profile/stats/last 查询可在群聊中发起，但只使用当前发起者自己的账号关联。显式账号路径不调用 identity 依赖。Tool 路径必须给出显式 `account` 或 `match_id`，不能省略账号、推导 actor 或接受任意 URL。Dota 账号接受规范的 ID32 或 SteamID64。
 
 OpenDota source id 为 `opendota`，host 固定为 `api.opendota.com`。唯一请求为：
 
@@ -85,7 +88,7 @@ CS2 和 Deadlock 当前只注册真实 `status`、生命周期与帮助。状态
 
 Core 提供通用固定配对静态投影：维护者显式传入 `--external-page-package`，只捕获完整合法 manifest 原字节及已声明、摘要匹配的静态资源，不导入/复制 DLC Python，也不放宽内置 FF14 Python 白名单。Core 的封闭 loader/样式表与资源在独立 staging 一并生成。可选 `external-page-projection.json` 限定构建时 manifest；运行时必须匹配当前完整 active lease 的原 manifest 摘要和模块声明，否则 catalog 清空 pages/resources，现有页面会话/配置授权边界拒绝。资源路径含完整 manifest 摘要，保留资源相对布局；不接受任意 URL。
 
-这组 alpha 必须同时安装匹配的 Core/DLC ZIP，manifest 或页面更新须重建配对资源并重新打开宿主页；不是任意外包动态页面装载。缺配对/失配只撤销外包 Web 页面，不扩大命令/Tool 权限。SDK a13、业务权限、既有公共前端合同均不变。具体源提交及文件摘要由包内 `BUILD.json` 标识。
+这组 alpha 必须同时安装匹配的 Core/DLC ZIP，manifest 或页面更新须重建配对资源并重新打开宿主页；不是任意外包动态页面装载。缺配对/失配只撤销外包 Web 页面，不扩大命令/Tool 权限。SDK a13、业务权限、既有公共前端合同均不变。DLC 源提交及文件摘要由 DLC ZIP 的 `BUILD.json` 标识；Core 来源与外部页面输入由配对交付记录证明。
 
 页面规范源为 `packages/steam_dlc/pages/entry.js`、`style.css`。包 ABI 要求资源路径在四模块间唯一，`scripts/sync_page_resources.py` 因此生成四份同字节、独立授权路径并更新 manifest SHA-256；`--check` 检查副本与摘要漂移。ZIP 仅收集 manifest 明确声明且位于固定模块路径的 JS/CSS，不收集规范源、测试依赖或任意静态文件。Core shell 与内置 FF14 使用 Core 自身的构建流程，DLC 页面保持独立。
 
@@ -104,3 +107,16 @@ python scripts/smoke_two_plugins.py --core-zip <core.zip> --dlc-zip <steam-dlc.z
 ```
 
 Host harness 应在独立进程、新工作目录下再以 `--order dlc-first` 运行。它安装实际 ZIP 并使用真实 AstrBot 4.29.1 Host、插件管理、生命周期和 Core；事件送达与 OpenDota HTTPS 响应为合成数据，因此不证明真实 IM、在线 API 或浏览器 UI。单测、静态检查、包审计、Host harness、在线 API、IM/UI 和发布记录是分层证据；不得用旧修订结果证明新候选通过，也不得把尚未执行的检查写成通过。
+
+
+## 近期统计与战报投影
+
+绑定入口专用 parse_steam_binding_target 接受规范1..UINT32 ID32并转换为字符串 SteamID64；内部 parse_steam_id 严格语义不变，USER binding/default、CAS、tombstone及同账号replace规则不变，无迁移。
+
+statistics.project_stats 仅使用请求上限内的原始条目：先规范化有效ID、首条去重，不补取。胜率=胜/(胜+负)，未知胜负排除；击杀/死亡/助攻/时长均值逐项排除缺失并报告各自分母。模式23为Turbo，已知其他模式为非Turbo，未知代码单列；英雄/模式只代表本次样本。全部时间严格从新到旧才确认顺序，连续结果必须无歧义且只在本样本内。有限段位/模式事实标签独立于统计，不推断MMR。
+
+last 保留列表选择元数据和默认身份来源，选第一条有效记录后复用 match 投影；不因详情失败继续查老比赛。match 无焦点绝不读identity；焦点按明确account_id32唯一匹配，重复/匿名/不在场明确提示。MatchPlayer只追加基础响应可选字段；缺项None与实际0分离，最终6装备/3背包/中立槽不代表购买顺序。
+
+新 stats/last 使用v1缓存键、扩展match使用v2，旧recent投影不改。缓存仅存公开投影，不存绑定状态；取数UTC时间持久化，命中状态逐次生成。默认绑定路径返回整体 model_facts=None；显式输入输出有界事实，不含原始payload。
+
+presentation.py 从同一投影生成结构化 FieldsBlock/TableBlock/TextBlock 和公开 cards.Document。外部名称采用字面 Inline/Span，清理控制/不可见字符，无TaggedText、URL图片、私有renderer或模块字体引擎。Core负责渲染，结构化文本保留所有关键字段及缺失说明；模块没有新增模型客户端、发送通道或订阅后台。
