@@ -1,6 +1,6 @@
 # 架构与合同
 
-本文定义 Steam DLC alpha 的包边界、SDK 合同、模块能力与验收边界。目标兼容面是 Core 分支 `feat/steam-dlc-support` 提供的 canonical `yomihime_game_link_sdk 0.1.0a13`，模块 ABI `2.0`、bridge v1；DLC 候选分支为 `feat/steam-dlc-alpha`。截至本文编写，候选尚未合并或发布。Core PR 链接待协调者补入；包内 `BUILD.json` 和正式验收记录才是具体构建版本的证据。
+本文定义 Steam DLC alpha 的包边界、SDK 合同、模块能力与验收边界。目标兼容面是 Core 分支 `feat/steam-dlc-support` 提供的 canonical `yomihime_game_link_sdk 0.1.0a13`，模块 ABI `2.0`、bridge v1；DLC 候选分支为 `feat/steam-dlc-alpha`。截至本文编写，候选尚未合并或发布。[Core Draft PR #11](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/pull/11) 仍待维护者合并；包内 `BUILD.json` 和正式验收记录才是具体构建版本的证据。
 
 ## 包与依赖边界
 
@@ -80,6 +80,12 @@ CS2 和 Deadlock 当前只注册真实 `status`、生命周期与帮助。状态
 四模块各声明 `home` 帮助/状态页和 `settings` 普通设置页，使用 Core `8981ee2` 上已有的 `PageModule.mount`、`ModulePageServices.config`、scope 与样式 token，不导入主壳私有组件、不建立 HTTP 客户端。每个设置页只授权 `reply_theme`，Dota 另外授权 `timezone`。字段说明、当前值、版本和主题选项均来自配置服务；跟随 Core 的主题使用 `clear`，不持久化一个伪造默认值。账号关联与查询仍通过命令入口。
 
 页面只读当前模块配置，并用 expected revision 保存；CAS 冲突后要求重新读取，未知写入结果不自动重试。异步回调同时检查 scope、owner/runtime/epoch/boundary，页面失效或销毁后不提交旧响应，销毁页面创建的监听和 DOM。未保存修改和待完成操作通过公开 `navigationImpact` 通知 shell。
+
+普通设置草稿只缓存 set/clear 意图，按 owner/runtime/epoch/boundary 分区，最多 4 分区、key 最多 4096 字符、value 最多 256 字符。不缓存服务、DOM、秘密、账号或整份后端快照。正常切页保留，观察到身份/授权撤销时清除；同 owner 新身份驱逐旧分区，挂载 token 阻止旧异步回写。每次有效意图改变递增导航 version，撤销旧确认；相同意图不虚增。公开 scope v1 不提供 dispose 原因，仅 scope 撤销不能承诺即刻清所有物理分区；旧身份不可复用，fresh iframe 销毁原 realm。
+
+Core `c11d5a54` 提供通用固定配对静态投影：维护者显式传入 `--external-page-package`，只捕获完整合法 manifest 原字节及已声明、摘要匹配的静态资源，不导入/复制 DLC Python，也不放宽内置 FF14 Python 白名单。Core 的封闭 loader/样式表与资源在独立 staging 一并生成，原 dots 页面只读。可选 `external-page-projection.json` 限定构建时 manifest；运行时必须匹配当前完整 active lease 的原 manifest 摘要和模块声明，否则 catalog 清空 pages/resources，现有页面会话/配置授权边界拒绝。资源路径含完整 manifest 摘要，保留资源相对布局；不接受任意 URL。
+
+这组 alpha 必须同时安装匹配的 Core/DLC ZIP，manifest 或页面更新须重建配对资源并重新打开宿主页；不是任意外包动态页面装载。缺配对/失配只撤销外包 Web 页面，不扩大命令/Tool 权限。SDK a13、业务权限、既有公共前端合同均不变。具体冻结提交和完整包摘要见 plan。
 
 页面规范源为 `packages/steam_dlc/pages/entry.js`、`style.css`。包 ABI 要求资源路径在四模块间唯一，`scripts/sync_page_resources.py` 因此生成四份同字节、独立授权路径并更新 manifest SHA-256；`--check` 检查副本与摘要漂移。ZIP 仅收集 manifest 明确声明且位于固定模块路径的 JS/CSS，不收集规范源、测试依赖或任意静态文件。本轮不改主项目 `pages/**` 或 `modules/ff14/pages/**` dots，不声称已同步 dots 新视觉。
 

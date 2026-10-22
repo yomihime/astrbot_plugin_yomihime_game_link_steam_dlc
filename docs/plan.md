@@ -1,109 +1,91 @@
 # Steam DLC alpha 执行与验收
 
-当前结论：候选尚未完整通过验收。用户已批准追加 1 轮，仅修 R4-I1 的 DLC 页面适配及其验收。既有 API、业务、生命周期与包审计通过记录保留。Core `8981ee2` 完整 CI 随后结束为 failure：2515 项中 3 errors、87 skipped，均在安装样例状态调用；Windows 检查通过，build skipped，正在单独诊断。页面修复与 Core CI 分别记录，不能由局部门禁宣布完整 alpha 交付通过。
+当前状态：正式配对候选已通过本地包审计、真实 Host 两种加载顺序及重启、真实 Core 页浏览器门禁；R6 独立代码/正式包审查为 **0 Blocker / 0 Important / 0 Polish**。最新 Core CI 与 R6 最终验收证据补核仍在进行，尚不宣布整体 alpha 交付通过。
 
-任务书：`Steam_DLC_Codex_Taskbook.txt`。[public alpha 分支](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/tree/feat/steam-dlc-alpha)位于指定的 `astrbot_plugin_yomihime_game_link_steam_dlc` checkout。main 保留建库初始提交 `01457b2f80ab18ecf735109c76b9575ef7d34890`；安装使用已审计 ZIP。
+## 修订、产物与权限
 
-DLC 运行源冻结于 `32e24195b96b6e7a901172736eba2093f24c48f0`；最终验收脚本与已验安装包来源为 `4645f80f99eb7d107bcbb578291fd7acf0eb86b1`。后续文档提交不改变已验包。Core 独立 worktree 分支 `feat/steam-dlc-support`，提交 `8981ee2b2c6d0a447728f3b257bb5d09380154c8`，基线 `11cf85e31391453ab5140dba8181089469db5487`；[Draft PR #11](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/pull/11)。canonical SDK `0.1.0a13`、模块 ABI `2.0`、Host bridge `1`。
+任务依据为 `Steam_DLC_Codex_Taskbook.txt` 及用户的三次范围追加。独立 public [DLC 仓库](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc)，指定本地 checkout `E:\AI\Dev\AstrBot\astrbot_plugin_yomihime_game_link_steam_dlc`。开发分支 `feat/steam-dlc-alpha`；main 保留建库初始提交 `01457b2f80ab18ecf735109c76b9575ef7d34890`，安装使用审计 ZIP。
+
+正式配对源码冻结：DLC `a9a2a362dab2b0ffaac3414b702b24fd6b026270`；Core 独立 worktree `worktrees/game-link-dlc-support`、分支 `feat/steam-dlc-support`、`c11d5a54b3977327729b4b8d38d1f66331fb2e50`，基线 `11cf85e31391453ab5140dba8181089469db5487`；[Core Draft PR #11](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/pull/11)。canonical SDK `0.1.0a13`、模块 ABI `2.0`、Host bridge `1`。后续只含文档的提交不冒充这两个已验安装包的构建来源。
+
+| 正式候选 | bytes / members | 完整 SHA-256 |
+| --- | --- | --- |
+| DLC ZIP，源 `a9a2a362` | 70,507 / 32 | `e8bae989c7f4f3fdc08056e8d31e3a5a98dd9a6b8592306fc0251bdf07bff985` |
+| 配对 Core ZIP，源 `c11d5a54` | 1,264,438 / 268 | `f60a72ea15e81781f04aaa786136f60605e6d540304010d5bee0c28850ae0a81` |
+| 复用 canonical a13 wheel | 48,137 / 24 | `3ea9366bfd937875066d74f764f6635ea845507ac2ee054a92f3bae38f531015` |
+
+候选内容、CRC、安全路径、资源摘要、源码逐字节匹配及 SDK 单一来源审计通过。Core 只带显式配对的 DLC manifest/静态资源，不带 DLC Python。完整 manifest 配对摘要为 `d1da50c079d02f275cf7243c6f4a9015b322b849e38bcc2a16f0f5675042e0ef`。完全匹配的已验包直接复用，不重复构建。待所有交付门禁闭合后才将这组精确字节提升到本地 `dist/`，并更新 `dist/delivery.json`；旧失败候选保留在本地证据区。
+
+建库、clone、提交、推送与 Draft PR 已获任务书授权。合并、Release、日常机器人安装不在本轮执行范围。原 Core checkout、dots 的 `pages/**` 与 `modules/ff14/pages/**` 均保持只读；前端仅在自有 staging 使用同一固定基线构建产物，没有拼接未完成 UI 分支。
+
+## REQ 验收链
 
 | REQ | 实现 / 提交 | 验证 / 当前状态 |
 | --- | --- | --- |
-| REQ-01 建库 | public 建库、指定路径 clone；规范 `ccba87d` | 远端、本地 owner/基线/分支核对 passed |
-| REQ-02 协作 | economy 文档、真实 agent、最多两子任务、单 writer | 新上下文初审与两轮修复复审完成 |
-| REQ-03 包与 SDK | `f45e8c3`、`32e2419`；完整捕获四模块/shared、AGPL-3.0、单 canonical SDK | ZIP/CRC/摘要审计、非 editable wheel 安装及真实 SDK origin passed |
-| REQ-04 生命周期 | Core `2f88b99`、`be5b43d`、`8981ee2` 通用桥接/lease/分包服务 | 两顺序、幂等、旧 lease、Core/DLC 重载、启停、真实卸载、FF14 共存 passed |
-| REQ-05 Steam | `f45e8c3`；个人 SteamID 位域/URL、字符串、self_asserted、唯一 USER record、CAS/tombstone | 纯函数/模块测试及真实换绑/解绑/重启保留 passed；不依赖 OpenDota 收录 |
-| REQ-06 主体依赖 | Core `be5b43d` 只读 collection 与 OWNER proof；最小 PRIVATE DTO | 同群 A/B、跨平台、未绑定、群管理拒绝、换绑快照、provider 停用、旧 Tool epoch passed；worker 写拒绝通过 |
-| REQ-07 Dota | `32e2419`；三查询、固定 GET、PUBLIC 缓存、有界 DTO、中文英雄/时区 | 23 项 DLC 测试、Core 缓存/HTTP 提示合同、Host 三查询 passed；匿名 API 三 GET 均 200 |
-| REQ-08 CS2/Deadlock | `f45e8c3`；实际 factory/生命周期/help/status | 实际加载/状态/管理启停/卸载 passed；游戏数据待实现，无虚构 Tool |
-| REQ-09 管理与 UI | 通用目录、状态、普通设置、公开 catalog | 真实认证 Dashboard API 与 timezone CAS passed；浏览器模块列表 passed、Dota 配置路由 failed（R4-I1）；dots 未同步 |
-| REQ-10 门禁与独审 | 冻结产物、离线 CI、真实 Host 分层记录 | 受影响门禁与 R3 范围内独审 passed；新增 R4-I1 待闭合；完整 Core CI 另记；真实 IM/模型未验 |
-| REQ-11 候选产物 | 两开发分支已推送、Core Draft PR、已验 ZIP 和 a13 wheel | 保存精确候选；因 R4-I1 不宣称完整验收通过；本地 `dist/delivery.json` 标注当前状态，不自动合并或 Release |
+| REQ-01 建库 | public 仓库、指定路径 clone；规范 `ccba87d` | owner、remote、基线、开发分支核实 passed |
+| REQ-02 协作 | economy、真实 agents、最多两活跃子任务、单 writer | 初审及历史修复保留；当前第 4 轮修复复审，获准总上限 5 |
+| REQ-03 包与 SDK | DLC 完整捕获四模块/shared；AGPL-3.0；a13/ABI2/bridge1 | 非 editable canonical wheel、正式包来源及 Host SDK origin passed；DLC 无 SDK vendoring |
+| REQ-04 生命周期 | Core 通用 Star 发现、实例 lease/generation、服务与准入 | 正式配对两顺序、幂等、旧 lease、Core/DLC 重载、启停、卸载、重启数据保留、FF14 共存 passed |
+| REQ-05 Steam | 唯一 USER records owner、个人 SteamID 位域/URL、字符串、self_asserted、CAS/tombstone | 离线领域/模块及真实 Host 换绑/解绑/重启保留 passed；绑定不依赖 OpenDota 收录 |
+| REQ-06 主体依赖 | OWNER 只读 proof、最小 PRIVATE DTO、声明依赖；群查询仅当前 COMMAND actor | A/B、跨平台、未绑定、私聊写约束、换绑快照、provider 停用、旧 Tool epoch、worker 写拒绝 passed |
+| REQ-07 Dota | 三查询、固定 GET、PUBLIC 缓存、有界 DTO、127 中文英雄、时区、限流/故障反馈 | 当前 Python 28、真实 Host 三查询与显式目标 Tool passed；独立匿名 API 三 GET 200；在线 SDK/IM 未验 |
+| REQ-08 CS2/Deadlock | 真实 factory、status/help、生命周期 | 加载、状态、管理启停/卸载与浏览器帮助 passed；游戏数据待实现，无虚构查询 Tool |
+| REQ-09 管理与 UI | DLC `a9a2a362` home/config；Core `c11d5a54` 通用固定配对投影 | 正式浏览器四模块帮助/设置、UTC 保存/恢复、CAS、普通草稿保留、旧确认撤销、停用403/清草稿、新 iframe 恢复 passed；dots 新 UI 未同步 |
+| REQ-10 门禁与独审 | 冻结同修订审计，R6 新上下文 | R6 代码/包 0B/0I/0P；最终证据补核和最新 Core CI pending；所有历史失败/skip/unrun 保留 |
+| REQ-11 交付 | 两分支推送、Core Draft PR、精确配对 ZIP/SDK | 候选审计通过；完整交付结论等待上述最后门禁，不自动合并或发布 |
 
-## 验证账本
+## 当前验证账本
 
-本地原始日志、API body、调度快照及合成 Host 数据在 git 本地 exclude 的 `.work/steam-dlc-alpha/`，不推送 public。下列证据路径均相对此目录；README、公共 harness 和 CI 提供复现入口。
+原始日志、JSON、截图、临时 Host 与调度快照只在本地 exclude 的 `.work/steam-dlc-alpha/`，不进入 public 提交或安装包。下列证据路径相对此目录。公共 README、harness 和 CI 是复现入口。
 
-| 层级 / 环境 | passed / failed / skipped / unrun | 原始证据 |
+| 层级 / 环境 / 修订 | passed / failed / skipped / unrun | 原始证据 |
 | --- | --- | --- |
-| DLC / Python 3.13、实际安装 a13 wheel | 23 / 0 / 0 / 0；Ruff、format、mypy passed | `dlc-a13-gate-*.log`、`dlc-a13-gates.json` |
-| Core `8981ee2` / 原生 Windows、Python 3.13、隔离 staging | 144 / 0 / 0 / 0；含非 editable SDK 安装、缓存/输出/HTTP/版本/只读记录/外包生命周期 | `core-affected-a13.log`、`core-affected-a13-result.json` |
-| AstrBot 4.29.1 / Python 3.12.10 / Core 先装 | 19 / 0 / 0 / 4 | `host-acceptance-a13-r3-core-first/two-plugins.json` |
-| 同上 / DLC 先装 | 20 / 0 / 0 / 4 | `host-acceptance-a13-r3-dlc-first/two-plugins.json` |
-| 两个独立新进程重启 / 各自原数据 | 各 2 / 0 / 0 / 3 | 上述目录 `two-plugins-restart.json` |
-| 独立公开 OpenDota / 匿名 GET | 3 / 0 / 0 / 0 | `live-opendota/receipt.json`、三个原始 body |
-| DLC CI / Ubuntu、Python 3.11 与 3.13 / `4645f80` 固定 Core `8981ee2` | 两 matrix job success | [Actions 39760750701](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/actions/runs/39760750701) |
+| DLC `a9a2a362` / Python 3.13 / 安装 a13 wheel | Python 28 / 0 / 0 / 0；Ruff、format、mypy、资源同步 passed；Node 53 / 0 / 0 / 0 | `dlc-p4-gates.json`、`dlc-p4-gate-*.log` |
+| Core `c11d5a54` / 静态配对与已有单页投影 | 6 / 0 / 0 / 0 | `p4-core-initial.log` |
+| Core 当前受影响 75 项 / 两次环境失败 | 各 4 setup errors + 1 symlink 权限 skipped；其余 70 passed，不能合并为 75 全绿 | `p4-core-affected.log` 为重复复制 dist；`p4-core-affected-corrected.log` 为缺固定字体 fixture |
+| 修正自有 staging 后 Core 定向原生 HTTP + 投影 | 10 / 0 / 0 / 0；lint、479 文件 format、文档链接 passed | `p4-core-targeted-final.log/json` |
+| 正式配对 / AstrBot 4.29.1、Python 3.12.10 / Core 先装 | 19 / 0 / 0 / 4 | `host-acceptance-p4-final-core-first/two-plugins.json` |
+| 同上 / DLC 先装 | 20 / 0 / 0 / 4 | `host-acceptance-p4-final-dlc-first/two-plugins.json` |
+| 两个独立新进程 / 各自原数据重启 | 各 2 / 0 / 0 / 3；精确合成私有目录清理 passed | 上述目录 `two-plugins-restart.json`、`host-acceptance-p4-final-receipt.json` |
+| 正式配对 / 实际 Host/Core view + Chromium | 所列浏览器门禁 passed；完整父壳、IM、模型、在线 SDK 请求 unrun | `p4-browser-receipt.json`、`host-browser-p4-final/` 原始 API/快照/截图 |
+| 配对失配反例 / 实际 Host、独立 TCP HTTP | 29 / 0 / 0 / 1 optional unrun；仅改变 manifest 空白，四业务模块仍 active、页面资源空，8 个 DLC 页面会话 403，同认证 FF14 正向 200 | `u3-negative-pair-receipt.json`、`u3-negative-pair-http-r3.json`；前两次 client 307 适配失败及 shell wrapper exit 1 / Python exit 未单独捕获均保留；正常停服/私有目录与 JWT 清理及端口释放已核实 |
+| 独立 reviewer / 正式包与 SDK / 当前源 | JS 53、静态 6、原生 HTTP 4 passed；独立包/资源/源码/SDK 审计 passed | `review-r6.md`、`review-r6-artifact-audit.json`、`review-r6-http-native-final.log` |
+| DLC 当前 CI / Ubuntu Python 3.11、3.13 | 两 job success；各 Python 28，3.13 Node 53；CI ZIP 非本地字节等价证明 | [39777897718](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/actions/runs/39777897718) |
+| Core 当前 CI / `c11d5a54` | pending；Windows Python 16 + Node 3 已通过 | [39777889597](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/actions/runs/39777889597) |
+| 独立公开 OpenDota / 匿名 GET | 3 / 0 / 0 / 0 | `live-opendota/receipt.json` 与三个原始 body；不是 Host SDK 在线调用证明 |
 
-Host 安装阶段的 restart-unrun 已由后续新进程覆盖。Host 最终仍未执行 live API、真实 IM 与浏览器视觉；live API 由独立冒烟验证。正常验收使用真实 PluginManager、ZIP、公共生命周期、canonical SDK、命令、published FunctionTool 与 Dashboard 认证 HTTP；事件、IM 接收器和 HTTPS body 是 fixture，未调用实际模型。各层不能合成为“真实 IM 端到端通过”。
+Host 的 install 阶段 restart-unrun 已由后续新进程覆盖，最终 IM、模型、在线 SDK 项仍 unrun。真实 PluginManager 安装 ZIP、公共生命周期、canonical SDK、命令、published FunctionTool 和认证管理 HTTP 均实际执行；事件、IM 接收器与 HTTPS body 为 fixture。浏览器使用真实 Core 静态页、资源授权和 Dashboard ASGI/API，父容器是显式注入的同源合成桥，没有加载 AstrBot 整壳前端。截图只补充实际保存/版本/授权逻辑证据，不代替它。
 
-随后补做 H2 浏览器检查：真实 Core 稳定 view、真实 Dashboard ASGI/认证 API，加一个遵循已核实 Host postMessage 合同的合成父容器；未加载 AstrBot 整壳前端。四模块及 FF14 的列表/实际状态可见，但 Dota2 设置路由失败。证据 `host-browser-a13-02/modules-snapshot.yml`、`modules.png`、`dota-empty-snapshot.yml`、`dota-empty.png`、`browser-finding.json`。仅 favicon 404 的控制台错误与本问题无关。此前表中的 browser-unrun 不应覆盖这次实际 failed。
+正常浏览器离页保留普通字段意图，后续有效编辑递增导航版本并撤销旧非模态确认。公开 scope v1 不提供 dispose 原因，无法将普通切页与仅 scope 撤销即时区分；此时仅保留有界普通意图，旧 owner/runtime/epoch/boundary 分区不可用于新身份，观察到身份/授权失效便清除。fresh iframe 销毁原 JS realm。不得声称任意卸载通知即刻清除所有物理缓存。
 
-公开 API 当次 observed remaining-minute 为 59/58/57、remaining-day 为 2999/2998/2997，不作为永久配额。产品 30 requests/minute 是本地保守上限。未使用 Steam/OpenDota Key、STRATZ 或解析 POST。
+## 独立审查与失败历史
 
-Core 同 HEAD 完整 CI 为 [Actions 39760759331](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/actions/runs/39760759331)，最终状态在交付收据核对。另一个本地完整回归针对旧 `2f88b99/a12`，因候选已更新主动中止，状态 interrupted/incomplete；日志 `core-full-native-r1.log` 与 `core-full-result.json` 保留，自有空私密测试目录已清理。不冒充最终 a13 全量结果。
-
-## 独立审查与历史失败
-
-| 轮次 | 结论与修复 |
+| 记录 | 结论 / 后续 |
 | --- | --- |
-| R1 初审 | 1 Blocker、3 Important：默认本人查询、缓存合同、Retry-After/故障分类、中文英雄。第 1 轮集中修复 Core `be5b43d` / DLC `32e2419` / a13；保留 `review-r1.md` |
-| R2 第一次复审 | 原四项关闭；新增 1 Important：依赖停用在 Gateway 前拒绝后无反馈。有界根因诊断 18 passed / 2 同根因 failed / 4 unrun。第 2 轮只修通用早期拒绝反馈；保留 `review-r2.md` |
-| R3 第二次复审 | 0 Blocker / 0 Important，通过。独立核验最终源码/ZIP、43 项 Host 检查、144 项 Core 门禁，另自跑 11 定向项；报告 `review-r3.md` |
-| R4 后续浏览器补验 | 新增 R4-I1 Important：字段存在但未声明 config page，设置按钮退到无页面主页。R3 当时明确未覆盖浏览器，不能据其旧结论关闭新问题 |
+| R1 初审 | 1B+3I：默认本人查询、缓存、限流/错误反馈、中文英雄；第 1 轮 Core `be5b43d` / DLC `32e2419` / a13 修复 |
+| R2 首次复审 | 原四项关闭，新增 Gateway 前拒绝无反馈；诊断 18 passed / 2 同根因 failed / 4 unrun；第 2 轮 Core `8981ee2` 修复 |
+| R3 第二次复审 | 当时范围 0B/0I；浏览器当时未验，旧结论不关闭后续浏览器问题 |
+| R4 浏览器补验 | Important：DLC `pages=[]`，Dota 设置为空；用户追加第 3 轮，仅 DLC 页面，后再明确扩入 Core 夹具导入及两处旧异常捕获 |
+| 第 3 轮 / R5 | DLC `77dc921` 28 Python +31 JS passed；Core `dd6b753` 夹具定向12 passed。实际页路由修正，但 Core loader/样式未装配外包；R5 为 1B+2I：固定资源缺失、普通草稿丢失、dirty 后编辑未撤销旧确认 |
+| 第 4 轮 / R6 当前 | 用户再追加最多两轮；先用真实资源授权探针证明路径，再实现 Core 通用固定配对与 DLC 导航修复。冻结 `c11d5a54/a9a2a362`；代码/正式包审查 0B/0I/0P，最终证据补核 pending |
 
-早期 a12 默认查询失败、旧文案 harness 断言失败、a13-r2 provider 停用失败、诊断运行与环境失败均保留原始 failed/unrun，没有覆盖为通过。两轮修复已经用完，不以更换 agent 重置。
+获准修复复审总额为原 2 + 追加 1 + 再追加最多 2 = **最多 5 轮**，当前使用第 4 轮；更换 agent 或拆片不重置。若第 5 轮仍有 B/I，停止产品返修并给出有边界根因与新计划。新高风险实现由未参与设计/实现的新上下文 R6 审查。
 
-## agents 执行记录
+历史 Core `8981ee2` [CI 39760759331](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/actions/runs/39760759331) 的 2515 项含 3 errors、87 skipped，源于夹具只捕获旧异常。`dd6b753` [CI 39771788497](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/actions/runs/39771788497) 已 success：2428 passed +87 skipped，build 附加132 passed，Windows16 Python+3 Node；它是历史同 runtime 夹具证据，不证明当前 `c11d5a54`。早期 a12 全量因候选变化中止为 interrupted/incomplete；所有旧权限、包装、字体、SDK 审计及浏览器断言错误原始日志保留，不合成为全绿。
 
-| 切片 / 角色 | 请求模型 / effort | 实际生效 | 独立产物与复用 |
-| --- | --- | --- | --- |
-| A / 通用 Host、身份合同 | gpt-6.1-sol / high | unknown | 外包桥接、生命周期、只读存储修复；原 agent 补证 |
-| B / 纯领域与 Dota | gpt-6-luna / high | unknown | SteamID、DTO/规范化、三查询及测试；原 agent 修复和补使用文档 |
-| H / 真实 Host 验收 | gpt-6.1-sol / high | unknown | 公共 harness、双顺序安装/重载/管理/Tool/重启证据与合成数据清理 receipt |
-| R / 独立审查 | gpt-6.1-sol / high | unknown | 未参与实现的新上下文初审，原 reviewer 两次复审；三份报告 |
+## agents 与后续
 
-root 串行维护公共合同及共享文件，未修改全局 Codex 配置或请求额外收费加速。可见运行时 Codex CLI `0.162.0-alpha.17.2`；请求型号不冒充生效型号。token 与费用无可用实测，记 unknown。最终四个 Host 阶段约 119 秒、Core 定向 128.842 秒，不能相加当作全任务耗时。技能来源 `yomihime/yomihime-pouch@e848b3308a3094b2ed663735824f28c3095c05f9` 加本地 goal-directed 规则。
+| 切片 / 角色 | 请求模型 / effort | 实际生效 / 产物 |
+| --- | --- | --- |
+| A / 通用 Host、身份与后续 CI | gpt-6.1-sol / high | unknown；外包生命周期/只读身份合同，复用原 agent 收集 CI |
+| B / 纯领域与 Dota | gpt-6-luna / high | unknown；SteamID、DTO/规范化、三查询；原 agent 补证 |
+| H / 真实 Host、DLC 页面 U2 | gpt-6.1-sol / high | unknown；harness、生命周期/重启、页面草稿及实际 shell 确认器合同；每次 writer 限定 |
+| R / R1–R5 独立审查与补证 | gpt-6.1-sol / high | unknown；各冻结修订的审查记录，失败不抹除 |
+| R6 / 新上下文独审 | gpt-6.1-sol / high | unknown；当前正式包、投影/授权/导航源码与独立验证；未参与方案 |
+| root / 公共合同与集成 | 继承运行时 | 通用固定配对、跨仓 staging、浏览器、文档与交付；独占共享写入面 |
 
-## 安装、后续与边界
+最多两活跃子任务；无额外收费加速，无全局 Codex 配置改动。可见 CLI `0.162.0-alpha.17.2`；模型、effort、speed、token 和费用无实测时均记 unknown，不从 API 价格估算订阅消耗。技能来自 `yomihime/yomihime-pouch@e848b3308a3094b2ed663735824f28c3095c05f9` 加本地 goal-directed 规则；快照、任务卡、SHA 和实际阶段耗时只存本地证据。
 
-先装匹配 SDK a13 的 Core 候选 ZIP，再装 DLC ZIP、启用并重启；具体命令见 README。完全匹配的已验候选直接复用。Core metadata 仍为 `v0.1.2`，须以提交、SDK pin 和完整 SHA256 区分，不能拿旧正式同版本 ZIP 替代。
+安装匹配的 Core ZIP、DLC ZIP，启用并重启，从宿主插件详情重新打开页面；命令与构建方法见 README。Core metadata 仍为 v0.1.2，必须用提交及完整摘要区分。页面或 manifest 升级须重建配对资源，不宣称通用动态外包页面或任意 Python 热替换。合并 Core 与 dots 后应从最终统一源码重建发行资源。
 
-真实 IM、实际模型对话、AstrBot 整壳视觉仍 unrun；H2 稳定 Core 页的浏览器结果按上列 passed/failed 保留。默认账号 Tool 按本轮范围不开放，模型须明确指定账号。CS2/Deadlock 游戏数据、完整账号 GUI、新视觉主题、Steam OpenID/vanity、多账号/跨平台合并、解析提交/后台复盘及 STRATZ 延期。
-
-当前四模块通用管理 API 可用，尚未同步 dots 新 UI。主 checkout 的 `pages/**` 与 `modules/ff14/pages/**` 未改。发行资源只在独立 staging 按固定基线构建，没有拼接未完成分支的生成物。合并、Release、日常机器人安装不在本轮自动执行范围。
-
-合并建议：Core 通用变更的 R3 审查通过，仍须等待同提交完整 CI，由维护者决定 PR #11；DLC 整体因新增 R4-I1 尚不可宣布验收通过。DLC 严格要求 SDK a13，不能混用旧同版本 Core ZIP。
-
-## 已批准的追加修复
-
-用户已明确选择“追加 1 轮，仅修 DLC 页面适配”。原两轮修复与历史失败保留，追加额度仅为 1 轮；当前继续实施下述 DLC 页面适配、浏览器验收及独立复审，不扩大 Core/dots 页面或业务权限范围。
-
-根因已收敛：manifest 的 `pages=[]`，后端普通配置字段仍存在；管理列表依据字段显示“进入设置”，稳定 shell 的 `selectSettings(owner)` 只找 `role=config` 的已声明页面，找不到便退回模块主页。全局设置只显示 Core owner，不能替代 DLC 配置页。父桥、JWT、管理 API 与数据库 CAS 均不是根因。
-
-建议追加 1 轮修复与独立复审，继续最多两个活跃子任务、单 writer、实际模型/费用 unknown、无额外收费加速。实现限 DLC：按已有 `PageModule.mount` / `ModulePageServices.config` 公共合同提供最小首页帮助/状态与普通配置页，声明各模块 home/config 页面及固定资源摘要，更新显式 ZIP 资源清单。四模块共享最小页面代码但不共享可变业务状态；不新增账号 GUI、不改 Core/dots 页面、SDK 或 Steam/Dota 业务权限。
-
-新增门禁为真实浏览器导航、Dota 时区读取/保存 UTC 后恢复、CAS 冲突、页面 owner/epoch 失效与卸载清理；重新冻结 ZIP、运行受影响包/页面/Host 检查并独立复审。无需因纯 DLC 页面改动重跑未改 Core 的全套；Core 现有完整 CI 另记。若这一追加轮仍有 Blocker/Important，再报告剩余问题，不重置预算或降低标准。
-
-## Core 完整 CI 的新增测试合同问题
-
-[Core run 39760759331](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/actions/runs/39760759331) 最终 2515 项、3 errors、87 skipped。三个失败共用 `tests/fixtures/core_hardening.py:672` 前置流程：先启用样例，主动停用 source，验证依赖拒绝。Core `8981ee2` 将这一准入拒绝精确表示为 `HostIngressUnavailable`；夹具仍仅捕获 `PermissionError`，因此新信号逃逸。初始启用与独立 status 发送已通过，无证据表明产品错误放行或错误禁用。
-
-用户随后明确选择“扩展本轮，仅适配 Core 测试夹具”。本轮追加额度仍为 1 轮，新增范围仅是导入现有 `HostIngressUnavailable`，让依赖拒绝和缺配置拒绝两处精确捕获该类型，保留原权限/状态/输出断言。运行时代码、SDK、业务权限和 dots 页面不变。补跑三个安装样例场景及相关准入测试，再提交推送同一 Core Draft PR、执行 CI 并独立复审。补丁保存在本地证据目录 `core-ci-fixture-proposal.patch`，不修改未声明 Tool 权限拒绝的原 `PermissionError` 检查。
-
-## 追加轮的实际结果与下一步待决方案
-
-DLC 页面候选冻结于 `77dc921e156eb34bfff4ebefd27b2d09fde37935`，Python 28 passed、JS 页面合同 31 passed、lint/format/mypy 通过；DLC [CI 39771793530](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/actions/runs/39771793530) 通过。Core 夹具修订 `dd6b75339b74a2951e3ff6b6d53beaa381427ccd` 的定向 12 项通过，完整 [CI 39771788497](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/actions/runs/39771788497) 另记。两个提交已推送。Core 运行时代码及 DLC Python/业务声明与上一候选保持逐字节等价，新增内容仅页面、打包与测试/文档。
-
-真实 Host 重新安装 Core ZIP 和该 DLC ZIP，五模块接入/管理通过，Dota2 设置按钮进入正确的 `settings` 路由，但页面资源加载失败。Core 安装包的封闭 `module-loader.js` 和 HTML `module-style-assets` 仅有构建时 FF14；外包注册只更新 catalog/管理/Tool，不更新静态页面投影。DLC 资源未被请求，内置 FF14 页面则可挂载。仅补 DLC manifest 无法解决这条资源装配链。上一方案遗漏了这个边界，予以更正。时区浏览器保存、浏览器 CAS 和该页的卸载交互保持 unrun，不能以 jsdom 通过替代。
-
-R5 独立复现另两项导航合同问题：同一页面已 dirty 时再次编辑不增加摘要 version/通知，旧离页确认可能继续有效；普通草稿保存在 mount 局部 Map，dispose 清空，重进丢失，与公共合同及 shell“普通设置草稿将保留”的承诺不符。当前追加额度用完，停止产品返修，保留候选和所有失败证据。
-
-待授权方案（不默认执行）：
-
-1. **通用固定配对资源投影**：优先复用 Core 现有受信构建投影器，新增显式、独立的外包页面输入；捕获完整 manifest 与已声明资源的精确摘要，不放松 FF14 Python 可信清单，不把 DLC Python/业务复制进 Core。仅在独立 staging 生成封闭 loader、HTML 样式表与资源，Core/dots 源 `pages/**`、`modules/ff14/pages/**` 保持只读。公开 catalog 与投影的 owner/资源摘要必须匹配，失配拒绝，不能按任意 URL 加载。先验证真实 Host 授权资源链，再扩大实现；目前只是有代码依据的待验证方案。这个 alpha 方案需要匹配的 Core/DLC 资源候选，DLC 页面升级须重建配对资源/重启，不宣称通用动态外包页面装载。
-2. **DLC 导航合同**：普通草稿按 owner/runtime/epoch/boundary 建有界分区，切页保留、身份/生命周期失效清除；不持有秘密或账号绑定数据。每次有效编辑递增 version 并通知，使旧确认失效。用实际 shell 的非模态确认验证，而不只测摘要布尔值。
-3. **门禁**：重新冻结精确 Core/DLC ZIP，验证静态摘要/跨 owner 覆盖/失配拒绝、真实 Host 两加载顺序与生命周期、四模块帮助/设置、时区保存 UTC 后恢复、CAS 冲突、离页草稿保留、新编辑撤销旧确认、owner/epoch 失效与清理；新上下文独立审查，运行受影响 CI。若需公共前端合同变更，按原任务书先交最小差异给 dots owner，不擅改其源页面。
-
-建议为上述三项追加最多两轮修复复审；此前三轮与失败计数保留，不扩展业务权限、SDK、合并、Release 或日常机器人操作。用户未批准前，仅继续既有 Core CI 证据收集和状态整理。
-
-用户现已明确选择“追加两轮，按限定方案完成”。获准总修复再审额度为原 2 + 已追加 1 + 本次最多 2，历史失败保留。先验证固定配对资源的真实 Host 授权链，再完成通用装配绑定与 DLC 导航修复；不修改 dots 源页面、SDK 或业务权限。root 持有 Core 通用投影/装配及集成写入权，U2 仅持有 DLC 页面规范源及其测试，C3 继续既有 CI 证据收集；保持最多两个活跃子任务。
+当前稳定 UI 已实际可用，dots 新 UI 尚未同步。真实 IM、模型、AstrBot 整壳视觉与 Host SDK 在线 OpenDota 仍待真实环境验证；独立匿名 API 冒烟不替代这些。CS2/Deadlock 游戏数据、完整账号 GUI、新视觉主题、Steam OpenID/vanity、多账号/跨平台合并、解析提交/后台复盘及 STRATZ 按范围延期。维护者在最终门禁完成后决定是否合并 Draft PR；本轮不代为合并、Release 或操作日常机器人。
