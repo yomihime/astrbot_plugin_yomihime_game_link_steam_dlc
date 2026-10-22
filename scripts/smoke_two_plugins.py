@@ -916,6 +916,37 @@ async def main():
                         )
                         assert output == MODULE_UNAVAILABLE_TEXT, output
                         assert len(transport_calls) == before
+                        profile_handle = next(
+                            handle
+                            for handle in runtime._tool_publisher.handles
+                            if handle.module_id == "steam_dlc/dota2"
+                            and handle.descriptor.capability_id == "profile"
+                        )
+                        provider_tool_event = Event(
+                            "synthetic provider-disabled explicit profile Tool"
+                        )
+                        provider_tool_context = ContextWrapper(
+                            SimpleNamespace(
+                                event=provider_tool_event, context=host.star_context
+                            )
+                        )
+                        provider_tool_output = await profile_handle.tool.call(
+                            provider_tool_context, account="99"
+                        )
+                        assert json.loads(provider_tool_output) == {
+                            "error": {
+                                "code": "module_unavailable",
+                                "message": MODULE_UNAVAILABLE_TEXT,
+                            }
+                        }, provider_tool_output
+                        assert len(transport_calls) == before
+                        assert not provider_tool_event.calls
+                        result["management"]["provider_disabled_tool_error"] = (
+                            json.loads(provider_tool_output)
+                        )
+                        passed(
+                            "provider-disabled-published-tool-fixed-error-without-http"
+                        )
         passed("four-modules-real-admin-disable-enable-and-provider-offline")
         passed("real-dashboard-api-modules-settings-and-public-catalog")
         # Real PluginManager reloads invoke public loaded/unloaded hooks.
@@ -1063,6 +1094,7 @@ if __name__ == "__main__":
                 "inflight-rebind-target-snapshot-and-unbind",
                 "tools-explicit-target-and-no-binding-tools",
                 "four-modules-real-admin-disable-enable-and-provider-offline",
+                "provider-disabled-published-tool-fixed-error-without-http",
                 "real-dashboard-api-modules-settings-and-public-catalog",
                 "dlc-reload-old-lease-and-late-termination-safe",
                 "old-tool-epoch-rejected-after-dlc-reload",
