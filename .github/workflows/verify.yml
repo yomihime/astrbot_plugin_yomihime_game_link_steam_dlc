@@ -1,0 +1,45 @@
+name: Verify Steam DLC alpha
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          repository: yomihime/astrbot_plugin_yomihime_game_link
+          ref: be5b43df1a5785a3e3c12ae38d971f7ed6b886de
+          path: .ci-core
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install pinned validation tools
+        run: python -m pip install setuptools==80.9.0 wheel==0.45.1 ruff==0.12.0 mypy==1.17.1
+      - name: Install canonical SDK wheel from reviewed Core source
+        env:
+          SOURCE_DATE_EPOCH: "315532800"
+        run: |
+          echo '/.ci-core/' >> .git/info/exclude
+          python -m pip wheel --no-deps --no-build-isolation --wheel-dir .ci-core/wheelhouse ./.ci-core
+          python -m pip install --no-deps .ci-core/wheelhouse/yomihime_game_link_sdk-0.1.0a13-py3-none-any.whl
+          python -c "import yomihime_game_link_sdk as s; assert s.__version__ == '0.1.0a13'; print(s.__file__)"
+      - name: Verify offline behavior and boundaries
+        run: |
+          python -m unittest discover -s tests -v
+          ruff check main.py packages tests scripts
+          ruff format --check main.py packages tests scripts
+          mypy packages/steam_dlc
+      - name: Build and inspect installable plugin ZIP
+        run: python scripts/build_release.py

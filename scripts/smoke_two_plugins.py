@@ -32,6 +32,8 @@ CORE = "astrbot_plugin_yomihime_game_link"
 DLC = CORE + "_steam_dlc"
 HOST_REVISION = "dffe922773725e9c178392c423676ad65044748c"
 MODULES = tuple("steam_dlc/" + name for name in ("steam", "dota2", "cs2", "deadlock"))
+UNBOUND_TEXT = "尚未关联账号，请先私聊关联账号。"
+MODULE_UNAVAILABLE_TEXT = "模块或依赖服务暂时不可用。"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--core-zip", type=Path, required=True)
 parser.add_argument("--dlc-zip", type=Path, required=True)
@@ -601,7 +603,7 @@ async def command(runtime, text, **identity):
         rendered = str(reply)
     else:
         rendered = "\n".join(payloads)
-    if "module temporarily unavailable" in rendered:
+    if MODULE_UNAVAILABLE_TEXT in rendered:
         result["failure_health"] = health_snapshot(runtime)
     result.setdefault("commands", []).append(
         {
@@ -761,17 +763,11 @@ async def main():
         passed("group-default-dota-sdk-identity-three-get-queries")
         before = len(transport_calls)
         output, _ = await command(runtime, "/ygl dota2 profile", sender="B", group=True)
-        assert (
-            "绑定" in output or "关联" in output or "account binding required" in output
-        ) and len(transport_calls) == before, output
+        assert output == UNBOUND_TEXT and len(transport_calls) == before, output
         output2, _ = await command(
             runtime, "/ygl dota2 profile", platform="fixture-two", group=True
         )
-        assert (
-            "绑定" in output2
-            or "关联" in output2
-            or "account binding required" in output2
-        ) and len(transport_calls) == before, output2
+        assert output2 == UNBOUND_TEXT and len(transport_calls) == before, output2
         await command(runtime, "/ygl steam bind " + steam_b, sender="B")
         output, _ = await command(runtime, "/ygl dota2 profile", sender="B", group=True)
         assert "Fixture 2" in output, output
@@ -799,7 +795,7 @@ async def main():
         assert "本次查询账号 4" in output and "本次查询账号 5" not in output, output
         await command(runtime, "/ygl steam unbind")
         output, _ = await command(runtime, "/ygl dota2 profile", group=True)
-        assert "绑定" in output or "account binding required" in output, output
+        assert output == UNBOUND_TEXT, output
         await command(runtime, "/ygl steam bind " + steam_a)
         passed("inflight-rebind-target-snapshot-and-unbind")
         handles = list(runtime._tool_publisher.handles)
@@ -918,11 +914,7 @@ async def main():
                         output, _ = await command(
                             runtime, "/ygl dota2 profile", group=True
                         )
-                        assert (
-                            "不可用" in output
-                            or "失效" in output
-                            or "module temporarily unavailable" in output
-                        ), output
+                        assert output == MODULE_UNAVAILABLE_TEXT, output
                         assert len(transport_calls) == before
         passed("four-modules-real-admin-disable-enable-and-provider-offline")
         passed("real-dashboard-api-modules-settings-and-public-catalog")
