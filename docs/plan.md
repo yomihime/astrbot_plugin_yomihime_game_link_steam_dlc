@@ -89,3 +89,19 @@ root 串行维护公共合同及共享文件，未修改全局 Codex 配置或�
 [Core run 39760759331](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/actions/runs/39760759331) 最终 2515 项、3 errors、87 skipped。三个失败共用 `tests/fixtures/core_hardening.py:672` 前置流程：先启用样例，主动停用 source，验证依赖拒绝。Core `8981ee2` 将这一准入拒绝精确表示为 `HostIngressUnavailable`；夹具仍仅捕获 `PermissionError`，因此新信号逃逸。初始启用与独立 status 发送已通过，无证据表明产品错误放行或错误禁用。
 
 用户随后明确选择“扩展本轮，仅适配 Core 测试夹具”。本轮追加额度仍为 1 轮，新增范围仅是导入现有 `HostIngressUnavailable`，让依赖拒绝和缺配置拒绝两处精确捕获该类型，保留原权限/状态/输出断言。运行时代码、SDK、业务权限和 dots 页面不变。补跑三个安装样例场景及相关准入测试，再提交推送同一 Core Draft PR、执行 CI 并独立复审。补丁保存在本地证据目录 `core-ci-fixture-proposal.patch`，不修改未声明 Tool 权限拒绝的原 `PermissionError` 检查。
+
+## 追加轮的实际结果与下一步待决方案
+
+DLC 页面候选冻结于 `77dc921e156eb34bfff4ebefd27b2d09fde37935`，Python 28 passed、JS 页面合同 31 passed、lint/format/mypy 通过；DLC [CI 39771793530](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/actions/runs/39771793530) 通过。Core 夹具修订 `dd6b75339b74a2951e3ff6b6d53beaa381427ccd` 的定向 12 项通过，完整 [CI 39771788497](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/actions/runs/39771788497) 另记。两个提交已推送。Core 运行时代码及 DLC Python/业务声明与上一候选保持逐字节等价，新增内容仅页面、打包与测试/文档。
+
+真实 Host 重新安装 Core ZIP 和该 DLC ZIP，五模块接入/管理通过，Dota2 设置按钮进入正确的 `settings` 路由，但页面资源加载失败。Core 安装包的封闭 `module-loader.js` 和 HTML `module-style-assets` 仅有构建时 FF14；外包注册只更新 catalog/管理/Tool，不更新静态页面投影。DLC 资源未被请求，内置 FF14 页面则可挂载。仅补 DLC manifest 无法解决这条资源装配链。上一方案遗漏了这个边界，予以更正。时区浏览器保存、浏览器 CAS 和该页的卸载交互保持 unrun，不能以 jsdom 通过替代。
+
+R5 独立复现另两项导航合同问题：同一页面已 dirty 时再次编辑不增加摘要 version/通知，旧离页确认可能继续有效；普通草稿保存在 mount 局部 Map，dispose 清空，重进丢失，与公共合同及 shell“普通设置草稿将保留”的承诺不符。当前追加额度用完，停止产品返修，保留候选和所有失败证据。
+
+待授权方案（不默认执行）：
+
+1. **通用固定配对资源投影**：优先复用 Core 现有受信构建投影器，新增显式、独立的外包页面输入；捕获完整 manifest 与已声明资源的精确摘要，不放松 FF14 Python 可信清单，不把 DLC Python/业务复制进 Core。仅在独立 staging 生成封闭 loader、HTML 样式表与资源，Core/dots 源 `pages/**`、`modules/ff14/pages/**` 保持只读。公开 catalog 与投影的 owner/资源摘要必须匹配，失配拒绝，不能按任意 URL 加载。先验证真实 Host 授权资源链，再扩大实现；目前只是有代码依据的待验证方案。这个 alpha 方案需要匹配的 Core/DLC 资源候选，DLC 页面升级须重建配对资源/重启，不宣称通用动态外包页面装载。
+2. **DLC 导航合同**：普通草稿按 owner/runtime/epoch/boundary 建有界分区，切页保留、身份/生命周期失效清除；不持有秘密或账号绑定数据。每次有效编辑递增 version 并通知，使旧确认失效。用实际 shell 的非模态确认验证，而不只测摘要布尔值。
+3. **门禁**：重新冻结精确 Core/DLC ZIP，验证静态摘要/跨 owner 覆盖/失配拒绝、真实 Host 两加载顺序与生命周期、四模块帮助/设置、时区保存 UTC 后恢复、CAS 冲突、离页草稿保留、新编辑撤销旧确认、owner/epoch 失效与清理；新上下文独立审查，运行受影响 CI。若需公共前端合同变更，按原任务书先交最小差异给 dots owner，不擅改其源页面。
+
+建议为上述三项追加最多两轮修复复审；此前三轮与失败计数保留，不扩展业务权限、SDK、合并、Release 或日常机器人操作。用户未批准前，仅继续既有 Core CI 证据收集和状态整理。

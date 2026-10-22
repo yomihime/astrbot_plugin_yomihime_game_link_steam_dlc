@@ -2,6 +2,8 @@
 
 Steam DLC 是 AstrBot 游戏连结的独立 alpha 插件，包含 Steam 账号关联、Dota 2 查询，以及 CS2 和 Deadlock 的状态模块。候选兼容面为 Core 分支 `feat/steam-dlc-support`、canonical SDK `0.1.0a13`、模块 ABI `2.0`；DLC 分支为 `feat/steam-dlc-alpha`。这些分支尚未合并或发布，候选 ZIP 和验收记录以最终构建产物为准。
 
+**当前验收未通过**：页面候选 `77dc921` 已声明帮助/设置页，但 Core `8981ee2` 的静态资源投影尚无外部 DLC 页面，浏览器无法挂载；另有两项草稿导航合同问题待修。命令与管理 API 的既有通过证据不等于页面可用，详情见[验收计划](docs/plan.md)。
+
 ## 安装
 
 1. 从 Core 候选构建取得 Core ZIP。它包含 canonical `yomihime_game_link_sdk`。
