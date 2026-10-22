@@ -36,6 +36,28 @@ const identity = context => JSON.stringify([
   context.owner, context.runtimeId, context.epoch, context.boundary,
 ]);
 const errorCode = error => typeof error?.message === 'string' ? error.message : '';
+const authorityErrors = new Set(['admin_authorization_denied', 'page_revoked', 'page_unavailable', 'stale_context']);
+
+// This module instance retains ONLY ordinary configuration intent. Each captured
+// module entry has its own store; no snapshots, credentials, bindings, services
+// or DOM references are retained. Identity changes evict the same owner's past
+// partition. Caps also bound retained input if a caller bypasses native controls.
+const ordinaryPartitions = new Map();
+const MAX_PARTITIONS = 4;
+const MAX_PARTITION_KEY_LENGTH = 4096;
+const MAX_RETAINED_VALUE_LENGTH = 256;
+function partitionFor(context, key, claim) {
+  for (const [previousKey, partition] of ordinaryPartitions) {
+    if (partition.owner === context.owner && previousKey !== key) ordinaryPartitions.delete(previousKey);
+  }
+  if (!claim || key.length > MAX_PARTITION_KEY_LENGTH) return null;
+  const partition = ordinaryPartitions.get(key) || { owner: context.owner, drafts: new Map(), token: null };
+  partition.token = Symbol('ordinary-draft-mount');
+  ordinaryPartitions.delete(key);
+  ordinaryPartitions.set(key, partition);
+  while (ordinaryPartitions.size > MAX_PARTITIONS) ordinaryPartitions.delete(ordinaryPartitions.keys().next().value);
+  return partition;
+}
 
 /** mount implements the public Module UI contract v1 (no runtime imports). */
 export function mount(container, options) {
@@ -44,13 +66,16 @@ export function mount(container, options) {
   const moduleId = options.context.owner.startsWith('steam_dlc/')
     ? options.context.owner.slice('steam_dlc/'.length) : '';
   const module = MODULES[moduleId];
+  const partition = module ? partitionFor(options.context, initialIdentity, options.routeId === 'settings') : null;
+  const partitionToken = partition?.token;
   let context = { ...options.context };
   let disposed = false, revoked = false, generation = 0;
   let pending = false, ready = false, baseline = null;
   let impactVersion = 0, lastImpact = '';
+  let draftVersion = 0;
   let messageTimer = null;
   let unregister = () => {};
-  const drafts = new Map();
+  const drafts = new Map(partition?.drafts);
   const controls = new Map();
   const listeners = [];
   const node = (tag, text, className) => {
@@ -73,13 +98,14 @@ export function mount(container, options) {
   root.append(title, availability);
   container.replaceChildren(root);
   const current = () => !disposed && !revoked && !options.scope.signal.aborted
-    && options.scope.isCurrent() && identity(context) === initialIdentity;
+    && options.scope.isCurrent() && identity(context) === initialIdentity
+    && (!partition || (ordinaryPartitions.get(initialIdentity) === partition && partition.token === partitionToken));
   const active = () => current() && context.available;
   const impact = () => Object.freeze({
     ordinary: drafts.size > 0, credentials: false, pending, version: impactVersion,
   });
   const notify = () => {
-    const next = JSON.stringify([drafts.size > 0, pending]);
+    const next = JSON.stringify([drafts.size > 0, pending, draftVersion]);
     if (next !== lastImpact) {
       lastImpact = next;
       impactVersion += 1;
@@ -107,7 +133,23 @@ export function mount(container, options) {
   };
 
   let form, saveButton, refreshButton, discardButton;
+  const retainDrafts = () => {
+    if (!partition || !current()) return;
+    partition.drafts = new Map([...drafts].filter(([name, draft]) =>
+      (name === 'timezone' || name === 'reply_theme') && (draft.kind === 'clear'
+        || (draft.kind === 'set' && typeof draft.value === 'string' && draft.value.length <= MAX_RETAINED_VALUE_LENGTH))));
+  };
+  const revokePartition = () => {
+    if (partition ? ordinaryPartitions.get(initialIdentity) === partition && partition.token === partitionToken : options.routeId === 'home') {
+      ordinaryPartitions.delete(initialIdentity);
+    }
+    revoked = true; generation += 1; pending = false; ready = false;
+    if (drafts.size) draftVersion += 1;
+    drafts.clear(); baseline = null;
+    for (const { control } of controls.values()) control.value = '';
+  };
   const sync = () => {
+    retainDrafts();
     updateAvailability();
     root.setAttribute('aria-busy', String(pending));
     if (saveButton) {
@@ -147,11 +189,15 @@ export function mount(container, options) {
     const field = baseline.fields[name];
     // An in-flight write may replace this baseline. Keep even a baseline-valued
     // edit as a distinct intent until its readback can reconcile the new state.
-    if (!pending && (draft.kind === 'clear' ? !field.present : field.state === 'valid' && same(field.value, draft.value))) drafts.delete(name);
-    else drafts.set(name, draft);
+    const next = !pending && (draft.kind === 'clear' ? !field.present : field.state === 'valid' && same(field.value, draft.value)) ? undefined : draft;
+    if (same(drafts.get(name), next)) return;
+    if (next === undefined) drafts.delete(name);
+    else drafts.set(name, next);
+    draftVersion += 1;
     controls.get(name).error.textContent = '';
     controls.get(name).control.setAttribute('aria-invalid', 'false');
-    say(drafts.size ? '有未保存的修改。' : '', 'warning');
+    const cannotRetain = drafts.size && (!partition || [...drafts.values()].some(value => value.kind === 'set' && value.value.length > MAX_RETAINED_VALUE_LENGTH));
+    say(cannotRetain ? '输入超过草稿保留上限，请先修正再切页。' : drafts.size ? '有未保存的修改。' : '', 'warning');
     sync();
   };
   const displayValues = () => {
@@ -189,6 +235,7 @@ export function mount(container, options) {
       if (name === 'timezone') {
         control.type = 'text';
         control.autocomplete = 'off';
+        control.maxLength = Math.min(descriptor.value_schema.maxLength ?? MAX_RETAINED_VALUE_LENGTH, MAX_RETAINED_VALUE_LENGTH);
       }
       const reset = node('button', '恢复默认');
       reset.type = 'button';
@@ -215,7 +262,7 @@ export function mount(container, options) {
     baseline = validateSnapshot(snapshot);
     for (const [name, draft] of drafts) {
       const field = baseline.fields[name];
-      if (draft.kind === 'clear' ? !field.present : field.state === 'valid' && same(field.value, draft.value)) drafts.delete(name);
+      if (draft.kind === 'clear' ? !field.present : field.state === 'valid' && same(field.value, draft.value)) { drafts.delete(name); draftVersion += 1; }
     }
     if (!controls.size) buildFields();
     displayValues();
@@ -231,9 +278,15 @@ export function mount(container, options) {
       const snapshot = await options.services.config.current();
       if (!active() || ticket !== generation) return;
       applySnapshot(snapshot);
-      say(manual ? drafts.size ? '已刷新；草稿已保留，请核对后保存。' : '已刷新。' : '', drafts.size ? 'warning' : 'success');
-    } catch {
+      say(drafts.size ? '已刷新；草稿已保留，请核对后保存。' : manual ? '已刷新。' : '', drafts.size ? 'warning' : 'success');
+    } catch (error) {
       if (!active() || ticket !== generation) return;
+      if (authorityErrors.has(errorCode(error))) {
+        revokePartition();
+        say('管理授权或模块上下文已失效，请重新进入页面。', 'error');
+        sync();
+        return;
+      }
       ready = false;
       say('配置读取未完成。请检查 Dashboard 授权与模块状态，再手动刷新。', 'error');
     } finally {
@@ -300,11 +353,17 @@ export function mount(container, options) {
         const field = snapshot.fields[name];
         if (draft.kind === 'clear' ? field.present : field.state !== 'valid' || !same(field.value, draft.value)) throw Error('unverified_snapshot');
       }
-      for (const [name, draft] of submitted) if (drafts.get(name) === draft) drafts.delete(name);
+      for (const [name, draft] of submitted) if (drafts.get(name) === draft) { drafts.delete(name); draftVersion += 1; }
       applySnapshot(snapshot);
       say(drafts.size ? '已保存本次提交；仍有新的未保存修改。' : '已保存。', drafts.size ? 'warning' : 'success');
     } catch (error) {
       if (!active() || ticket !== generation) return;
+      if (authorityErrors.has(errorCode(error))) {
+        revokePartition();
+        say('管理授权或模块上下文已失效，请重新进入页面。', 'error');
+        sync();
+        return;
+      }
       const conflict = errorCode(error) === 'revision_conflict';
       say(accepted ? '部分或全部修改已提交，状态暂未核实。请手动刷新并核对，不要重复提交。'
         : conflict ? '配置已被其他操作修改。草稿已保留，请手动刷新、核对后再保存。'
@@ -342,6 +401,7 @@ export function mount(container, options) {
     listen(refreshButton, 'click', () => { void read(true); });
     listen(discardButton, 'click', () => {
       if (!active() || pending || !baseline) return;
+      if (drafts.size) draftVersion += 1;
       drafts.clear(); displayValues(); say('已放弃本模块修改。', 'success'); sync();
     });
     actions.append(saveButton, refreshButton, discardButton);
@@ -355,6 +415,9 @@ export function mount(container, options) {
     if (disposed) return;
     disposed = true; generation += 1; pending = false;
     if (messageTimer !== null) { clearTimeout(messageTimer); messageTimer = null; }
+    // Normal route disposal and scope-only revocation are indistinguishable in
+    // contract v1. Retained ordinary drafts stay bounded; identity/error evidence
+    // revokes them explicitly. Late callbacks cannot write without this token.
     drafts.clear(); baseline = null;
     listeners.splice(0).forEach(remove => remove());
     unregister();
@@ -369,9 +432,7 @@ export function mount(container, options) {
       const wasAvailable = context.available;
       context = { ...next };
       if (identity(context) !== initialIdentity) {
-        revoked = true; generation += 1; pending = false; ready = false;
-        drafts.clear(); baseline = null;
-        for (const { control } of controls.values()) control.value = '';
+        revokePartition();
         say('模块运行上下文已变化，请重新进入页面。', 'error');
       } else if (wasAvailable !== context.available) {
         generation += 1; pending = false; ready = false;

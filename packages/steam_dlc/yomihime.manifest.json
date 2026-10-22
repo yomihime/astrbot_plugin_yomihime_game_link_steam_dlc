@@ -151,7 +151,7 @@
       "resources": [
         {
           "path": "pages/steam/entry.js",
-          "sha256": "31f5b3c3c5658f3f1ac8cef62419f80260a2c3f827852c9f80da7c0524f4b783"
+          "sha256": "36445e6b184616e9895b40fad8e926d059824938cb45fb49ffc73b961f732e41"
         },
         {
           "path": "pages/steam/style.css",
@@ -386,7 +386,7 @@
       "resources": [
         {
           "path": "pages/dota2/entry.js",
-          "sha256": "31f5b3c3c5658f3f1ac8cef62419f80260a2c3f827852c9f80da7c0524f4b783"
+          "sha256": "36445e6b184616e9895b40fad8e926d059824938cb45fb49ffc73b961f732e41"
         },
         {
           "path": "pages/dota2/style.css",
@@ -457,7 +457,7 @@
       "resources": [
         {
           "path": "pages/cs2/entry.js",
-          "sha256": "31f5b3c3c5658f3f1ac8cef62419f80260a2c3f827852c9f80da7c0524f4b783"
+          "sha256": "36445e6b184616e9895b40fad8e926d059824938cb45fb49ffc73b961f732e41"
         },
         {
           "path": "pages/cs2/style.css",
@@ -528,7 +528,7 @@
       "resources": [
         {
           "path": "pages/deadlock/entry.js",
-          "sha256": "31f5b3c3c5658f3f1ac8cef62419f80260a2c3f827852c9f80da7c0524f4b783"
+          "sha256": "36445e6b184616e9895b40fad8e926d059824938cb45fb49ffc73b961f732e41"
         },
         {
           "path": "pages/deadlock/style.css",

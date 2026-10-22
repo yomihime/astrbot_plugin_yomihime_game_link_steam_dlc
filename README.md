@@ -2,7 +2,7 @@
 
 Steam DLC 是 AstrBot 游戏连结的独立 alpha 插件，包含 Steam 账号关联、Dota 2 查询，以及 CS2 和 Deadlock 的状态模块。候选兼容面为 Core 分支 `feat/steam-dlc-support`、canonical SDK `0.1.0a13`、模块 ABI `2.0`；DLC 分支为 `feat/steam-dlc-alpha`。这些分支尚未合并或发布，候选 ZIP 和验收记录以最终构建产物为准。
 
-**当前验收未通过**：页面候选 `77dc921` 已声明帮助/设置页，但 Core `8981ee2` 的静态资源投影尚无外部 DLC 页面，浏览器无法挂载；另有两项草稿导航合同问题待修。命令与管理 API 的既有通过证据不等于页面可用，详情见[验收计划](docs/plan.md)。
+**当前处于配对候选验收**：旧 Core `8981ee2` 未装配外包页面，不能用于验证新增帮助/设置页。固定配对资源的真实 Host 探针已加载页面并完成 UTC 保存/回读；正式候选仍需通过包、浏览器与独审，详情见[验收计划](docs/plan.md)。
 
 ## 安装
 
@@ -39,6 +39,8 @@ CS2 和 Deadlock 当前只有模块接入、生命周期、帮助和真实状态
 在 Core 的“模块管理”中可查看四模块的实际运行状态。进入任一模块可查看命令帮助和业务范围；“进入设置”打开普通配置页。Dota2 提供 `timezone`（默认 `Asia/Shanghai`），四模块提供回复主题选择。主题选项由 Core 返回，“跟随核心”恢复继承。保存发生版本冲突时先重新读取，再确认更改。
 
 页面沿用稳定的公开合同和样式 token。Steam 账号关联仍使用私聊命令，Dota 查询仍使用命令或显式 ID 工具。dots 的新 UI 尚未同步。
+
+此 alpha 的页面资源需要由 Core 构建时显式装配：在独立 Core 构建 staging 使用 `scripts/build_release.py --sdk-wheel <a13.whl> --external-page-package <本仓库/packages/steam_dlc> --output-dir <新产物目录>`。它只收录摘要匹配的静态资源，不把 DLC Python 业务复制进 Core。请安装精确匹配的两个候选并重启，再从宿主正式入口重新打开页面；DLC 页面或 manifest 更新后须重新构建配对资源。资源失配时页面拒绝装载，模块命令不因此获得额外权限。
 
 ## 数据与隐私边界
 

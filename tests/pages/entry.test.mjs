@@ -30,13 +30,14 @@ function snapshot(moduleId = 'dota2') {
   }
   return value;
 }
-function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, service = {} } = {}) {
+let fixtureSequence = 0;
+function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, service = {}, context: contextPatch = {} } = {}) {
   const dom = new JSDOM('<!doctype html><div id="root"></div>');
   const container = dom.window.document.querySelector('#root');
   const abort = new AbortController();
   let scopeCurrent = true, state = snapshot(moduleId), notifications = 0;
   const disposal = new Set(), calls = [];
-  const context = { owner: `steam_dlc/${moduleId}`, runtimeId: 'runtime-a', epoch: 3, boundary: 'boundary-a', available, theme: 'light', locale: 'zh-CN' };
+  const context = { owner: `steam_dlc/${moduleId}`, runtimeId: `runtime-${++fixtureSequence}`, epoch: 3, boundary: 'boundary-a', available, theme: 'light', locale: 'zh-CN', ...contextPatch };
   const config = {
     async current() { calls.push(['current']); return clone(state); },
     async save(revision, values) {
@@ -299,4 +300,180 @@ test('unavailable mount makes no config calls and permits later fresh read', asy
   const f = fixture({ available: false }); await settle(); assert.deepEqual(f.calls, []);
   f.page.update({ ...f.context, available: true }); await settle();
   assert.deepEqual(f.calls, [['current']]); f.close();
+});
+
+test('R5-I1: dirty-to-dirty edits and set/clear intent changes invalidate a confirmation key', async () => {
+  const f = fixture(); await settle();
+  f.input('timezone', 'UTC');
+  const first = f.page.navigationImpact(), notifications = f.notifications;
+  f.input('timezone', 'Europe/London');
+  const second = f.page.navigationImpact();
+  assert.equal(first.ordinary, true); assert.equal(second.ordinary, true);
+  assert.ok(second.version > first.version); assert.ok(f.notifications > notifications);
+  f.input('timezone', 'Europe/London');
+  assert.equal(f.page.navigationImpact().version, second.version, 'identical input is not a new intent');
+  f.input('reply_theme', '2');
+  const beforeReset = f.page.navigationImpact().version;
+  f.click('reset-reply_theme');
+  assert.ok(f.page.navigationImpact().version > beforeReset, 'set -> clear must revoke an old choice');
+  f.close();
+});
+
+for (const disposal of ['close', 'disposeScope']) {
+  test(`R5-I2: normal ${disposal} preserves drafts across home and settings remount`, async () => {
+    const original = fixture(); await settle();
+    original.input('timezone', 'Europe/London'); original.input('reply_theme', '0');
+    const context = original.context;
+    original[disposal]();
+    const home = fixture({ context, routeId: 'home' });
+    assert.equal(home.page.navigationImpact().ordinary, false);
+    assert.deepEqual(home.calls, []); home.close();
+    const returned = fixture({ context });
+    assert.equal(returned.container.querySelector('input'), null, 'retained values need a fresh authorized snapshot');
+    await settle();
+    assert.deepEqual(returned.calls, [['current']]);
+    assert.equal(returned.container.querySelector('[name=timezone]').value, 'Europe/London');
+    assert.equal(returned.container.querySelector('[name=reply_theme]').value, '0');
+    assert.equal(returned.page.navigationImpact().ordinary, true);
+    assert.match(returned.text(), /草稿已保留/);
+    returned.click('discard'); returned.close(); original.close();
+  });
+}
+
+test('ordinary drafts never cross module owners', async () => {
+  const dota = fixture(); await settle(); dota.input('timezone', 'UTC'); dota.input('reply_theme', '2'); dota.close();
+  const steam = fixture({ moduleId: 'steam', context: { ...dota.context, owner: 'steam_dlc/steam' } }); await settle();
+  assert.equal(steam.container.querySelector('[name=timezone]'), null);
+  assert.equal(steam.container.querySelector('select').value, '1');
+  assert.equal(steam.page.navigationImpact().ordinary, false); steam.close();
+  const returned = fixture({ context: dota.context }); await settle();
+  assert.equal(returned.container.querySelector('[name=timezone]').value, 'UTC');
+  returned.click('discard'); returned.close();
+});
+
+for (const key of ['runtimeId', 'epoch', 'boundary']) {
+  test(`new ${key} mount evicts the same owner's obsolete partition`, async () => {
+    const original = fixture(); await settle(); original.input('timezone', 'UTC'); original.close();
+    const next = fixture({ context: { ...original.context, [key]: key === 'epoch' ? 4 : 'new-binding' } }); await settle();
+    assert.equal(next.container.querySelector('[name=timezone]').value, 'Asia/Shanghai');
+    assert.equal(next.page.navigationImpact().ordinary, false); next.close();
+    const obsolete = fixture({ context: original.context }); await settle();
+    assert.equal(obsolete.container.querySelector('[name=timezone]').value, 'Asia/Shanghai');
+    assert.equal(obsolete.page.navigationImpact().ordinary, false); obsolete.close();
+  });
+}
+
+for (const key of ['owner', 'runtimeId', 'epoch', 'boundary']) {
+  test(`observed ${key} revocation deletes retained draft before stale write resolves`, async () => {
+    const original = fixture(); await settle(); original.input('timezone', 'UTC');
+    const write = deferred(); original.config.save = () => write.promise; original.submit();
+    original.page.update({ ...original.context, [key]: key === 'epoch' ? 4 : 'revoked' });
+    assert.equal(original.page.navigationImpact().ordinary, false);
+    write.resolve({ revision: 8 }); await settle(); original.close();
+    const reopened = fixture({ context: original.context }); await settle();
+    assert.equal(reopened.container.querySelector('[name=timezone]').value, 'Asia/Shanghai');
+    assert.equal(reopened.page.navigationImpact().ordinary, false); reopened.close();
+  });
+}
+
+test('an obsolete same-key mount cannot republish a draft after a newer mount takes ownership', async () => {
+  const old = fixture(); await settle(); old.input('timezone', 'UTC');
+  const read = deferred(); old.config.current = () => read.promise; old.click('refresh');
+  const next = fixture({ context: old.context }); await settle();
+  next.input('timezone', 'Europe/London'); next.close();
+  read.resolve(snapshot()); await settle();
+  old.input('timezone', 'Asia/Tokyo'); old.close();
+  const returned = fixture({ context: old.context }); await settle();
+  assert.equal(returned.container.querySelector('[name=timezone]').value, 'Europe/London');
+  returned.click('discard'); returned.close();
+});
+
+for (const code of ['admin_authorization_denied', 'page_revoked', 'page_unavailable', 'stale_context']) {
+  test(`exact ${code} clears retained ordinary drafts`, async () => {
+    const original = fixture(); await settle(); original.input('timezone', 'UTC');
+    original.config.current = async () => { throw Error(code); };
+    original.click('refresh'); await settle();
+    assert.equal(original.page.navigationImpact().ordinary, false);
+    assert.match(original.text(), /授权或模块上下文已失效/); original.close();
+    const reopened = fixture({ context: original.context }); await settle();
+    assert.equal(reopened.container.querySelector('[name=timezone]').value, 'Asia/Shanghai');
+    reopened.close();
+  });
+}
+
+test('scope-only disposal cannot let its late response overwrite the retained draft', async () => {
+  const original = fixture(); await settle(); original.input('timezone', 'UTC');
+  const read = deferred(); original.config.current = () => read.promise; original.click('refresh');
+  original.disposeScope(); read.resolve(snapshot()); await settle(); original.close();
+  const returned = fixture({ context: original.context }); await settle();
+  assert.equal(returned.container.querySelector('[name=timezone]').value, 'UTC');
+  returned.click('discard'); returned.close();
+});
+
+test('saving and discarding clear the retained partition', async () => {
+  for (const action of ['save', 'discard']) {
+    const original = fixture(); await settle(); original.input('timezone', 'UTC');
+    if (action === 'save') { original.submit(); await settle(); }
+    else original.click('discard');
+    original.close();
+    const returned = fixture({ context: original.context }); await settle();
+    assert.equal(returned.page.navigationImpact().ordinary, false);
+    assert.equal(returned.container.querySelector('[name=timezone]').value, 'Asia/Shanghai'); returned.close();
+  }
+});
+
+test('bounded owner partitions replace obsolete identities without evicting other known owners', async () => {
+  const retained = [];
+  for (const moduleId of ['steam', 'dota2', 'cs2', 'deadlock']) {
+    const f = fixture({ moduleId }); await settle(); f.input('reply_theme', '2'); f.close(); retained.push(f);
+  }
+  for (const f of retained) {
+    const reopened = fixture({ moduleId: f.context.owner.split('/')[1], context: f.context }); await settle();
+    assert.equal(reopened.container.querySelector('select').value, '2'); reopened.close();
+  }
+  const original = retained[0];
+  for (let epoch = 4; epoch < 20; epoch++) {
+    const newer = fixture({ moduleId: 'steam', context: { ...original.context, epoch } }); await settle();
+    assert.equal(newer.page.navigationImpact().ordinary, false);
+    newer.input('reply_theme', '2'); newer.close();
+  }
+  const old = fixture({ moduleId: 'steam', context: original.context }); await settle();
+  assert.equal(old.page.navigationImpact().ordinary, false); old.close();
+  for (const f of retained.slice(1)) {
+    const reopened = fixture({ moduleId: f.context.owner.split('/')[1], context: f.context }); await settle();
+    assert.equal(reopened.container.querySelector('select').value, '2'); reopened.click('discard'); reopened.close();
+  }
+});
+
+test('oversized ordinary input and oversized partition keys are never retained', async () => {
+  const oversizedValue = fixture(); await settle(); oversizedValue.input('timezone', 'x'.repeat(257));
+  assert.match(oversizedValue.text(), /草稿保留上限/); oversizedValue.close();
+  const valueReturn = fixture({ context: oversizedValue.context }); await settle();
+  assert.equal(valueReturn.page.navigationImpact().ordinary, false); valueReturn.close();
+  const oversizedKey = fixture({ context: { boundary: 'x'.repeat(4097) } }); await settle();
+  oversizedKey.input('timezone', 'UTC'); assert.match(oversizedKey.text(), /草稿保留上限/); oversizedKey.close();
+  const keyReturn = fixture({ context: oversizedKey.context }); await settle();
+  assert.equal(keyReturn.page.navigationImpact().ordinary, false); keyReturn.close();
+});
+
+test('an unknown write result survives route disposal without automatic resend', async () => {
+  const original = fixture(); await settle(); original.input('timezone', 'UTC');
+  let attempts = 0;
+  original.config.save = async () => { attempts++; throw Error('unknown'); };
+  original.submit(); await settle(); original.close();
+  const returned = fixture({ context: original.context }); await settle();
+  assert.equal(returned.container.querySelector('[name=timezone]').value, 'UTC');
+  assert.equal(returned.page.navigationImpact().ordinary, true);
+  assert.deepEqual(returned.calls, [['current']]); assert.equal(attempts, 1);
+  returned.click('discard'); returned.close();
+});
+
+test('exact authorization failure during save revokes cached intent', async () => {
+  const original = fixture(); await settle(); original.input('timezone', 'UTC');
+  original.config.save = async () => { throw Error('admin_authorization_denied'); };
+  original.submit(); await settle();
+  assert.equal(original.page.navigationImpact().ordinary, false);
+  assert.match(original.text(), /授权或模块上下文已失效/); original.close();
+  const returned = fixture({ context: original.context }); await settle();
+  assert.equal(returned.page.navigationImpact().ordinary, false); returned.close();
 });
