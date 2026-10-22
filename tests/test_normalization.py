@@ -19,7 +19,9 @@ class DotaNormalizationTests(unittest.TestCase):
     def test_recent_preserves_zero_turbo_and_unknown_outcomes(self):
         recent = normalize_recent(fixture("dota_recent.json"), limit=5)
         self.assertEqual(len(recent), 5)
-        self.assertEqual((recent[0].start_time, recent[0].hero_id, recent[0].kills), (0, 0, 0))
+        self.assertEqual(
+            (recent[0].start_time, recent[0].hero_id, recent[0].kills), (0, 0, 0)
+        )
         self.assertEqual(recent[0].outcome, "win")
         self.assertEqual(recent[1].outcome, "win")
         self.assertEqual(recent[2].outcome, "unknown")
@@ -45,11 +47,13 @@ class DotaNormalizationTests(unittest.TestCase):
         self.assertEqual(profile.rank_tier, 0)
         self.assertIsNone(profile.leaderboard_rank)
         self.assertEqual(profile.name, "Fixture Player")
-        malicious = {"profile": {
-            "personaname": "x" * 81,
-            "steamid": "76561197960265851",
-            "profileurl": "https://user@steamcommunity.com/profiles/76561197960265851",
-        }}
+        malicious = {
+            "profile": {
+                "personaname": "x" * 81,
+                "steamid": "76561197960265851",
+                "profileurl": "https://user@steamcommunity.com/profiles/76561197960265851",
+            }
+        }
         result = normalize_profile(malicious, 123)
         self.assertIsNone(result.name)
         self.assertIsNone(result.profile_url)

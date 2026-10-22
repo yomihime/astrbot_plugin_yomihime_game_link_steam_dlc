@@ -8,7 +8,9 @@ def success(title, lines, facts=None, *, privacy=ygl.Privacy.PUBLIC, warnings=()
         result_id="steam-dlc-result",
         status=ygl.ResultStatus.SUCCESS,
         document=ygl.DisplayDocument(
-            title, "Steam DLC", tuple(ygl.TextBlock(line) for line in lines),
+            title,
+            "Steam DLC",
+            tuple(ygl.TextBlock(line) for line in lines),
             privacy=privacy,
         ),
         model_facts=None if facts is None else ygl.FactDocument(facts),
@@ -17,8 +19,10 @@ def success(title, lines, facts=None, *, privacy=ygl.Privacy.PUBLIC, warnings=()
     )
 
 
-def failure(code, message, *, privacy=ygl.Privacy.PUBLIC):
+def failure(code, message, *, privacy=ygl.Privacy.PUBLIC, retry_after_seconds=None):
     return ygl.CapabilityResult(
-        result_id="steam-dlc-error", status=ygl.ResultStatus.ERROR,
-        error=ygl.ErrorDetail(code, message), privacy=privacy,
+        result_id="steam-dlc-error",
+        status=ygl.ResultStatus.ERROR,
+        error=ygl.ErrorDetail(code, message, retry_after_seconds),
+        privacy=privacy,
     )

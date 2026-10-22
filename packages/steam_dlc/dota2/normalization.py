@@ -21,7 +21,9 @@ _MAX_MATCH_ID = 24
 _SLOT_RANGES = ((0, 4), (128, 132))
 
 
-def _int(value: object, *, minimum: int = 0, maximum: int = (1 << 63) - 1) -> int | None:
+def _int(
+    value: object, *, minimum: int = 0, maximum: int = (1 << 63) - 1
+) -> int | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
@@ -47,7 +49,11 @@ def _match_id(value: object) -> str | None:
         return None
     if isinstance(value, int) and value > 0:
         value = str(value)
-    if not isinstance(value, str) or not _UINT.fullmatch(value) or len(value) > _MAX_MATCH_ID:
+    if (
+        not isinstance(value, str)
+        or not _UINT.fullmatch(value)
+        or len(value) > _MAX_MATCH_ID
+    ):
         return None
     return value if int(value) > 0 else None
 
@@ -73,18 +79,27 @@ def _valid_profile_url(value: object) -> str | None:
         port = parsed.port
     except ValueError:
         return None
-    if parsed.scheme.lower() != "https" or parsed.username is not None or parsed.password is not None or port not in (None, 443):
+    if (
+        parsed.scheme.lower() != "https"
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in (None, 443)
+    ):
         return None
     host = (parsed.hostname or "").lower()
     if parsed.query or parsed.fragment:
         return None
-    if host == "steamcommunity.com" and re.fullmatch(r"/profiles/[0-9]{17}", parsed.path):
+    if host == "steamcommunity.com" and re.fullmatch(
+        r"/profiles/[0-9]{17}", parsed.path
+    ):
         try:
             account_id32(parsed.path.rsplit("/", 1)[-1])
         except ValueError:
             return None
         return text
-    if host == "www.opendota.com" and re.fullmatch(r"/players/[1-9][0-9]{0,9}", parsed.path):
+    if host == "www.opendota.com" and re.fullmatch(
+        r"/players/[1-9][0-9]{0,9}", parsed.path
+    ):
         try:
             parse_dota_account(parsed.path.rsplit("/", 1)[-1])
         except ValueError:
@@ -106,17 +121,19 @@ def normalize_recent(payload: object, *, limit: int = 5) -> tuple[RecentMatch, .
         if match_id is None:
             continue
         slot = _int(row.get("player_slot"), maximum=255)
-        result.append(RecentMatch(
-            match_id=match_id,
-            start_time=_int(row.get("start_time")),
-            hero_id=_int(row.get("hero_id"), maximum=100_000),
-            game_mode=_int(row.get("game_mode"), maximum=100_000),
-            outcome=_outcome(slot, row.get("radiant_win")),
-            kills=_int(row.get("kills"), maximum=1_000_000),
-            deaths=_int(row.get("deaths"), maximum=1_000_000),
-            assists=_int(row.get("assists"), maximum=1_000_000),
-            duration=_int(row.get("duration"), maximum=7 * 24 * 60 * 60),
-        ))
+        result.append(
+            RecentMatch(
+                match_id=match_id,
+                start_time=_int(row.get("start_time")),
+                hero_id=_int(row.get("hero_id"), maximum=100_000),
+                game_mode=_int(row.get("game_mode"), maximum=100_000),
+                outcome=_outcome(slot, row.get("radiant_win")),
+                kills=_int(row.get("kills"), maximum=1_000_000),
+                deaths=_int(row.get("deaths"), maximum=1_000_000),
+                assists=_int(row.get("assists"), maximum=1_000_000),
+                duration=_int(row.get("duration"), maximum=7 * 24 * 60 * 60),
+            )
+        )
     return tuple(result)
 
 
@@ -136,7 +153,9 @@ def normalize_profile(payload: object, account: int) -> PlayerProfile:
     else:
         steam_id = None
     rank_tier = _int(payload.get("rank_tier"), maximum=100)
-    leaderboard_rank = _int(payload.get("leaderboard_rank"), minimum=1, maximum=10_000_000)
+    leaderboard_rank = _int(
+        payload.get("leaderboard_rank"), minimum=1, maximum=10_000_000
+    )
     return PlayerProfile(
         account_id32=account_id,
         name=_bounded_text(profile.get("personaname"), _MAX_NAME),
@@ -172,22 +191,28 @@ def normalize_match(payload: object, match_id: str) -> MatchSummary:
             continue
         account = _int(row.get("account_id"), minimum=1, maximum=(1 << 32) - 1)
         slot = _int(row.get("player_slot"), maximum=255)
-        if slot is not None and not any(start <= slot <= end for start, end in _SLOT_RANGES):
+        if slot is not None and not any(
+            start <= slot <= end for start, end in _SLOT_RANGES
+        ):
             slot = None
-        players.append(MatchPlayer(
-            account_id32=account,
-            player_slot=slot,
-            hero_id=_int(row.get("hero_id"), maximum=100_000),
-            kills=_int(row.get("kills"), maximum=1_000_000),
-            deaths=_int(row.get("deaths"), maximum=1_000_000),
-            assists=_int(row.get("assists"), maximum=1_000_000),
-            outcome=_outcome(slot, payload.get("radiant_win")),
-        ))
+        players.append(
+            MatchPlayer(
+                account_id32=account,
+                player_slot=slot,
+                hero_id=_int(row.get("hero_id"), maximum=100_000),
+                kills=_int(row.get("kills"), maximum=1_000_000),
+                deaths=_int(row.get("deaths"), maximum=1_000_000),
+                assists=_int(row.get("assists"), maximum=1_000_000),
+                outcome=_outcome(slot, payload.get("radiant_win")),
+            )
+        )
     return MatchSummary(
         match_id=normalized_match_id,
         start_time=_int(payload.get("start_time")),
         duration=_int(payload.get("duration"), maximum=7 * 24 * 60 * 60),
         game_mode=_int(payload.get("game_mode"), maximum=100_000),
-        radiant_win=payload.get("radiant_win") if isinstance(payload.get("radiant_win"), bool) else None,
+        radiant_win=payload.get("radiant_win")
+        if isinstance(payload.get("radiant_win"), bool)
+        else None,
         players=tuple(players),
     )

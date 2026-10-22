@@ -11,9 +11,28 @@ from io import BytesIO
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SDK_VERSION = "0.1.0a12"
-ROOT_FILES = ("__init__.py", "main.py", "metadata.yaml", "requirements.txt", "LICENSE", "README.md")
-FORBIDDEN_IMPORTS = {"requests", "httpx", "socket", "aiohttp", "core", "services", "infra", "infrastructure", "adapters", "extensions", "astrbot"}
+SDK_VERSION = "0.1.0a13"
+ROOT_FILES = (
+    "__init__.py",
+    "main.py",
+    "metadata.yaml",
+    "requirements.txt",
+    "LICENSE",
+    "README.md",
+)
+FORBIDDEN_IMPORTS = {
+    "requests",
+    "httpx",
+    "socket",
+    "aiohttp",
+    "core",
+    "services",
+    "infra",
+    "infrastructure",
+    "adapters",
+    "extensions",
+    "astrbot",
+}
 
 
 def inventory(root):
@@ -47,7 +66,12 @@ def inventory(root):
     manifest = json.loads(result["packages/steam_dlc/yomihime.manifest.json"])
     if manifest["package_id"] != "steam_dlc" or manifest["contract_version"] != "2.0":
         raise ValueError("unsupported package identity")
-    if {m["module_id"] for m in manifest["modules"]} != {"steam", "dota2", "cs2", "deadlock"}:
+    if {m["module_id"] for m in manifest["modules"]} != {
+        "steam",
+        "dota2",
+        "cs2",
+        "deadlock",
+    }:
         raise ValueError("release must contain four modules")
     for module in manifest["modules"]:
         module_path = module["factory_entry"].split(":")[0].replace(".", "/") + ".py"
@@ -63,23 +87,45 @@ def inventory(root):
 def build(root=ROOT, output=None, *, allow_dirty=False):
     root = Path(root).resolve(strict=True)
     files = inventory(root)
-    revision = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
-    dirty = subprocess.check_output(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=normal"], text=True).strip()
+    revision = subprocess.check_output(
+        ["git", "-C", str(root), "rev-parse", "HEAD"], text=True
+    ).strip()
+    dirty = subprocess.check_output(
+        ["git", "-C", str(root), "status", "--porcelain", "--untracked-files=normal"],
+        text=True,
+    ).strip()
     if dirty and not allow_dirty:
         raise ValueError("commit the reviewed source before a final release build")
-    receipt = {"source_commit": revision, "dirty": bool(dirty), "sdk_version": SDK_VERSION,
-        "module_abi": "2.0", "bridge_version": 1,
-        "files": {name: hashlib.sha256(payload).hexdigest() for name, payload in sorted(files.items())}}
-    files["BUILD.json"] = (json.dumps(receipt, ensure_ascii=False, indent=2) + "\n").encode()
+    receipt = {
+        "source_commit": revision,
+        "dirty": bool(dirty),
+        "sdk_version": SDK_VERSION,
+        "module_abi": "2.0",
+        "bridge_version": 1,
+        "files": {
+            name: hashlib.sha256(payload).hexdigest()
+            for name, payload in sorted(files.items())
+        },
+    }
+    files["BUILD.json"] = (
+        json.dumps(receipt, ensure_ascii=False, indent=2) + "\n"
+    ).encode()
     stream = BytesIO()
-    with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+    with zipfile.ZipFile(
+        stream, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
+    ) as archive:
         for name, payload in sorted(files.items()):
             entry = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
             entry.compress_type = zipfile.ZIP_DEFLATED
             entry.external_attr = (stat.S_IFREG | 0o644) << 16
             archive.writestr(entry, payload)
     payload = stream.getvalue()
-    output = Path(output) if output else root / "dist/astrbot_plugin_yomihime_game_link_steam_dlc-v0.1.0-alpha.1.zip"
+    output = (
+        Path(output)
+        if output
+        else root
+        / "dist/astrbot_plugin_yomihime_game_link_steam_dlc-v0.1.0-alpha.1.zip"
+    )
     output = output.absolute()
     if output.is_symlink() or output.exists() and output.read_bytes() != payload:
         raise ValueError("output already exists with different bytes")
@@ -97,8 +143,16 @@ def build(root=ROOT, output=None, *, allow_dirty=False):
         for name, content in files.items():
             if archive.read(name) != content:
                 raise ValueError("built archive source bytes differ")
-    report = {"path": str(output), "source_commit": revision, "dirty": bool(dirty), "bytes": len(payload),
-        "members": len(files), "sha256": hashlib.sha256(payload).hexdigest(), "inspection": "passed", "reused": reused}
+    report = {
+        "path": str(output),
+        "source_commit": revision,
+        "dirty": bool(dirty),
+        "bytes": len(payload),
+        "members": len(files),
+        "sha256": hashlib.sha256(payload).hexdigest(),
+        "inspection": "passed",
+        "reused": reused,
+    }
     print(json.dumps(report, ensure_ascii=False))
     return output
 
@@ -106,6 +160,10 @@ def build(root=ROOT, output=None, *, allow_dirty=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--allow-dirty", action="store_true", help="interim local harness only; final packages require committed source")
+    parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="interim local harness only; final packages require committed source",
+    )
     args = parser.parse_args()
     build(output=args.output, allow_dirty=args.allow_dirty)

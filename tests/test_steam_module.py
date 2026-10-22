@@ -25,7 +25,9 @@ class _Collection:
 
     async def replace(self, key, value, *, expected_revision):
         if self.conflict or self.row.revision != expected_revision:
-            raise ygl.RevisionConflict("binding", expected_revision, expected_revision + 1)
+            raise ygl.RevisionConflict(
+                "binding", expected_revision, expected_revision + 1
+            )
         self.row = ygl.VersionedRecord(key, self.row.revision + 1, value)
         return self.row
 
@@ -38,7 +40,9 @@ class _Scopes:
     async def bind(self, view):
         self.calls += 1
         # Test fixture simulates Core principal scoping. Product chooses no actor.
-        collection = self.collections.setdefault((view.adapter_id, view.actor_id), _Collection())
+        collection = self.collections.setdefault(
+            (view.adapter_id, view.actor_id), _Collection()
+        )
 
         async def select(name):
             if name != "binding":
@@ -54,16 +58,34 @@ class SteamModuleTests(unittest.IsolatedAsyncioTestCase):
         self.services = SimpleNamespace(scopes=self.scopes)
         self.module = await Factory().create(self.services)
         await self.module.start()
-        self.view = ygl.InvocationView("test", ygl.InvocationOrigin.COMMAND, "alice", "dm",
-            "steam_dlc/steam", 1, 1, adapter_id="platform-a")
+        self.view = ygl.InvocationView(
+            "test",
+            ygl.InvocationOrigin.COMMAND,
+            "alice",
+            "dm",
+            "steam_dlc/steam",
+            1,
+            1,
+            adapter_id="platform-a",
+        )
 
     async def call(self, action, parameters=None, view=None):
-        return await self.module.handlers().capabilities[action].invoke(view or self.view, parameters or {})
+        return (
+            await self.module.handlers()
+            .capabilities[action]
+            .invoke(view or self.view, parameters or {})
+        )
 
     async def test_single_binding_rebind_unbind_revision_and_recreated_module(self):
         first = "76561197960265729"
-        self.assertIs((await self.call("bind", {"steam_id": first})).status, ygl.ResultStatus.SUCCESS)
-        self.assertIs((await self.call("bind", {"steam_id": "76561197960265730"})).status, ygl.ResultStatus.SUCCESS)
+        self.assertIs(
+            (await self.call("bind", {"steam_id": first})).status,
+            ygl.ResultStatus.SUCCESS,
+        )
+        self.assertIs(
+            (await self.call("bind", {"steam_id": "76561197960265730"})).status,
+            ygl.ResultStatus.SUCCESS,
+        )
         identity = await self.call("identity")
         data = identity.document.ordered_blocks[0].fields["identity"]
         self.assertEqual((data["account_id32"], data["binding_revision"]), (2, 2))
@@ -80,14 +102,22 @@ class SteamModuleTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_same_group_actor_and_platform_do_not_borrow_binding(self):
         await self.call("bind", {"steam_id": "76561197960265729"})
-        for view in (replace(self.view, actor_id="bob"), replace(self.view, adapter_id="platform-b")):
+        for view in (
+            replace(self.view, actor_id="bob"),
+            replace(self.view, adapter_id="platform-b"),
+        ):
             result = await self.call("identity", view=view)
             self.assertIs(result.error.code, ygl.ErrorCode.UNBOUND)
 
     async def test_tool_and_derived_management_fail_before_records(self):
         for action in ("bind", "unbind", "binding"):
-            for view in (replace(self.view, origin=ygl.InvocationOrigin.LLM_TOOL), replace(self.view, parent_id="parent")):
-                result = await self.call(action, {"steam_id": "76561197960265729"}, view)
+            for view in (
+                replace(self.view, origin=ygl.InvocationOrigin.LLM_TOOL),
+                replace(self.view, parent_id="parent"),
+            ):
+                result = await self.call(
+                    action, {"steam_id": "76561197960265729"}, view
+                )
                 self.assertIs(result.status, ygl.ResultStatus.ERROR)
         self.assertEqual(self.scopes.calls, 0)
 

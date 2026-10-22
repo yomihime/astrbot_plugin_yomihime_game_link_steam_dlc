@@ -9,7 +9,7 @@ from astrbot.api.star import Context, Star, register
 
 PLUGIN_NAME = "astrbot_plugin_yomihime_game_link_steam_dlc"
 CORE_NAME = "astrbot_plugin_yomihime_game_link"
-SDK_VERSION = "0.1.0a12"
+SDK_VERSION = "0.1.0a13"
 
 
 @register(PLUGIN_NAME, "yomihime", "如月怜的游戏连结：Steam DLC", "0.1.0-alpha.1")
@@ -54,10 +54,15 @@ class SteamDLC(Star):
             if host is None:
                 self.connection_state = "waiting_core"
                 return
-            if (host.bridge_version != 1 or host.sdk_version != SDK_VERSION
-                    or host.module_abi_version != "2.0"):
+            if (
+                host.bridge_version != 1
+                or host.sdk_version != SDK_VERSION
+                or host.module_abi_version != "2.0"
+            ):
                 self.connection_state = "incompatible_sdk"
-                logger.warning("Steam DLC 与当前 Core/SDK 不兼容，需要安装匹配候选并重启。")
+                logger.warning(
+                    "Steam DLC 与当前 Core/SDK 不兼容，需要安装匹配候选并重启。"
+                )
                 return
             # The compatible Core loaded and validated this canonical type graph.
             import yomihime_game_link_sdk as ygl
@@ -66,12 +71,19 @@ class SteamDLC(Star):
             if ygl.__version__ != SDK_VERSION or ygl.MODULE_ABI_VERSION != "2.0":
                 self.connection_state = "incompatible_sdk"
                 return
-            if self._core_instance is core and self._lease is not None and self._lease.active:
+            if (
+                self._core_instance is core
+                and self._lease is not None
+                and self._lease.active
+            ):
                 return
             try:
                 lease = await host.register_package(
-                    plugin_name=PLUGIN_NAME, plugin_instance=self,
-                    package_root=str(Path(__file__).resolve().parent / "packages" / "steam_dlc"),
+                    plugin_name=PLUGIN_NAME,
+                    plugin_instance=self,
+                    package_root=str(
+                        Path(__file__).resolve().parent / "packages" / "steam_dlc"
+                    ),
                 )
             except ExtensionHostError as error:
                 self.connection_state = error.code
