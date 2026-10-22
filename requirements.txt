@@ -1,0 +1,2 @@
+# Canonical SDK is bootstrapped by the compatible Game Link Core plugin.
+# Do not install or vendor a second SDK into this plugin.

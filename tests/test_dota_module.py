@@ -1,0 +1,268 @@
+import asyncio
+import json
+import unittest
+from types import SimpleNamespace
+
+import yomihime_game_link_sdk as ygl
+from yomihime_game_link_sdk.contexts import InvocationOrigin, InvocationView
+from yomihime_game_link_sdk.display import DisplayDocument, FieldsBlock
+from yomihime_game_link_sdk.errors import AccessDenied, CacheUnavailable
+from yomihime_game_link_sdk.results import CapabilityResult, ErrorCode, ResultStatus
+from yomihime_game_link_sdk.services import ConfigSnapshot, HttpResponse
+from yomihime_game_link_sdk.storage import (
+    CacheLookup,
+    CacheLookupStatus,
+    CacheVisibility,
+)
+
+from packages.steam_dlc.dota2.module import Factory
+
+
+def invocation(origin, capability):
+    return InvocationView(
+        invocation_id=f"test-{capability}", origin=origin, actor_id="actor-a",
+        conversation_id="private-a", module_id="steam_dlc/dota2", module_epoch=1,
+        registry_revision=1, capability_id=capability,
+    )
+
+
+class Cache:
+    def __init__(self):
+        self.queries = []
+        self.puts = []
+        self.error = None
+        self.cached = None
+
+    async def lookup(self, query):
+        self.queries.append(query)
+        if self.error:
+            raise self.error
+        if self.cached is not None:
+            return CacheLookup(CacheLookupStatus.HIT, SimpleNamespace(payload={"projection": self.cached}))
+        return CacheLookup(CacheLookupStatus.MISS)
+
+    async def put(self, key, payload, *, ttl_seconds):
+        if self.error:
+            raise self.error
+        self.puts.append((key, payload, ttl_seconds))
+        return None
+
+
+class Http:
+    def __init__(self, body=None, status=200, headers=None):
+        self.body = body if isinstance(body, bytes) else json.dumps(body or {}).encode()
+        self.status = status
+        self.headers = headers or {}
+        self.requests = []
+        self.error = None
+
+    async def fetch(self, request):
+        if self.error:
+            raise self.error
+        self.requests.append(request)
+        return HttpResponse(self.status, self.headers, self.body)
+
+
+class Dependencies:
+    def __init__(self, result=None):
+        self.calls = []
+        self.result = result
+
+    async def invoke(self, context, reference, parameters):
+        self.calls.append((context, reference, parameters))
+        return self.result
+
+
+def identity_result():
+    return CapabilityResult(
+        "identity", ResultStatus.SUCCESS,
+        document=DisplayDocument("Steam identity", "Steam account", (FieldsBlock({"identity": {
+            "steam_id64": "76561197960265851", "account_id32": 123,
+            "binding_revision": 7, "association": "self_asserted",
+        }}),), privacy=ygl.Privacy.PRIVATE),
+        privacy=ygl.Privacy.PRIVATE,
+    )
+
+
+class TestDotaModule(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.cache = Cache()
+        self.http = Http()
+        self.dependencies = Dependencies()
+        self.scope = SimpleNamespace(cache=self.cache, http=self.http, dependencies=self.dependencies)
+
+        async def bind(context):
+            self.bound_contexts.append(context)
+            return self.scope
+
+        self.bound_contexts = []
+        async def config():
+            return ConfigSnapshot(revision=1, values={"timezone": "UTC"})
+
+        services = SimpleNamespace(scopes=SimpleNamespace(bind=bind), config=SimpleNamespace(current=config))
+        self.module = await Factory().create(services)
+        await self.module.start()
+        self.handlers = self.module.handlers().capabilities
+
+    @staticmethod
+    def _recent_payload():
+        return [{
+            "match_id": 800000001, "start_time": 0, "hero_id": 0, "game_mode": 23,
+            "player_slot": 0, "radiant_win": True, "kills": 0, "deaths": 2,
+            "assists": 5, "duration": 1800,
+        }]
+
+    async def test_tool_requires_explicit_account_and_never_invokes_identity(self):
+        result = await self.handlers["recent"].invoke(
+            invocation(InvocationOrigin.LLM_TOOL, "recent"), {"limit": 1}
+        )
+        self.assertEqual(result.error.code, ErrorCode.PARAMETER_ERROR)
+        self.assertEqual(self.dependencies.calls, [])
+
+        self.http = self.scope.http = Http(self._recent_payload())
+        result = await self.handlers["recent"].invoke(
+            invocation(InvocationOrigin.LLM_TOOL, "recent"), {"account": "123", "limit": 1}
+        )
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
+        self.assertEqual(self.dependencies.calls, [])
+        request = self.http.requests[0]
+        self.assertEqual((request.source_id, request.path, request.method), (
+            "opendota", "/api/players/123/matches", "GET"
+        ))
+        self.assertEqual(request.query, (("significant", "0"), ("limit", "1")))
+        self.assertIs(self.cache.queries[0].visibility, CacheVisibility.PUBLIC)
+        self.assertIn("800000001", str(result.model_facts.facts))
+
+    async def test_command_default_uses_only_the_declared_identity_dependency(self):
+        self.dependencies.result = identity_result()
+        self.http = self.scope.http = Http(self._recent_payload())
+        context = invocation(InvocationOrigin.COMMAND, "recent")
+        result = await self.handlers["recent"].invoke(context, {"command": "--limit 1"})
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
+        self.assertEqual(len(self.dependencies.calls), 1)
+        called_context, reference, parameters = self.dependencies.calls[0]
+        self.assertIs(called_context, context)
+        self.assertEqual((reference.module_id, reference.capability_id), ("steam_dlc/steam", "identity"))
+        self.assertEqual(dict(parameters), {})
+        self.assertIsNone(result.model_facts)
+        self.assertEqual(result.privacy, ygl.Privacy.PUBLIC)
+        self.assertEqual(result.document.privacy, ygl.Privacy.PUBLIC)
+        shown = "\n".join(block.text for block in result.document.ordered_blocks)
+        self.assertIn("本次查询账号 123", shown)
+        self.assertNotIn("76561197960265851", shown)
+        self.assertNotIn("修订", shown)
+        self.assertNotIn("self_asserted", shown)
+
+    async def test_default_profile_is_public_without_identity_details_or_facts(self):
+        self.dependencies.result = identity_result()
+        self.http = self.scope.http = Http({"rank_tier": 0, "profile": {
+            "personaname": "Player", "steamid": "76561197960265851",
+            "profileurl": "https://steamcommunity.com/profiles/76561197960265851",
+        }})
+        result = await self.handlers["profile"].invoke(
+            invocation(InvocationOrigin.COMMAND, "profile"), {"command": ""}
+        )
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
+        self.assertEqual(result.privacy, ygl.Privacy.PUBLIC)
+        self.assertEqual(result.document.privacy, ygl.Privacy.PUBLIC)
+        self.assertIsNone(result.model_facts)
+        shown = "\n".join(block.text for block in result.document.ordered_blocks)
+        self.assertIn("本次查询账号 123", shown)
+        self.assertNotIn("76561197960265851", shown)
+        self.assertNotIn("self_asserted", shown)
+        self.assertNotIn("修订", shown)
+
+    async def test_profile_and_match_use_fixed_routes_and_string_account_ids(self):
+        self.http = self.scope.http = Http({"rank_tier": 0, "profile": {
+            "account_id": 123, "personaname": "Player", "steamid": "76561197960265851",
+            "profileurl": "https://steamcommunity.com/profiles/76561197960265851",
+        }})
+        profile = await self.handlers["profile"].invoke(
+            invocation(InvocationOrigin.LLM_TOOL, "profile"), {"account": "123"}
+        )
+        self.assertEqual(profile.status, ResultStatus.SUCCESS)
+        self.assertEqual(profile.model_facts.facts["profile"]["account_id32"], "123")
+        self.assertEqual(self.http.requests[0].path, "/api/players/123")
+        self.assertEqual(self.dependencies.calls, [])
+
+        self.http = self.scope.http = Http({"match_id": 9001, "players": [{
+            "account_id": None, "player_slot": 0, "hero_id": 1, "kills": 0,
+            "deaths": 0, "assists": 0,
+        }]})
+        match = await self.handlers["match"].invoke(
+            invocation(InvocationOrigin.LLM_TOOL, "match"), {"match_id": "9001"}
+        )
+        self.assertEqual(match.status, ResultStatus.SUCCESS)
+        self.assertEqual(self.http.requests[0].path, "/api/matches/9001")
+        self.assertIsNone(match.model_facts.facts["match"]["players"][0]["account_id32"])
+
+    async def test_unbound_and_rate_limit_are_clear_and_do_not_leak_source_text(self):
+        self.dependencies.result = CapabilityResult(
+            "identity", ResultStatus.ERROR,
+            error=ygl.ErrorDetail(ErrorCode.UNBOUND, "unbound"),
+            privacy=ygl.Privacy.PRIVATE,
+        )
+        unbound = await self.handlers["profile"].invoke(
+            invocation(InvocationOrigin.COMMAND, "profile"), {"command": ""}
+        )
+        self.assertEqual(unbound.error.code, ErrorCode.UNBOUND)
+        self.assertEqual(unbound.privacy, ygl.Privacy.PUBLIC)
+        self.assertIn("绑定", unbound.error.message)
+
+        self.dependencies.result = CapabilityResult(
+            "identity", ResultStatus.SUCCESS,
+            model_facts=ygl.FactDocument({"identity": {"account_id32": 123}}),
+            privacy=ygl.Privacy.PRIVATE,
+        )
+        invalid_private_facts = await self.handlers["profile"].invoke(
+            invocation(InvocationOrigin.COMMAND, "profile"), {"command": ""}
+        )
+        self.assertEqual(invalid_private_facts.error.code, ErrorCode.MODULE_UNAVAILABLE)
+        self.assertEqual(invalid_private_facts.privacy, ygl.Privacy.PUBLIC)
+
+        self.http = self.scope.http = Http({}, status=429, headers={"Retry-After": "30"})
+        limited = await self.handlers["match"].invoke(
+            invocation(InvocationOrigin.LLM_TOOL, "match"), {"match_id": "9001"}
+        )
+        self.assertEqual(limited.error.code, ErrorCode.RATE_LIMITED)
+        self.assertIn("30", limited.error.message)
+
+    async def test_cache_backend_failure_bypasses_but_permission_failure_is_returned(self):
+        self.cache.error = CacheUnavailable()
+        self.http = self.scope.http = Http(self._recent_payload())
+        result = await self.handlers["recent"].invoke(
+            invocation(InvocationOrigin.LLM_TOOL, "recent"), {"account": "123"}
+        )
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
+        self.assertEqual(len(self.http.requests), 1)
+
+        self.cache.error = AccessDenied("access_denied")
+        denied = await self.handlers["recent"].invoke(
+            invocation(InvocationOrigin.LLM_TOOL, "recent"), {"account": "123"}
+        )
+        self.assertEqual(denied.error.code, ErrorCode.MODULE_UNAVAILABLE)
+
+    async def test_cancellation_propagates(self):
+        self.http = self.scope.http = Http(self._recent_payload())
+        self.http.error = asyncio.CancelledError()
+        with self.assertRaises(asyncio.CancelledError):
+            await self.handlers["recent"].invoke(
+                invocation(InvocationOrigin.LLM_TOOL, "recent"), {"account": "123"}
+            )
+
+    async def test_lifecycle_health_and_empty_collectors(self):
+        self.assertEqual(dict(self.module.handlers().collectors), {})
+        self.assertEqual(dict(self.module.handlers().evaluators), {})
+        self.assertTrue(all(
+            item.status is ygl.HealthStatus.AVAILABLE
+            for item in (await self.module.check_health()).capabilities.values()
+        ))
+        await self.module.stop()
+        self.assertTrue(all(
+            item.status is ygl.HealthStatus.UNAVAILABLE
+            for item in (await self.module.check_health()).capabilities.values()
+        ))
+
+
+if __name__ == "__main__":
+    unittest.main()

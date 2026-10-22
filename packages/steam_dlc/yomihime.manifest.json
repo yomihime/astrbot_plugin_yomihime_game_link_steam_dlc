@@ -1,0 +1,391 @@
+{
+  "schema_version": 1,
+  "package_id": "steam_dlc",
+  "package_version": "0.1.0-alpha.1",
+  "contract_version": "2.0",
+  "author": "yomihime",
+  "license": "AGPL-3.0-only",
+  "source": "https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc",
+  "modules": [
+    {
+      "module_id": "steam",
+      "route": "steam",
+      "category": "platform",
+      "factory_entry": "steam.module:Factory",
+      "module_version": "0.1.0-alpha.1",
+      "capabilities": [
+        {
+          "capability_id": "bind",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "steam_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "write",
+          "privacy_floor": "owner"
+        },
+        {
+          "capability_id": "binding",
+          "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "owner"
+        },
+        {
+          "capability_id": "unbind",
+          "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "write",
+          "privacy_floor": "owner"
+        },
+        {
+          "capability_id": "identity",
+          "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "owner"
+        },
+        {
+          "capability_id": "status",
+          "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public"
+        }
+      ],
+      "commands": [
+        {
+          "operation_path": "bind",
+          "capability_id": "bind",
+          "parameter_mapping": {},
+          "help_text": "私聊关联 SteamID64 或标准 profiles URL；用户声明，不验证所有权。",
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "steam_id"
+        },
+        {
+          "operation_path": "binding",
+          "capability_id": "binding",
+          "parameter_mapping": {},
+          "help_text": "私聊查看当前用户关联。"
+        },
+        {
+          "operation_path": "unbind",
+          "capability_id": "unbind",
+          "parameter_mapping": {},
+          "help_text": "私聊解除当前用户关联。"
+        },
+        {
+          "operation_path": "status",
+          "capability_id": "status",
+          "parameter_mapping": {},
+          "help_text": "查看 Steam 状态与使用方法。"
+        }
+      ],
+      "tools": [],
+      "display": {
+        "default_name": "Steam",
+        "short_name": "Steam"
+      },
+      "collections": [
+        {
+          "name": "binding",
+          "schema_version": 1,
+          "owner_kind": "user"
+        }
+      ]
+    },
+    {
+      "module_id": "dota2",
+      "route": "dota2",
+      "category": "game",
+      "factory_entry": "dota2.module:Factory",
+      "module_version": "0.1.0-alpha.1",
+      "capabilities": [
+        {
+          "capability_id": "recent",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "command": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_capabilities": [
+            {
+              "module_id": "steam_dlc/steam",
+              "capability_id": "identity"
+            }
+          ],
+          "required_sources": [
+            "opendota"
+          ]
+        },
+        {
+          "capability_id": "profile",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "command": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_capabilities": [
+            {
+              "module_id": "steam_dlc/steam",
+              "capability_id": "identity"
+            }
+          ],
+          "required_sources": [
+            "opendota"
+          ]
+        },
+        {
+          "capability_id": "match",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "match_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "opendota"
+          ]
+        },
+        {
+          "capability_id": "status",
+          "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public"
+        }
+      ],
+      "commands": [
+        {
+          "operation_path": "recent",
+          "capability_id": "recent",
+          "parameter_mapping": {},
+          "help_text": "最近战绩 [账号] [--limit N]；默认5场，最多20场。",
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "command"
+        },
+        {
+          "operation_path": "profile",
+          "capability_id": "profile",
+          "parameter_mapping": {},
+          "help_text": "精简玩家资料 [账号]；省略账号使用当前用户关联。",
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "command"
+        },
+        {
+          "operation_path": "match",
+          "capability_id": "match",
+          "parameter_mapping": {},
+          "help_text": "单场基础摘要 <match_id>；不提交解析。",
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "command"
+        },
+        {
+          "operation_path": "status",
+          "capability_id": "status",
+          "parameter_mapping": {},
+          "help_text": "查看 Dota2 查询状态。"
+        }
+      ],
+      "tools": [
+        {
+          "name": "steam_dlc_dota2_recent",
+          "capability_id": "recent",
+          "parameter_mapping": {
+            "account": "account",
+            "limit": "limit"
+          },
+          "description": "查询明确 Dota ID32/SteamID64 的最近战绩；必须指定 account，不支持我的账号。"
+        },
+        {
+          "name": "steam_dlc_dota2_profile",
+          "capability_id": "profile",
+          "parameter_mapping": {
+            "account": "account"
+          },
+          "description": "查询明确 Dota ID32/SteamID64 的玩家资料；必须指定 account。"
+        },
+        {
+          "name": "steam_dlc_dota2_match",
+          "capability_id": "match",
+          "parameter_mapping": {
+            "match_id": "match_id"
+          },
+          "description": "查询明确 match_id 的已有基础比赛数据；不提交解析。"
+        }
+      ],
+      "display": {
+        "default_name": "Dota2",
+        "short_name": "Dota2"
+      },
+      "sources": [
+        {
+          "source_id": "opendota",
+          "host": "api.opendota.com",
+          "timeout_seconds": 8,
+          "requests_per_minute": 30
+        }
+      ],
+      "config_fields": [
+        {
+          "name": "timezone",
+          "default": "Asia/Shanghai",
+          "description": "命令输出时区（IANA名称）。",
+          "value_schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      ]
+    },
+    {
+      "module_id": "cs2",
+      "route": "cs2",
+      "category": "game",
+      "factory_entry": "cs2.module:Factory",
+      "module_version": "0.1.0-alpha.1",
+      "capabilities": [
+        {
+          "capability_id": "status",
+          "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public"
+        }
+      ],
+      "commands": [
+        {
+          "operation_path": "status",
+          "capability_id": "status",
+          "parameter_mapping": {},
+          "help_text": "已接入，游戏数据功能待实现。"
+        }
+      ],
+      "tools": [],
+      "display": {
+        "default_name": "CS2",
+        "short_name": "CS2"
+      }
+    },
+    {
+      "module_id": "deadlock",
+      "route": "deadlock",
+      "category": "game",
+      "factory_entry": "deadlock.module:Factory",
+      "module_version": "0.1.0-alpha.1",
+      "capabilities": [
+        {
+          "capability_id": "status",
+          "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public"
+        }
+      ],
+      "commands": [
+        {
+          "operation_path": "status",
+          "capability_id": "status",
+          "parameter_mapping": {},
+          "help_text": "已接入，游戏数据功能待实现。"
+        }
+      ],
+      "tools": [],
+      "display": {
+        "default_name": "Deadlock",
+        "short_name": "Deadlock"
+      }
+    }
+  ]
+}
