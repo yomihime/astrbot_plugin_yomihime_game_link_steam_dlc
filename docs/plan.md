@@ -1,5 +1,7 @@
 # Steam DLC alpha 执行与验收
 
+当前结论：候选尚未完整通过验收。第二轮复审后的额外浏览器验证发现 R4-I1（Important）：DLC 未声明页面，Dota2 的“进入设置”落到空主页，时区设置不可达。既有 API、业务、生命周期与包审计通过记录仍成立；不能由此宣布完整 alpha 交付通过。两轮修复额度已用完，待新增范围/预算决定。
+
 任务书：`Steam_DLC_Codex_Taskbook.txt`。[public alpha 分支](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/tree/feat/steam-dlc-alpha)位于指定的 `astrbot_plugin_yomihime_game_link_steam_dlc` checkout。main 保留建库初始提交 `01457b2f80ab18ecf735109c76b9575ef7d34890`；安装使用已审计 ZIP。
 
 DLC 运行源冻结于 `32e24195b96b6e7a901172736eba2093f24c48f0`；最终验收脚本与已验安装包来源为 `4645f80f99eb7d107bcbb578291fd7acf0eb86b1`。后续文档提交不改变已验包。Core 独立 worktree 分支 `feat/steam-dlc-support`，提交 `8981ee2b2c6d0a447728f3b257bb5d09380154c8`，基线 `11cf85e31391453ab5140dba8181089469db5487`；[Draft PR #11](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/pull/11)。canonical SDK `0.1.0a13`、模块 ABI `2.0`、Host bridge `1`。
@@ -14,9 +16,9 @@ DLC 运行源冻结于 `32e24195b96b6e7a901172736eba2093f24c48f0`；最终验收
 | REQ-06 主体依赖 | Core `be5b43d` 只读 collection 与 OWNER proof；最小 PRIVATE DTO | 同群 A/B、跨平台、未绑定、群管理拒绝、换绑快照、provider 停用、旧 Tool epoch passed；worker 写拒绝通过 |
 | REQ-07 Dota | `32e2419`；三查询、固定 GET、PUBLIC 缓存、有界 DTO、中文英雄/时区 | 23 项 DLC 测试、Core 缓存/HTTP 提示合同、Host 三查询 passed；匿名 API 三 GET 均 200 |
 | REQ-08 CS2/Deadlock | `f45e8c3`；实际 factory/生命周期/help/status | 实际加载/状态/管理启停/卸载 passed；游戏数据待实现，无虚构 Tool |
-| REQ-09 管理与 UI | 通用目录、状态、普通设置、公开 catalog | 真实认证 Dashboard API 识别四模块、timezone CAS 往返 passed；浏览器视觉 unrun；dots 未同步 |
-| REQ-10 门禁与独审 | 冻结产物、离线 CI、真实 Host 分层记录 | 受影响门禁和最终独审 passed；完整 Core CI 另记；真实 IM/模型/浏览器未验 |
-| REQ-11 交付 | 两开发分支已推送、Core Draft PR、已验 ZIP 和 a13 wheel | 直接复用精确匹配产物；完整交付摘要见本地 `dist/delivery.json`，不自动合并或 Release |
+| REQ-09 管理与 UI | 通用目录、状态、普通设置、公开 catalog | 真实认证 Dashboard API 与 timezone CAS passed；浏览器模块列表 passed、Dota 配置路由 failed（R4-I1）；dots 未同步 |
+| REQ-10 门禁与独审 | 冻结产物、离线 CI、真实 Host 分层记录 | 受影响门禁与 R3 范围内独审 passed；新增 R4-I1 待闭合；完整 Core CI 另记；真实 IM/模型未验 |
+| REQ-11 候选产物 | 两开发分支已推送、Core Draft PR、已验 ZIP 和 a13 wheel | 保存精确候选；因 R4-I1 不宣称完整验收通过；本地 `dist/delivery.json` 标注当前状态，不自动合并或 Release |
 
 ## 验证账本
 
@@ -34,6 +36,8 @@ DLC 运行源冻结于 `32e24195b96b6e7a901172736eba2093f24c48f0`；最终验收
 
 Host 安装阶段的 restart-unrun 已由后续新进程覆盖。Host 最终仍未执行 live API、真实 IM 与浏览器视觉；live API 由独立冒烟验证。正常验收使用真实 PluginManager、ZIP、公共生命周期、canonical SDK、命令、published FunctionTool 与 Dashboard 认证 HTTP；事件、IM 接收器和 HTTPS body 是 fixture，未调用实际模型。各层不能合成为“真实 IM 端到端通过”。
 
+随后补做 H2 浏览器检查：真实 Core 稳定 view、真实 Dashboard ASGI/认证 API，加一个遵循已核实 Host postMessage 合同的合成父容器；未加载 AstrBot 整壳前端。四模块及 FF14 的列表/实际状态可见，但 Dota2 设置路由失败。证据 `host-browser-a13-02/modules-snapshot.yml`、`modules.png`、`dota-empty-snapshot.yml`、`dota-empty.png`、`browser-finding.json`。仅 favicon 404 的控制台错误与本问题无关。此前表中的 browser-unrun 不应覆盖这次实际 failed。
+
 公开 API 当次 observed remaining-minute 为 59/58/57、remaining-day 为 2999/2998/2997，不作为永久配额。产品 30 requests/minute 是本地保守上限。未使用 Steam/OpenDota Key、STRATZ 或解析 POST。
 
 Core 同 HEAD 完整 CI 为 [Actions 39760759331](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/actions/runs/39760759331)，最终状态在交付收据核对。另一个本地完整回归针对旧 `2f88b99/a12`，因候选已更新主动中止，状态 interrupted/incomplete；日志 `core-full-native-r1.log` 与 `core-full-result.json` 保留，自有空私密测试目录已清理。不冒充最终 a13 全量结果。
@@ -45,6 +49,7 @@ Core 同 HEAD 完整 CI 为 [Actions 39760759331](https://github.com/yomihime/as
 | R1 初审 | 1 Blocker、3 Important：默认本人查询、缓存合同、Retry-After/故障分类、中文英雄。第 1 轮集中修复 Core `be5b43d` / DLC `32e2419` / a13；保留 `review-r1.md` |
 | R2 第一次复审 | 原四项关闭；新增 1 Important：依赖停用在 Gateway 前拒绝后无反馈。有界根因诊断 18 passed / 2 同根因 failed / 4 unrun。第 2 轮只修通用早期拒绝反馈；保留 `review-r2.md` |
 | R3 第二次复审 | 0 Blocker / 0 Important，通过。独立核验最终源码/ZIP、43 项 Host 检查、144 项 Core 门禁，另自跑 11 定向项；报告 `review-r3.md` |
+| R4 后续浏览器补验 | 新增 R4-I1 Important：字段存在但未声明 config page，设置按钮退到无页面主页。R3 当时明确未覆盖浏览器，不能据其旧结论关闭新问题 |
 
 早期 a12 默认查询失败、旧文案 harness 断言失败、a13-r2 provider 停用失败、诊断运行与环境失败均保留原始 failed/unrun，没有覆盖为通过。两轮修复已经用完，不以更换 agent 重置。
 
@@ -63,8 +68,16 @@ root 串行维护公共合同及共享文件，未修改全局 Codex 配置或�
 
 先装匹配 SDK a13 的 Core 候选 ZIP，再装 DLC ZIP、启用并重启；具体命令见 README。完全匹配的已验候选直接复用。Core metadata 仍为 `v0.1.2`，须以提交、SDK pin 和完整 SHA256 区分，不能拿旧正式同版本 ZIP 替代。
 
-真实 IM、实际模型对话、浏览器视觉仍 unrun；默认账号 Tool 按本轮范围不开放，模型须明确指定账号。CS2/Deadlock 游戏数据、完整账号 GUI、新视觉主题、Steam OpenID/vanity、多账号/跨平台合并、解析提交/后台复盘及 STRATZ 延期。
+真实 IM、实际模型对话、AstrBot 整壳视觉仍 unrun；H2 稳定 Core 页的浏览器结果按上列 passed/failed 保留。默认账号 Tool 按本轮范围不开放，模型须明确指定账号。CS2/Deadlock 游戏数据、完整账号 GUI、新视觉主题、Steam OpenID/vanity、多账号/跨平台合并、解析提交/后台复盘及 STRATZ 延期。
 
 当前四模块通用管理 API 可用，尚未同步 dots 新 UI。主 checkout 的 `pages/**` 与 `modules/ff14/pages/**` 未改。发行资源只在独立 staging 按固定基线构建，没有拼接未完成分支的生成物。合并、Release、日常机器人安装不在本轮自动执行范围。
 
-合并建议：最终独审已无 Blocker/Important；先确认 Core 同提交完整 CI，再由维护者审查并决定合并 PR #11。DLC 对 SDK a13 严格检查，旧 Core 会明确拒绝接入，不能只安装 DLC 或混用旧同版本 Core ZIP。
+合并建议：Core 通用变更的 R3 审查通过，仍须等待同提交完整 CI，由维护者决定 PR #11；DLC 整体因新增 R4-I1 尚不可宣布验收通过。DLC 严格要求 SDK a13，不能混用旧同版本 Core ZIP。
+
+## 待决定的追加修复
+
+根因已收敛：manifest 的 `pages=[]`，后端普通配置字段仍存在；管理列表依据字段显示“进入设置”，稳定 shell 的 `selectSettings(owner)` 只找 `role=config` 的已声明页面，找不到便退回模块主页。全局设置只显示 Core owner，不能替代 DLC 配置页。父桥、JWT、管理 API 与数据库 CAS 均不是根因。
+
+建议追加 1 轮修复与独立复审，继续最多两个活跃子任务、单 writer、实际模型/费用 unknown、无额外收费加速。实现限 DLC：按已有 `PageModule.mount` / `ModulePageServices.config` 公共合同提供最小首页帮助/状态与普通配置页，声明各模块 home/config 页面及固定资源摘要，更新显式 ZIP 资源清单。四模块共享最小页面代码但不共享可变业务状态；不新增账号 GUI、不改 Core/dots 页面、SDK 或 Steam/Dota 业务权限。
+
+新增门禁为真实浏览器导航、Dota 时区读取/保存 UTC 后恢复、CAS 冲突、页面 owner/epoch 失效与卸载清理；重新冻结 ZIP、运行受影响包/页面/Host 检查并独立复审。无需因纯 DLC 页面改动重跑未改 Core 的全套；Core 现有完整 CI 继续。若这一追加轮仍有 Blocker/Important，再报告剩余问题，不重置预算或降低标准。
