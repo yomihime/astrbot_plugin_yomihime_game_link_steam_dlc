@@ -755,7 +755,7 @@ async def main():
         for text, expected in (
             ("/ygl dota2 recent", "本次查询账号 1"),
             ("/ygl dota2 profile", "本次查询账号 1"),
-            ("/ygl dota2 match 111", "比赛摘要：111"),
+            ("/ygl dota2 match 111", "比赛 ID: 111"),
         ):
             output, _ = await command(runtime, text, group=True)
             assert expected in output, (text, output)
