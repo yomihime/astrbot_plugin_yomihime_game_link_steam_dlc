@@ -1,4 +1,7 @@
-"""Command-only Steam association backed by invocation-scoped USER records."""
+"""Steam identity owner and official public store/account query capabilities."""
+
+import re
+import shlex
 
 import yomihime_game_link_sdk as ygl
 
@@ -7,10 +10,24 @@ from ..shared.steam_ids import (
     account_id32,
     parse_steam_binding_target,
     parse_steam_id,
+    steam_id64_from_account,
 )
+from .normalization import app_id
+from .presentation import result as query_result
+from .queries import QueryFailure, image, load
 
 _PRIVATE = ygl.Privacy.PRIVATE
-_CAPABILITIES = ("bind", "binding", "unbind", "identity", "status")
+_QUERIES = (
+    "search",
+    "app",
+    "profile",
+    "recent",
+    "games",
+    "profile_explicit",
+    "recent_explicit",
+    "games_explicit",
+)
+_CAPABILITIES = ("bind", "binding", "unbind", "identity", "status") + _QUERIES
 
 
 class Factory:
@@ -25,7 +42,12 @@ class SteamModule:
 
     def handlers(self):
         return ygl.ModuleHandlers(
-            {name: _Handler(self, name) for name in _CAPABILITIES}, {}, {}
+            {
+                name: _Query(self, name) if name in _QUERIES else _Handler(self, name)
+                for name in _CAPABILITIES
+            },
+            {},
+            {},
         )
 
     async def start(self):
@@ -55,7 +77,9 @@ class _Handler:
             return success(
                 "游戏连结 · Steam · 状态",
                 (
-                    "已接入；共享账号关联可用。",
+                    "商店 search/app 与公开账号 profile/recent/games 样本查询可用。",
+                    "商店默认 CN/schinese；可用 --country CC --language english 指定。",
+                    "recent 是主页展示样本，games 是 legacy mostPlayedGames 样本；都不是完整游戏库。",
                     "请在私聊使用 /ygl steam bind、binding、unbind。",
                     "手动关联为 self_asserted，不代表已验证 Steam 所有权。",
                 ),
@@ -177,4 +201,177 @@ class _Handler:
         except ygl.ServiceUnavailable:
             return failure(
                 ygl.ErrorCode.MODULE_UNAVAILABLE, "账号服务暂不可用。", privacy=_PRIVATE
+            )
+
+
+def _account(value):
+    if not isinstance(value, str) or not re.fullmatch(r"[1-9][0-9]*", value):
+        raise ValueError("请输入 ID32 或 SteamID64；查询不接受任意 URL。")
+    return (
+        steam_id64_from_account(value)
+        if int(value) <= 2**32 - 1
+        else parse_steam_id(value)
+    )
+
+
+def _input(context, parameters, operation):
+    country, language = (
+        parameters.get("country", "CN"),
+        parameters.get("language", "schinese"),
+    )
+    if context.origin is ygl.InvocationOrigin.COMMAND:
+        raw = parameters.get(
+            "command",
+            parameters.get("query" if operation == "search" else "app_id", "")
+            if operation in ("search", "app")
+            else "",
+        )
+        if not isinstance(raw, str) or len(raw) > 256:
+            raise ValueError("命令参数过长或格式错误。")
+        args = shlex.split(raw)
+        positional, seen = [], set()
+        index = 0
+        while index < len(args):
+            token = args[index]
+            if token in ("--country", "--language") and operation in ("search", "app"):
+                if token in seen or index + 1 >= len(args):
+                    raise ValueError("地区/语言参数缺值或重复。")
+                seen.add(token)
+                if token == "--country":
+                    country = args[index + 1]
+                else:
+                    language = args[index + 1]
+                index += 2
+            elif token.startswith("--"):
+                raise ValueError("不支持此选项。")
+            else:
+                positional.append(token)
+                index += 1
+        if operation == "search":
+            target = " ".join(positional)
+        else:
+            if len(positional) > 1:
+                raise ValueError("请只提供一个 AppID 或账号。")
+            target = positional[0] if positional else None
+    else:
+        target = parameters.get(
+            "query"
+            if operation == "search"
+            else "app_id"
+            if operation == "app"
+            else "account"
+        )
+    if operation in ("search", "app"):
+        if not isinstance(country, str) or not re.fullmatch(r"[A-Za-z]{2}", country):
+            raise ValueError("地区必须是两位国家代码，例如 CN/US。")
+        if not isinstance(language, str) or not re.fullmatch(r"[a-z_]{2,24}", language):
+            raise ValueError("语言必须是 Steam 语言标识，例如 schinese/english。")
+        country = country.upper()
+        if operation == "app":
+            target = app_id(target)
+        elif not isinstance(target, str) or not target.strip() or len(target) > 120:
+            raise ValueError("请提供游戏名或 AppID（最多120字符）。")
+        else:
+            target = target.strip()
+    else:
+        country, language = "GLOBAL", "english"
+        if target is not None:
+            target = _account(target)
+    return target, country, language
+
+
+class _Query:
+    def __init__(self, owner, action):
+        self.owner, self.operation = owner, action.removesuffix("_explicit")
+        self.explicit_only = action.endswith("_explicit")
+
+    async def invoke(self, context, parameters):
+        if not self.owner._running:
+            return failure(ygl.ErrorCode.MODULE_UNAVAILABLE, "Steam 模块未启用。")
+        default_target = False
+        try:
+            try:
+                target, country, language = _input(context, parameters, self.operation)
+            except (ValueError, TypeError) as exc:
+                return failure(
+                    ygl.ErrorCode.PARAMETER_ERROR, str(exc) or "参数格式错误。"
+                )
+            if target is None:
+                if (
+                    self.explicit_only
+                    or context.origin is not ygl.InvocationOrigin.COMMAND
+                    or context.parent_id is not None
+                    or not context.actor_id
+                ):
+                    return failure(
+                        ygl.ErrorCode.PARAMETER_ERROR,
+                        "工具查询必须明确提供 account；默认账号只接受用户直接命令。",
+                    )
+                default_target = True
+                identity = await _Handler(self.owner, "identity").invoke(context, {})
+                if identity.status is not ygl.ResultStatus.SUCCESS:
+                    return identity
+                target = parse_steam_id(
+                    identity.document.ordered_blocks[0].fields["identity"]["steam_id64"]
+                )
+            scope = await self.owner._services.scopes.bind(context)
+            operation = self.operation
+            if operation == "search" and re.fullmatch(r"[0-9]+", target):
+                try:
+                    target = app_id(target)
+                except ValueError:
+                    return failure(
+                        ygl.ErrorCode.PARAMETER_ERROR, "AppID 必须是有效正整数。"
+                    )
+                operation = "app"
+            projection = await load(scope, operation, target, country, language)
+            asset = await image(scope, projection) if operation != "search" else None
+            return query_result(projection, default_target=default_target, asset=asset)
+        except QueryFailure as exc:
+            return failure(
+                exc.code,
+                exc.message,
+                privacy=_PRIVATE if default_target else ygl.Privacy.PUBLIC,
+                retry_after_seconds=exc.retry_after,
+            )
+        except ygl.SourceHttpError as exc:
+            code = (
+                ygl.ErrorCode.RATE_LIMITED
+                if exc.status_code == 429 or exc.code == "rate_limited"
+                else ygl.ErrorCode.UPSTREAM_ERROR
+            )
+            return failure(
+                code,
+                "Steam 来源暂不可用，请稍后重试。",
+                privacy=_PRIVATE if default_target else ygl.Privacy.PUBLIC,
+                retry_after_seconds=exc.retry_after_seconds,
+            )
+        except (ygl.ServiceUnavailable, ygl.InvalidInvocation, ygl.AccessDenied):
+            return failure(
+                ygl.ErrorCode.MODULE_UNAVAILABLE,
+                "Steam 查询服务或本次授权暂不可用。",
+                privacy=_PRIVATE if default_target else ygl.Privacy.PUBLIC,
+            )
+        except PermissionError:
+            return failure(
+                ygl.ErrorCode.NOT_PUBLIC,
+                "Steam 资料需要登录或未公开；未视为空库。",
+                privacy=_PRIVATE if default_target else ygl.Privacy.PUBLIC,
+            )
+        except LookupError:
+            return failure(
+                ygl.ErrorCode.NOT_FOUND,
+                "该 AppID 未返回本地区商店资料；可能查无结果、下架或地区不可用，无法进一步区分。",
+            )
+        except (ValueError, TypeError):
+            return failure(
+                ygl.ErrorCode.UNPARSED,
+                "Steam 数据结构或返回身份无法验证；未将缺失资料视为零。",
+                privacy=_PRIVATE if default_target else ygl.Privacy.PUBLIC,
+            )
+        except ygl.OperationTimeout:
+            return failure(
+                ygl.ErrorCode.UPSTREAM_ERROR,
+                "Steam 查询超时，请稍后重试。",
+                privacy=_PRIVATE if default_target else ygl.Privacy.PUBLIC,
             )

@@ -744,7 +744,9 @@ async def main():
             assert help_text and "未找到模块" not in help_text, route
             if route in ("cs2", "deadlock"):
                 status_text, _ = await command(runtime, "/ygl " + route + " status")
-                assert "待实现" in status_text, (route, status_text)
+                assert (
+                    "留存" in status_text if route == "cs2" else "已收录" in status_text
+                ), (route, status_text)
         passed("five-module-command-help")
         steam_a, steam_b = "76561197960265729", "76561197960265730"
         output, _ = await command(runtime, "/ygl steam bind " + steam_a)
@@ -799,20 +801,31 @@ async def main():
         await command(runtime, "/ygl steam bind " + steam_a)
         passed("inflight-rebind-target-snapshot-and-unbind")
         handles = list(runtime._tool_publisher.handles)
-        assert not any(handle.module_id == "steam_dlc/steam" for handle in handles)
+        assert not any(
+            handle.module_id.startswith("steam_dlc/")
+            and handle.descriptor.capability_id
+            in {"bind", "binding", "identity", "unbind"}
+            for handle in handles
+        )
+        for module_id, count in (("steam", 5), ("deadlock", 5), ("cs2", 0)):
+            assert (
+                sum(handle.module_id == "steam_dlc/" + module_id for handle in handles)
+                == count
+            )
         dota_handles = [
             handle for handle in handles if handle.module_id == "steam_dlc/dota2"
         ]
-        assert len(dota_handles) == 3
+        assert len(dota_handles) == 5
         recent = next(
             handle
             for handle in dota_handles
-            if handle.descriptor.capability_id == "recent"
+            if handle.descriptor.capability_id == "recent_explicit"
         )
         assert "account" in recent.tool.parameters["properties"]
         result["published_tool_account_schema_required"] = (
             "account" in recent.tool.parameters["required"]
         )
+        assert result["published_tool_account_schema_required"]
         tool_event = Event("synthetic explicit-account Tool")
         from astrbot.core.agent.run_context import ContextWrapper
 
@@ -920,7 +933,7 @@ async def main():
                             handle
                             for handle in runtime._tool_publisher.handles
                             if handle.module_id == "steam_dlc/dota2"
-                            and handle.descriptor.capability_id == "profile"
+                            and handle.descriptor.capability_id == "profile_explicit"
                         )
                         provider_tool_event = Event(
                             "synthetic provider-disabled explicit profile Tool"
@@ -955,7 +968,7 @@ async def main():
             handle
             for handle in runtime._tool_publisher.handles
             if handle.module_id == "steam_dlc/dota2"
-            and handle.descriptor.capability_id == "recent"
+            and handle.descriptor.capability_id == "recent_explicit"
         )
         success, error = await host.plugin_manager.reload(DLC)
         assert success, error

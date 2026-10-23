@@ -1,6 +1,6 @@
 # 架构与合同
 
-本文定义 Steam DLC alpha 的包边界、SDK 合同、模块能力与验收边界。目标兼容面是 Core 分支 `feat/steam-dlc-support` 提供的 canonical `yomihime_game_link_sdk 0.1.0a13`，模块 ABI `2.0`、bridge v1；DLC 候选分支为 `feat/steam-dlc-alpha`。截至本文编写，候选尚未合并或发布。[Core Draft PR #11](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/pull/11) 仍待维护者合并；包内 `BUILD.json` 和正式验收记录才是具体构建版本的证据。
+本文定义 Steam DLC alpha 的包边界、SDK 合同、模块能力与验收边界。目标兼容面是 Core 分支 `feat/steam-dlc-support` 提供的 canonical `yomihime_game_link_sdk 0.1.0a14`，模块 ABI `2.0`、bridge v1；DLC 候选分支为 `feat/steam-dlc-alpha`。截至本文编写，候选尚未合并或发布。[Core Draft PR #11](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/pull/11) 仍待维护者合并；包内 `BUILD.json` 和正式验收记录才是具体构建版本的证据。
 
 ## 包与依赖边界
 
@@ -53,7 +53,7 @@ Steam 关联数据保存在 SDK USER collection `binding`，其中 `default` 是
 
 ## Dota 2 能力
 
-`dota2.module:Factory` 注册 `recent`、`profile`、`stats`、`last`、`match`、`status` handlers；`stats_explicit`/`last_explicit` 是同一查询的显式账号 Tool 入口，schema 必填 account 且不声明私有 identity 依赖，collector/evaluator 为空。模块具有真实 `start`、`stop`、`check_health` 生命周期。所有 Dota 能力结果均为 PUBLIC；PRIVATE identity 仅用于解析默认查询目标，不向模型 facts 输出 SteamID、关联信息或 binding revision。默认查询呈现本次公开 Dota 账号目标即可。
+`dota2.module:Factory` 注册 `recent`、`profile`、`stats`、`last`、`match`、`status` handlers；每项查询的 `_explicit` 为同一实现的 Tool 入口，schema 必填 account 或 match_id，且不声明私有 identity 依赖，collector/evaluator 为空。模块具有真实 `start`、`stop`、`check_health` 生命周期。所有 Dota 能力结果均为 PUBLIC；PRIVATE identity 仅用于解析默认查询目标，不向模型 facts 输出 SteamID、关联信息或 binding revision。默认查询呈现本次公开 Dota 账号目标即可。
 
 | 能力 | COMMAND 参数 | Tool 参数 | 默认身份 | 数据源 |
 | --- | --- | --- | --- | --- |
@@ -74,13 +74,19 @@ OpenDota source id 为 `opendota`，host 固定为 `api.opendota.com`。唯一�
 
 没有 POST、无附加 win/loss 查询链、不受用户控制的主机或路径。响应读取有字节上限，仅投影必要字段；输出 facts 有界且不超过 512 节点，最近比赛最多 20 场、单场选手最多 10 人。缓存通过 SDK 的 PUBLIC `CacheQuery`，缓存键按 source、operation、目标和参数隔离；CacheUnavailable 可旁路，权限、取消、超时等其他失败不可当作缓存未命中吞掉。
 
+stats/last 在相同账号和 limit 下共享 `opendota:window:v1` 的规范化原始窗口，保留无效行位置、重复行和来源获取时间；两个操作分别生成自己的投影，不能互当缓存内容。无效行或重复行阻断尚未确定终点的连续胜负；其他有效样本仍计入统计。缓存 envelope `schema_version=1`，读取时按操作核对必需字段、目标、窗口及获取时间，旧版/畸形内容作为 miss 回源覆盖。意外错误仅记录操作与异常类型，不保存原文。
+
 日期以 UTC 解析和保存，展示时区由 `timezone` 配置控制，默认 `Asia/Shanghai`。HTTP 404、429、timeout、上游错误、无记录、identity 未绑定和 provider 离线均映射为稳定错误；安全的限流提示可显示等待秒数，不透传上游 headers/body，也不自动重试。
 
-## CS2、Deadlock 与 UI 范围
+## Steam、Deadlock、CS2 与 UI
 
-CS2 和 Deadlock 当前只注册真实 `status`、生命周期与帮助。状态说明数据查询尚未实现；不提供虚构战绩或工具能力。Core 通用管理界面显示实际运行健康；DLC 帮助页另说明业务完成度，不把运行正常当作游戏数据已实现。
+Steam 新增 search/app 和 profile/recent/games，保留原绑定接口与唯一 USER binding 表。商店缓存按国家、语言和 AppID 隔离；账号 HTML 和 legacy XML 是不同覆盖样本。常规 Community 主页需要 SDK 声明的有限匿名同源 HTTPS GET 跳转，嵌入 SteamID 必须精确匹配；不接受用户输入任意 vanity URL。可选 Steam Key 的四接口仅有纯请求/规范化适配，安全凭据注入未开放，增强 blocked/live unrun。[来源合同](providers.md)说明各字段与完整库边界。
 
-四模块各声明 `home` 帮助/状态页和 `settings` 普通设置页，使用 Core `8981ee2` 上已有的 `PageModule.mount`、`ModulePageServices.config`、scope 与样式 token，不导入主壳私有组件、不建立 HTTP 客户端。每个设置页只授权 `reply_theme`，Dota 另外授权 `timezone`。字段说明、当前值、版本和主题选项均来自配置服务；跟随 Core 的主题使用 `clear`，不持久化一个伪造默认值。账号关联与查询仍通过命令入口。
+Deadlock 注册 profile/recent/stats/last/match 及对应显式 Tool，Steam 依赖只由默认账号根 COMMAND 调用。DTO 使用真实 team/player_count、社区 rank 与采样范围，独立于 Dota 阵营位和十人结构；未知不当0，统计逐项使用有效分母。同窗口 recent/stats/last 复用规范列表缓存，单场焦点精确匹配账号；详情失败不换另一场。头像只从受控来源取得字节提交 SDK Asset，图片失败不丢文字。
+
+CS2 已实现 canonical SDK Leetify provider、独立 DTO 和合成闭环；当前 Host 会保存日志、对话历史与附件，无法满足 provider 留存要求。所有数据能力在 scope/HTTP 前明确 blocked，健康状态 UNAVAILABLE，不发布数据 Tool、不存 provider 响应或战绩 cache。status 公开说明阻塞；模块装载成功不等于 CS2 数据能力已启用。
+
+四模块各声明 `home` 帮助/状态页和 `settings` 普通设置页，通过 `@game-link/ui` 的 UiProvider、PageHeader、SettingsLayout、Surface、SettingsGroup 等公开组件复用宿主同一 Vue/Naive/UI runtime；不导入主壳私有组件或复制主题。构建依据正式外包投影 `module-assets/{owner}/pages/p{manifest_digest}/{relative}` 计算 runtime 相对路径，不硬编码内置模块 URL。每个设置页只授权 `reply_theme`，Dota 另外授权 `timezone`。字段说明、当前值、版本和主题选项均来自配置服务；跟随 Core 的主题使用 `clear`，不持久化一个伪造默认值。账号关联与查询仍通过命令入口。
 
 页面只读当前模块配置，并用 expected revision 保存；CAS 冲突后要求重新读取，未知写入结果不自动重试。异步回调同时检查 scope、owner/runtime/epoch/boundary，页面失效或销毁后不提交旧响应，销毁页面创建的监听和 DOM。未保存修改和待完成操作通过公开 `navigationImpact` 通知 shell。
 
@@ -90,7 +96,7 @@ Core 提供通用固定配对静态投影：维护者显式传入 `--external-pa
 
 这组 alpha 必须同时安装匹配的 Core/DLC ZIP，manifest 或页面更新须重建配对资源并重新打开宿主页；不是任意外包动态页面装载。缺配对/失配只撤销外包 Web 页面，不扩大命令/Tool 权限。SDK a13、业务权限、既有公共前端合同均不变。DLC 源提交及文件摘要由 DLC ZIP 的 `BUILD.json` 标识；Core 来源与外部页面输入由配对交付记录证明。
 
-页面规范源为 `packages/steam_dlc/pages/entry.js`、`style.css`。包 ABI 要求资源路径在四模块间唯一，`scripts/sync_page_resources.py` 因此生成四份同字节、独立授权路径并更新 manifest SHA-256；`--check` 检查副本与摘要漂移。ZIP 仅收集 manifest 明确声明且位于固定模块路径的 JS/CSS，不收集规范源、测试依赖或任意静态文件。Core shell 与内置 FF14 使用 Core 自身的构建流程，DLC 页面保持独立。
+页面规范源为 `packages/steam_dlc/pages/src/entry.js`、`src/controller.js` 和 `style.css`。`scripts/build_pages.mjs` 受审构建外置公开 UI/Vue/Naive 依赖；包 ABI 要求资源路径在四模块间唯一，`scripts/sync_page_resources.py` 同步四份独立授权路径及 manifest SHA-256；两者 `--check` 检查生成资源和摘要漂移。ZIP 仅收集 manifest 明确声明且位于固定模块路径的 JS/CSS，不收集规范源、测试依赖或任意静态文件。Core shell 与内置 FF14 使用 Core 自身的构建流程。
 
 ## 构建、测试与验收证据
 

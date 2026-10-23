@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "package_id": "steam_dlc",
-  "package_version": "0.1.0-alpha.1",
+  "package_version": "0.1.0-alpha.2",
   "contract_version": "2.0",
   "author": "yomihime",
   "license": "AGPL-3.0-only",
@@ -12,7 +12,7 @@
       "route": "steam",
       "category": "platform",
       "factory_entry": "steam.module:Factory",
-      "module_version": "0.1.0-alpha.1",
+      "module_version": "0.1.0-alpha.2",
       "capabilities": [
         {
           "capability_id": "bind",
@@ -76,9 +76,210 @@
             "required": [],
             "additionalProperties": false
           },
-          "invocation_policy": "command_only",
+          "invocation_policy": "command_and_public_web",
           "effect": "read_only",
           "privacy_floor": "public"
+        },
+        {
+          "capability_id": "search",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "country": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 2
+              },
+              "language": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 24
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "steam_store",
+            "steam_store_image"
+          ]
+        },
+        {
+          "capability_id": "app",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "app_id": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "country": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 2
+              },
+              "language": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 24
+              }
+            },
+            "required": [
+              "app_id"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "steam_store",
+            "steam_store_image"
+          ]
+        },
+        {
+          "capability_id": "profile",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "steam_community",
+            "steam_avatar"
+          ]
+        },
+        {
+          "capability_id": "profile_explicit",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              }
+            },
+            "required": [
+              "account"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "steam_community",
+            "steam_avatar"
+          ]
+        },
+        {
+          "capability_id": "recent",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "steam_community",
+            "steam_avatar"
+          ]
+        },
+        {
+          "capability_id": "recent_explicit",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              }
+            },
+            "required": [
+              "account"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "steam_community",
+            "steam_avatar"
+          ]
+        },
+        {
+          "capability_id": "games",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "steam_community",
+            "steam_avatar"
+          ]
+        },
+        {
+          "capability_id": "games_explicit",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              }
+            },
+            "required": [
+              "account"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "steam_community",
+            "steam_avatar"
+          ]
         }
       ],
       "commands": [
@@ -106,10 +307,95 @@
           "operation_path": "status",
           "capability_id": "status",
           "parameter_mapping": {},
-          "help_text": "查看 Steam 状态与使用方法。"
+          "help_text": "查看 Steam 共享绑定、免 Key 商店及公开主页样本能力。"
+        },
+        {
+          "operation_path": "search",
+          "capability_id": "search",
+          "parameter_mapping": {},
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "query",
+          "help_text": "按游戏名或 AppID 搜索；候选以 app <AppID> 明确选择。可选 --country CC --language english。"
+        },
+        {
+          "operation_path": "app",
+          "capability_id": "app",
+          "parameter_mapping": {},
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "app_id",
+          "help_text": "查看明确 AppID 的本地区当前价格、发行与评价；不提供历史低价。"
+        },
+        {
+          "operation_path": "profile",
+          "capability_id": "profile",
+          "parameter_mapping": {},
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "command",
+          "help_text": "公开主页昵称、头像与 Steam 等级；省略账号仅从本人私有绑定读取。"
+        },
+        {
+          "operation_path": "recent",
+          "capability_id": "recent",
+          "parameter_mapping": {},
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "command",
+          "help_text": "最多3款主页最近展示样本，非完整两周列表；可指定 ID32/SteamID64。"
+        },
+        {
+          "operation_path": "games",
+          "capability_id": "games",
+          "parameter_mapping": {},
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "command",
+          "help_text": "最多5款 legacy mostPlayedGames 样本，非全部游戏库；可指定 ID32/SteamID64。"
         }
       ],
-      "tools": [],
+      "tools": [
+        {
+          "name": "steam_dlc_steam_search",
+          "capability_id": "search",
+          "parameter_mapping": {
+            "query": "query",
+            "country": "country",
+            "language": "language"
+          },
+          "description": "Steam 官方公开商店查询，必须明确提供 query 游戏名/AppID。多候选需用户选择 AppID。"
+        },
+        {
+          "name": "steam_dlc_steam_app",
+          "capability_id": "app",
+          "parameter_mapping": {
+            "app_id": "app_id",
+            "country": "country",
+            "language": "language"
+          },
+          "description": "Steam 官方商店详情，必须提供明确 app_id。地区/币种/时间以实际返回为准；不推断历史低价。"
+        },
+        {
+          "name": "steam_dlc_steam_profile",
+          "capability_id": "profile_explicit",
+          "parameter_mapping": {
+            "account": "account"
+          },
+          "description": "必须由用户明确提供 account ID32/SteamID64，不能读取或推导本人默认绑定。仅按返回字段解释；未知不填零。公开主页资料；等级与昵称独立缺失。"
+        },
+        {
+          "name": "steam_dlc_steam_recent",
+          "capability_id": "recent_explicit",
+          "parameter_mapping": {
+            "account": "account"
+          },
+          "description": "必须由用户明确提供 account ID32/SteamID64，不能读取或推导本人默认绑定。仅按返回字段解释；未知不填零。主页最多3款最近展示游戏样本，不是完整两周游戏列表。"
+        },
+        {
+          "name": "steam_dlc_steam_games",
+          "capability_id": "games_explicit",
+          "parameter_mapping": {
+            "account": "account"
+          },
+          "description": "必须由用户明确提供 account ID32/SteamID64，不能读取或推导本人默认绑定。仅按返回字段解释；未知不填零。已弃用 Community XML 最多5款 mostPlayedGames 样本，不是完整游戏库。"
+        }
+      ],
       "display": {
         "default_name": "Steam",
         "short_name": "Steam"
@@ -151,11 +437,42 @@
       "resources": [
         {
           "path": "pages/steam/entry.js",
-          "sha256": "f42af7e990ed02140ffad564238a7236af00faf346dc488c5933b7dc7c80cc2f"
+          "sha256": "c8d5c0d56837e92ce6f12006bec26330492f09598cd568893c0abba3385b9310"
         },
         {
           "path": "pages/steam/style.css",
-          "sha256": "e5c806985a0352166cba9a08cdbb552acd49b8a24547cab5bbda22058db2b267"
+          "sha256": "cb04e8796eb1a38f93ba9031e3881e11833a62179afe273013faf5ee30e587ee"
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "steam_store",
+          "host": "store.steampowered.com",
+          "timeout_seconds": 8,
+          "requests_per_minute": 30
+        },
+        {
+          "source_id": "steam_community",
+          "host": "steamcommunity.com",
+          "timeout_seconds": 8,
+          "requests_per_minute": 30,
+          "max_redirects": 2,
+          "redirect_path_prefixes": [
+            "/profiles/",
+            "/id/"
+          ]
+        },
+        {
+          "source_id": "steam_avatar",
+          "host": "avatars.steamstatic.com",
+          "timeout_seconds": 8,
+          "requests_per_minute": 30
+        },
+        {
+          "source_id": "steam_store_image",
+          "host": "shared.akamai.steamstatic.com",
+          "timeout_seconds": 8,
+          "requests_per_minute": 30
         }
       ]
     },
@@ -164,7 +481,7 @@
       "route": "dota2",
       "category": "game",
       "factory_entry": "dota2.module:Factory",
-      "module_version": "0.1.0-alpha.1",
+      "module_version": "0.1.0-alpha.2",
       "capabilities": [
         {
           "capability_id": "recent",
@@ -272,7 +589,7 @@
             "required": [],
             "additionalProperties": false
           },
-          "invocation_policy": "command_only",
+          "invocation_policy": "command_and_public_web",
           "effect": "read_only",
           "privacy_floor": "public"
         },
@@ -393,6 +710,85 @@
           "required_sources": [
             "opendota"
           ]
+        },
+        {
+          "capability_id": "recent_explicit",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              }
+            },
+            "required": [
+              "account"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "opendota"
+          ]
+        },
+        {
+          "capability_id": "profile_explicit",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              }
+            },
+            "required": [
+              "account"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "opendota"
+          ]
+        },
+        {
+          "capability_id": "match_explicit",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "match_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              }
+            },
+            "required": [
+              "match_id"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "opendota"
+          ]
         }
       ],
       "commands": [
@@ -446,7 +842,7 @@
       "tools": [
         {
           "name": "steam_dlc_dota2_recent",
-          "capability_id": "recent",
+          "capability_id": "recent_explicit",
           "parameter_mapping": {
             "account": "account",
             "limit": "limit"
@@ -455,7 +851,7 @@
         },
         {
           "name": "steam_dlc_dota2_profile",
-          "capability_id": "profile",
+          "capability_id": "profile_explicit",
           "parameter_mapping": {
             "account": "account"
           },
@@ -463,7 +859,7 @@
         },
         {
           "name": "steam_dlc_dota2_match",
-          "capability_id": "match",
+          "capability_id": "match_explicit",
           "parameter_mapping": {
             "match_id": "match_id",
             "account": "account"
@@ -543,11 +939,11 @@
       "resources": [
         {
           "path": "pages/dota2/entry.js",
-          "sha256": "f42af7e990ed02140ffad564238a7236af00faf346dc488c5933b7dc7c80cc2f"
+          "sha256": "c8d5c0d56837e92ce6f12006bec26330492f09598cd568893c0abba3385b9310"
         },
         {
           "path": "pages/dota2/style.css",
-          "sha256": "e5c806985a0352166cba9a08cdbb552acd49b8a24547cab5bbda22058db2b267"
+          "sha256": "cb04e8796eb1a38f93ba9031e3881e11833a62179afe273013faf5ee30e587ee"
         }
       ]
     },
@@ -556,7 +952,7 @@
       "route": "cs2",
       "category": "game",
       "factory_entry": "cs2.module:Factory",
-      "module_version": "0.1.0-alpha.1",
+      "module_version": "0.1.0-alpha.2",
       "capabilities": [
         {
           "capability_id": "status",
@@ -564,6 +960,113 @@
             "type": "object",
             "properties": {},
             "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_and_public_web",
+          "effect": "read_only",
+          "privacy_floor": "public"
+        },
+        {
+          "capability_id": "profile",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "steam_id": {
+                "type": "string",
+                "minLength": 17,
+                "maxLength": 17
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public"
+        },
+        {
+          "capability_id": "recent",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "steam_id": {
+                "type": "string",
+                "minLength": 17,
+                "maxLength": 17
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public"
+        },
+        {
+          "capability_id": "stats",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "steam_id": {
+                "type": "string",
+                "minLength": 17,
+                "maxLength": 17
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public"
+        },
+        {
+          "capability_id": "last",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "steam_id": {
+                "type": "string",
+                "minLength": 17,
+                "maxLength": 17
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public"
+        },
+        {
+          "capability_id": "match",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "match_id": {
+                "type": "string",
+                "minLength": 36,
+                "maxLength": 36
+              },
+              "focus": {
+                "type": "string",
+                "minLength": 17,
+                "maxLength": 17
+              }
+            },
+            "required": [
+              "match_id"
+            ],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -576,7 +1079,50 @@
           "operation_path": "status",
           "capability_id": "status",
           "parameter_mapping": {},
-          "help_text": "已接入，游戏数据功能待实现。"
+          "help_text": "来源状态：匿名API已验证；Host留存不满足来源规则，CS2战绩能力暂时停用。"
+        },
+        {
+          "operation_path": "profile",
+          "capability_id": "profile",
+          "parameter_mapping": {
+            "steam_id": "steam_id"
+          },
+          "help_text": "暂时停用：Host会留存Leetify数据，需来源专属无留存路径后启用；当前不会联网。"
+        },
+        {
+          "operation_path": "recent",
+          "capability_id": "recent",
+          "parameter_mapping": {
+            "steam_id": "steam_id",
+            "limit": "limit"
+          },
+          "help_text": "暂时停用：Host会留存Leetify数据，需来源专属无留存路径后启用；当前不会联网。"
+        },
+        {
+          "operation_path": "stats",
+          "capability_id": "stats",
+          "parameter_mapping": {
+            "steam_id": "steam_id",
+            "limit": "limit"
+          },
+          "help_text": "暂时停用：Host会留存Leetify数据，需来源专属无留存路径后启用；当前不会联网。"
+        },
+        {
+          "operation_path": "last",
+          "capability_id": "last",
+          "parameter_mapping": {
+            "steam_id": "steam_id"
+          },
+          "help_text": "暂时停用：Host会留存Leetify数据，需来源专属无留存路径后启用；当前不会联网。"
+        },
+        {
+          "operation_path": "match",
+          "capability_id": "match",
+          "parameter_mapping": {
+            "match_id": "match_id",
+            "focus": "focus"
+          },
+          "help_text": "暂时停用：Host会留存Leetify数据，需来源专属无留存路径后启用；当前不会联网。"
         }
       ],
       "tools": [],
@@ -614,11 +1160,11 @@
       "resources": [
         {
           "path": "pages/cs2/entry.js",
-          "sha256": "f42af7e990ed02140ffad564238a7236af00faf346dc488c5933b7dc7c80cc2f"
+          "sha256": "c8d5c0d56837e92ce6f12006bec26330492f09598cd568893c0abba3385b9310"
         },
         {
           "path": "pages/cs2/style.css",
-          "sha256": "e5c806985a0352166cba9a08cdbb552acd49b8a24547cab5bbda22058db2b267"
+          "sha256": "cb04e8796eb1a38f93ba9031e3881e11833a62179afe273013faf5ee30e587ee"
         }
       ]
     },
@@ -627,7 +1173,7 @@
       "route": "deadlock",
       "category": "game",
       "factory_entry": "deadlock.module:Factory",
-      "module_version": "0.1.0-alpha.1",
+      "module_version": "0.1.0-alpha.2",
       "capabilities": [
         {
           "capability_id": "status",
@@ -637,9 +1183,305 @@
             "required": [],
             "additionalProperties": false
           },
-          "invocation_policy": "command_only",
+          "invocation_policy": "command_and_public_web",
           "effect": "read_only",
           "privacy_floor": "public"
+        },
+        {
+          "capability_id": "profile",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "command": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "deadlock_api",
+            "steam_avatar"
+          ],
+          "required_capabilities": [
+            {
+              "module_id": "steam_dlc/steam",
+              "capability_id": "identity"
+            }
+          ]
+        },
+        {
+          "capability_id": "profile_explicit",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              }
+            },
+            "required": [
+              "account"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "deadlock_api",
+            "steam_avatar"
+          ]
+        },
+        {
+          "capability_id": "recent",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "command": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "deadlock_api"
+          ],
+          "required_capabilities": [
+            {
+              "module_id": "steam_dlc/steam",
+              "capability_id": "identity"
+            }
+          ]
+        },
+        {
+          "capability_id": "recent_explicit",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              }
+            },
+            "required": [
+              "account"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "deadlock_api"
+          ]
+        },
+        {
+          "capability_id": "stats",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "command": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "deadlock_api"
+          ],
+          "required_capabilities": [
+            {
+              "module_id": "steam_dlc/steam",
+              "capability_id": "identity"
+            }
+          ]
+        },
+        {
+          "capability_id": "stats_explicit",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              }
+            },
+            "required": [
+              "account"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "deadlock_api"
+          ]
+        },
+        {
+          "capability_id": "last",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "command": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "deadlock_api"
+          ],
+          "required_capabilities": [
+            {
+              "module_id": "steam_dlc/steam",
+              "capability_id": "identity"
+            }
+          ]
+        },
+        {
+          "capability_id": "last_explicit",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              }
+            },
+            "required": [
+              "account"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "deadlock_api"
+          ]
+        },
+        {
+          "capability_id": "match",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "command": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "match_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "deadlock_api"
+          ]
+        },
+        {
+          "capability_id": "match_explicit",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "match_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              }
+            },
+            "required": [
+              "match_id"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "deadlock_api"
+          ]
         }
       ],
       "commands": [
@@ -647,10 +1489,94 @@
           "operation_path": "status",
           "capability_id": "status",
           "parameter_mapping": {},
-          "help_text": "已接入，游戏数据功能待实现。"
+          "help_text": "查看 Deadlock 已收录公开资料、20场样本与单场焦点能力。"
+        },
+        {
+          "operation_path": "profile",
+          "capability_id": "profile",
+          "parameter_mapping": {},
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "command",
+          "help_text": "profile [ID32/SteamID64]；省略账号使用当前绑定。"
+        },
+        {
+          "operation_path": "recent",
+          "capability_id": "recent",
+          "parameter_mapping": {},
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "command",
+          "help_text": "recent [ID32/SteamID64] [--limit 1..20]；默认20，只统计已收录样本。"
+        },
+        {
+          "operation_path": "stats",
+          "capability_id": "stats",
+          "parameter_mapping": {},
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "command",
+          "help_text": "stats [ID32/SteamID64] [--limit 1..20]；默认20，只统计已收录样本。"
+        },
+        {
+          "operation_path": "last",
+          "capability_id": "last",
+          "parameter_mapping": {},
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "command",
+          "help_text": "last [ID32/SteamID64]；省略账号使用当前绑定。"
+        },
+        {
+          "operation_path": "match",
+          "capability_id": "match",
+          "parameter_mapping": {},
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "command",
+          "help_text": "match <比赛ID> [--account <ID32/SteamID64>]"
         }
       ],
-      "tools": [],
+      "tools": [
+        {
+          "name": "steam_dlc_deadlock_profile",
+          "capability_id": "profile_explicit",
+          "parameter_mapping": {
+            "account": "account"
+          },
+          "description": "Deadlock profile：仅已收录社区公开记录；必须明确提供 account，不得推测或读取用户默认绑定。缺失字段未知，非官方完整实时历史。"
+        },
+        {
+          "name": "steam_dlc_deadlock_recent",
+          "capability_id": "recent_explicit",
+          "parameter_mapping": {
+            "account": "account",
+            "limit": "limit"
+          },
+          "description": "Deadlock recent：仅已收录社区公开记录；必须明确提供 account，不得推测或读取用户默认绑定。缺失字段未知，非官方完整实时历史。"
+        },
+        {
+          "name": "steam_dlc_deadlock_stats",
+          "capability_id": "stats_explicit",
+          "parameter_mapping": {
+            "account": "account",
+            "limit": "limit"
+          },
+          "description": "Deadlock stats：仅已收录社区公开记录；必须明确提供 account，不得推测或读取用户默认绑定。缺失字段未知，非官方完整实时历史。"
+        },
+        {
+          "name": "steam_dlc_deadlock_last",
+          "capability_id": "last_explicit",
+          "parameter_mapping": {
+            "account": "account"
+          },
+          "description": "Deadlock last：仅已收录社区公开记录；必须明确提供 account，不得推测或读取用户默认绑定。缺失字段未知，非官方完整实时历史。"
+        },
+        {
+          "name": "steam_dlc_deadlock_match",
+          "capability_id": "match_explicit",
+          "parameter_mapping": {
+            "match_id": "match_id",
+            "account": "account"
+          },
+          "description": "Deadlock match：仅已收录社区公开记录；必须明确提供 match_id，account可选并按ID精确定位。缺失字段未知，非官方完整实时历史。"
+        }
+      ],
       "display": {
         "default_name": "Deadlock",
         "short_name": "Deadlock"
@@ -685,11 +1611,25 @@
       "resources": [
         {
           "path": "pages/deadlock/entry.js",
-          "sha256": "f42af7e990ed02140ffad564238a7236af00faf346dc488c5933b7dc7c80cc2f"
+          "sha256": "c8d5c0d56837e92ce6f12006bec26330492f09598cd568893c0abba3385b9310"
         },
         {
           "path": "pages/deadlock/style.css",
-          "sha256": "e5c806985a0352166cba9a08cdbb552acd49b8a24547cab5bbda22058db2b267"
+          "sha256": "cb04e8796eb1a38f93ba9031e3881e11833a62179afe273013faf5ee30e587ee"
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "deadlock_api",
+          "host": "api.deadlock-api.com",
+          "timeout_seconds": 10,
+          "requests_per_minute": 30
+        },
+        {
+          "source_id": "steam_avatar",
+          "host": "avatars.steamstatic.com",
+          "timeout_seconds": 8,
+          "requests_per_minute": 30
         }
       ]
     }

@@ -118,3 +118,25 @@ class ReleaseResourcesTest(unittest.TestCase):
         self.asset.with_suffix(".alias").hardlink_to(self.asset)
         with self.assertRaisesRegex(ValueError, "regular file"):
             release.inventory(self.root)
+
+    def test_tool_allowlist_keeps_cs2_blocked_and_requires_explicit_targets(self):
+        cs2 = next(
+            module
+            for module in self.manifest["modules"]
+            if module["module_id"] == "cs2"
+        )
+        cs2["tools"] = [{"name": "steam_dlc_cs2_profile", "capability_id": "profile"}]
+        self.save_manifest()
+        with self.assertRaisesRegex(ValueError, "unsupported tools"):
+            release.inventory(self.root)
+        cs2["tools"] = []
+        tool = self.module["tools"][0]
+        capability = next(
+            item
+            for item in self.module["capabilities"]
+            if item["capability_id"] == tool["capability_id"]
+        )
+        capability["input_schema"]["required"] = []
+        self.save_manifest()
+        with self.assertRaisesRegex(ValueError, "explicit public target"):
+            release.inventory(self.root)

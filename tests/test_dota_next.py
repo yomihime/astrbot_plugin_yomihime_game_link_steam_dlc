@@ -137,7 +137,14 @@ class TestDotaNext(unittest.IsolatedAsyncioTestCase):
         second = await self.call("stats_explicit", {"account": "123", "limit": 2})
         self.assertEqual(len(self.http.requests), 1)
         self.assertIn("缓存命中", shown(second))
-        self.assertEqual(self.cache.keys, ["opendota:stats:v1:123:2"] * 2)
+        self.assertEqual(
+            self.cache.keys,
+            [
+                "opendota:stats:v1:123:2",
+                "opendota:window:v1:123:2",
+                "opendota:stats:v1:123:2",
+            ],
+        )
         self.assertEqual(self.dependencies.calls, [])
 
     async def test_last_selects_first_valid_at_most_one_detail_and_caches_both(self):

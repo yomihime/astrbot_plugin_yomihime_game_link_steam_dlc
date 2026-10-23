@@ -1,6 +1,6 @@
 # 如月怜的游戏连结：Steam DLC
 
-Steam DLC 是 AstrBot 游戏连结的独立 alpha 插件，包含 Steam 账号关联、Dota 2 查询，以及 CS2 和 Deadlock 的状态模块。候选兼容面为 Core 分支 `feat/steam-dlc-support`、canonical SDK `0.1.0a13`、模块 ABI `2.0`；DLC 分支为 `feat/steam-dlc-alpha`。这些分支尚未合并或发布，候选 ZIP 和验收记录以最终构建产物为准。
+Steam DLC 是 AstrBot 游戏连结的独立 alpha 插件，包含共享 Steam 身份、免 Key 商店与公开账号样本、Dota 2 和 Deadlock 查询。CS2 适配器已实现，但当前 Host 会留存来源数据，生产查询保持停用。候选兼容面为 Core 分支 `feat/steam-dlc-support`、canonical SDK `0.1.0a14`、模块 ABI `2.0`；DLC 分支为 `feat/steam-dlc-alpha`。这些分支尚未合并或发布，候选 ZIP 和验收记录以最终构建产物为准。
 
 请使用精确配对的 Core 与 DLC ZIP，DLC ZIP 的 `BUILD.json` 记录其源提交和文件摘要；Core ZIP 的来源、构建输入与摘要由配对交付记录证明。候选的兼容合同见[架构文档](docs/architecture.md)，合并与发布由维护者决定。
 
@@ -21,6 +21,11 @@ Steam DLC 是 AstrBot 游戏连结的独立 alpha 插件，包含 Steam 账号�
 | `/ygl steam bind <Dota ID32、SteamID64 或标准 profiles URL>` | 私聊中关联默认 Steam 账号 |
 | `/ygl steam binding` | 私聊查看当前关联状态 |
 | `/ygl steam unbind` | 私聊解除当前关联 |
+| `/ygl steam search <游戏名或 AppID>` | 商店搜索；多结果明确选择 AppID |
+| `/ygl steam app <AppID>` | 价格、折扣、发行与评价摘要；不推断历史低价 |
+| `/ygl steam profile [账号]` | 公开昵称、头像、实际 Steam 等级；字段分别报告可用性 |
+| `/ygl steam recent [账号]` | 主页最多 3 款最近展示游戏，保留网页小时精度 |
+| `/ygl steam games [账号]` | legacy XML 最多 5 款 mostPlayedGames 样本 |
 | `/ygl dota2 recent [账号] [--limit N]` | 查询最近战绩；默认 5 场，最多 20 场 |
 | `/ygl dota2 profile [账号]` | 查询精简玩家资料 |
 | `/ygl dota2 stats [账号] [--limit N]` | 最近 N 场实际样本统计；默认20，范围1–20 |
@@ -29,8 +34,15 @@ Steam DLC 是 AstrBot 游戏连结的独立 alpha 插件，包含 Steam 账号�
 | `/ygl dota2 status` | 查看 Dota 2 能力状态 |
 | `/ygl cs2 status` | 查看 CS2 模块状态 |
 | `/ygl deadlock status` | 查看 Deadlock 模块状态 |
+| `/ygl deadlock profile [账号]` | 已收录昵称、头像与最近可用排位资料 |
+| `/ygl deadlock recent [账号] [--limit N]` | 有界近期记录，默认及上限 20 场 |
+| `/ygl deadlock stats [账号] [--limit N]` | 当前已收录样本统计与有效分母 |
+| `/ygl deadlock last [账号]` | 当前窗口最近有效记录的单场详情 |
+| `/ygl deadlock match <比赛ID> [--account <账号>]` | 单场实际人数与队伍，可选精确个人焦点 |
 
 Steam 的 `bind`、`binding`、`unbind` 仅允许私聊。关联是用户主动声明（`self_asserted`），插件不验证账号所有权，也不提供 Steam 登录或 OpenID 验证。
+
+Steam 查询默认地区 CN、语言 schinese，商店结果明确标注地区、语言、币种与取数时间；显式 Tool 可传 country/language。免费、未发售、无当地价格、查无结果分别说明。账号网页固定使用英文来源便于保留展示时长口径。`recent` 与 `games` 是不同公开样本，均不代表完整两周列表或完整游戏库；登录页不算空库，XML steamRating 不算 Steam 等级。详见[数据来源与限制](docs/providers.md)。默认不需要 Key、Cookie 或登录态。可选 Steam Web API 四接口已有离线适配，但当前外包安全凭据注入未开放，不能把 Key 写入普通设置来启用；完整库增强仍为 blocked，真实调用 unrun。
 
 Dota 2 `recent`、`profile`、`stats` 和 `last` 省略账号时，会读取发起命令的当前用户默认关联；因此可在群聊中使用，但只查询发起者自己的关联。指定账号可用 Dota ID32 或 SteamID64。最近场次的 `--limit` 范围是 1–20。命令参数不接受任意 URL。模型工具 `steam_dlc_dota2_recent`、`steam_dlc_dota2_profile`、`steam_dlc_dota2_stats`、`steam_dlc_dota2_last` 必须显式提供 `account`；`steam_dlc_dota2_match` 必须显式提供 `match_id`，可选 `account` 为单场焦点；工具不会代用户读取默认关联。旧 `match` 不带焦点仍为全场概览，从不隐式读取绑定。
 
@@ -42,20 +54,22 @@ Steam bind 接受规范 ASCII ID32（1–4294967295，支持短值和十位值�
 
 统计与战报使用公开 SDK DisplayDocument/结构化 blocks/cards，由 Core 排版、字体与主题渲染；相同投影保留完整文字回退。所有默认关联路径整份 `model_facts=None`，只有显式公开输入可供宿主模型解释有界事实。缓存说明取数时间与命中；扩展比赛详情使用 v2、新统计/上一场使用 v1 键，旧详情缺项不当作0。
 
-CS2 和 Deadlock 当前只有模块接入、生命周期、帮助和真实状态报告，没有游戏数据查询能力。
+Deadlock 使用社区 Deadlock API，仅代表已收录公开记录，不承诺 Valve 官方实时完整历史。最近可用段位、未定级/无记录与未知字段分别展示；不从队伍平均徽章推算个人 MMR。`last` 的详情失败不会暗换另一场，焦点只按账号 ID 匹配。Steam、Deadlock 的默认账号也只由根 COMMAND 读取共享身份，所有默认路径整份 `model_facts=None`；显式 Tool 必须给出账号或比赛 ID。
+
+CS2 的 Leetify 匿名资料→近期→单场 API 路线可用，适配器和合成合同已实现。当前 AstrBot 会把完整 Tool 结果写入日志/会话历史，并保存 WebChat 图片附件，与来源要求不兼容；`profile/recent/stats/last/match` 在联网前返回明确不可用，不发布数据 Tool，不持久缓存或伪造零战绩。需要来源专属的无留存宿主路径后才能启用；一把 Steam Key 无法解除该限制。
 
 ## 管理与设置
 
 在 Core 的“模块管理”中可查看四模块的实际运行状态。进入任一模块可查看命令帮助和业务范围；“进入设置”打开普通配置页。Dota2 提供 `timezone`（默认 `Asia/Shanghai`），四模块提供回复主题选择。主题选项由 Core 返回，“跟随核心”恢复继承。保存发生版本冲突时先重新读取，再确认更改。
 
-页面使用公开 Module UI contract v1 和样式 token，可由包含新管理界面的 Core 装配。Steam 账号关联仍使用私聊命令，Dota 查询仍使用命令或显式 ID 工具。
+页面使用公开 `@game-link/ui` 和 Module UI contract v1，复用宿主同一 Vue/Naive/UI runtime。主题和语言由规范 PageContext 更新，主题切换保留草稿与焦点。Steam 账号关联仍使用私聊命令，查询使用命令或显式 ID 工具。
 
-此 alpha 的页面资源需要由 Core 构建时显式装配：在独立 Core 构建 staging 使用 `scripts/build_release.py --sdk-wheel <a13.whl> --external-page-package <本仓库/packages/steam_dlc> --output-dir <新产物目录>`。它只收录摘要匹配的静态资源，不把 DLC Python 业务复制进 Core。请安装精确匹配的两个候选并重启，再从宿主正式入口重新打开页面；DLC 页面或 manifest 更新后须重新构建配对资源。资源失配时页面拒绝装载，模块命令不因此获得额外权限。
+此 alpha 的页面资源需要由 Core 构建时显式装配：在独立 Core 构建 staging 使用 `scripts/build_release.py --sdk-wheel <a14.whl> --external-page-package <本仓库/packages/steam_dlc> --output-dir <新产物目录>`。它只收录摘要匹配的静态资源，不把 DLC Python 业务复制进 Core。请安装精确匹配的两个候选并重启，再从宿主正式入口重新打开页面；DLC 页面或 manifest 更新后须重新构建配对资源。资源失配时页面拒绝装载，模块命令不因此获得额外权限。
 
 ## 数据与隐私边界
 
 - Steam 是唯一账号关联 owner。关联数据由 SDK USER records 保存；停用、重启或卸载 DLC 不触发自动删除。`unbind` 保留版本记录所需的 tombstone。
-- Steam 身份依赖只向 Dota 2 模块提供私有 identity 文档。Dota 查询结果保持 PUBLIC；默认本人关联查询抑制 SteamID、主页、关联状态、绑定 revision 及私有身份派生的模型 facts。显式账号的 profile 查询可以呈现 OpenDota 返回的公开 SteamID 和主页。
+- Steam 身份依赖只向已声明且获授权的消费者提供私有 identity 文档。Dota/Deadlock 公开查询保持其来源可见性；所有默认关联查询整份抑制模型 facts，Steam 默认账号结果为 PRIVATE。显式公开查询可以呈现实际来源字段。
 - Dota 2 通过 SDK HTTP、配置和缓存接口访问固定 OpenDota 主机 `api.opendota.com`，仅使用固定 GET 查询路径，不提交 POST、不调用任意 URL。接口不可用、限流、超时或无记录时返回稳定错误；不自动重试。
 - 时间戳按 UTC 处理；展示时区由 Dota 配置 `timezone` 控制，默认 `Asia/Shanghai`。
 - Valve 官方简体中文英雄名称映射收录于源码 [hero_names.py](packages/steam_dlc/shared/hero_names.py)，共 127 条。来源为 [Dota 2 官方英雄数据接口](https://www.dota2.com/datafeed/herolist?language=schinese)，源响应 SHA-256 为 `c3d7e9ac5b145aa066857645dd89612f51643dd8b3354d2beccf41ddebb0f054`；未知 ID 使用显式编号回退。
@@ -77,7 +91,7 @@ python scripts/build_release.py
 
 最终构建要求源码已提交且工作区干净；构建脚本会审计 ZIP 内容并输出构建收据。开发中的脏工作区仅供本地临时 harness 使用 `--allow-dirty`，不得作为最终安装包证据。
 
-修改页面规范源 `packages/steam_dlc/pages/entry.js` 或 `style.css` 后，先运行 `python scripts/sync_page_resources.py` 生成四模块独立资源副本及 manifest 摘要。不要手工修改生成副本。Node 24 与锁定的 jsdom 仅用于页面测试，不进入安装包。
+修改页面规范源 `packages/steam_dlc/pages/src/entry.js`、`src/controller.js` 或 `style.css` 后，先运行 `node scripts/build_pages.mjs`，再运行 `python scripts/sync_page_resources.py` 生成四模块独立资源及 manifest 摘要。两脚本均支持 `--check`。开发构建默认复用现有 Core worktree 的锁定依赖，其他位置可设置 `YGL_CORE_ROOT` 或传入 `--core-root`；先在该 Core 执行 `npm ci --prefix pages/frontend`。不要手工修改生成副本。Node、Vite、Vue 与 jsdom 的开发依赖不进入 DLC ZIP，生产页面从配对 Core 导入同一共享 runtime。
 
 双插件离线 Host harness 需要 Core ZIP、DLC ZIP、AstrBot 4.29.1 源码和新的隔离工作目录：
 

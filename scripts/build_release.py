@@ -12,7 +12,26 @@ from io import BytesIO
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SDK_VERSION = "0.1.0a13"
+SDK_VERSION = "0.1.0a14"
+QUERY_TOOLS = {
+    "steam": {
+        "search": ("search", "query"),
+        "app": ("app", "app_id"),
+        **{
+            name: (name + "_explicit", "account")
+            for name in ("profile", "recent", "games")
+        },
+    },
+    "dota2": {
+        name: (name + "_explicit", "match_id" if name == "match" else "account")
+        for name in ("profile", "recent", "stats", "last", "match")
+    },
+    "deadlock": {
+        name: (name + "_explicit", "match_id" if name == "match" else "account")
+        for name in ("profile", "recent", "stats", "last", "match")
+    },
+    "cs2": {},
+}
 ROOT_FILES = (
     "__init__.py",
     "main.py",
@@ -138,17 +157,50 @@ def inventory(root):
         module_path = module["factory_entry"].split(":")[0].replace(".", "/") + ".py"
         if "packages/steam_dlc/" + module_path not in result:
             raise ValueError("factory is not contained in the captured package")
-        if module["module_id"] in {"steam", "cs2", "deadlock"} and module["tools"]:
-            raise ValueError("release exposes unsupported tools")
+        validate_query_tools(module)
     if any(name.startswith("yomihime_game_link_sdk/") for name in result):
         raise ValueError("release must reuse the canonical Core SDK")
     return result
+
+
+def validate_query_tools(module):
+    module_id = module["module_id"]
+    expected = {
+        f"steam_dlc_{module_id}_{operation}": details
+        for operation, details in QUERY_TOOLS[module_id].items()
+    }
+    tools = module["tools"]
+    if len(tools) != len(expected) or {tool["name"] for tool in tools} != set(expected):
+        raise ValueError("release exposes unsupported tools")
+    capabilities = {item["capability_id"]: item for item in module["capabilities"]}
+    for tool in tools:
+        capability_id, required = expected[tool["name"]]
+        capability = capabilities.get(capability_id)
+        if (
+            tool["capability_id"] != capability_id
+            or capability is None
+            or capability["effect"] != "read_only"
+            or capability["invocation_policy"] != "natural_language_allowed"
+            or required not in capability["input_schema"]["required"]
+            or tool["parameter_mapping"].get(required) != required
+            or any(
+                item.get("capability_id") == "identity"
+                for item in capability.get("required_capabilities", [])
+                if isinstance(item, dict)
+            )
+        ):
+            raise ValueError(
+                "query tool requires an explicit public target and read-only capability"
+            )
 
 
 def build(root=ROOT, output=None, *, allow_dirty=False):
     root = Path(root).resolve(strict=True)
     validate_tracked_paths(root)
     files = inventory(root)
+    version = json.loads(files["packages/steam_dlc/yomihime.manifest.json"])[
+        "package_version"
+    ]
     revision = subprocess.check_output(
         ["git", "-C", str(root), "rev-parse", "HEAD"], text=True
     ).strip()
@@ -185,8 +237,7 @@ def build(root=ROOT, output=None, *, allow_dirty=False):
     output = (
         Path(output)
         if output
-        else root
-        / "dist/astrbot_plugin_yomihime_game_link_steam_dlc-v0.1.0-alpha.1.zip"
+        else root / f"dist/astrbot_plugin_yomihime_game_link_steam_dlc-v{version}.zip"
     )
     output = output.absolute()
     if output.is_symlink() or output.exists() and output.read_bytes() != payload:

@@ -18,6 +18,16 @@ def row(match_id, time, outcome="win", **fields):
 
 
 class TestDotaStatistics(unittest.TestCase):
+    def test_invalid_original_rows_block_streak_without_losing_valid_statistics(self):
+        for gap in (None, {"match_id": 0}, {"match_id": True}):
+            with self.subTest(gap=gap):
+                result = project_stats([row(1, 30), gap, row(2, 10)])
+                self.assertEqual(result["wins"], 2)
+                self.assertEqual(result["invalid_count"], 1)
+                self.assertEqual(result["streak"], {"outcome": None, "count": None})
+        closed = project_stats([row(1, 40), row(2, 30, "loss"), None, row(3, 10)])
+        self.assertEqual(closed["streak"], {"outcome": "win", "count": 1})
+
     def test_mixed_sample_independent_denominators_and_group_order(self):
         payload = [
             row(11, 300, kills=0, deaths=2, hero_id=2, game_mode=23),

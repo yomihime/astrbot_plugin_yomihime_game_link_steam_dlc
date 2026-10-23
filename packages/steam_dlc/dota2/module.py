@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shlex
 from collections.abc import Mapping
@@ -41,15 +42,17 @@ from ..shared.contracts import MatchSummary, PlayerProfile, RecentMatch
 from ..shared.hero_names import HERO_NAMES
 from ..shared.output import failure, success
 from ..shared.steam_ids import account_id32, parse_dota_account, parse_steam_id
+from .cache_validation import VERSION, decode_window, valid_projection
 from .normalization import normalize_match, normalize_profile, normalize_recent
 from .presentation import report_result
-from .statistics import project_stats
+from .statistics import project_normalized_stats
 
 _SOURCE = "opendota"
 _MAX_RESPONSE_BYTES = 1_000_000
 _CACHE_TTL = 300
 _MATCH_ID = re.compile(r"[1-9][0-9]{0,23}\Z")
 _DECIMAL = re.compile(r"[0-9]+\Z")
+_LOG = logging.getLogger(__name__)
 
 
 class Factory:
@@ -66,8 +69,11 @@ class Dota2Module:
         return ModuleHandlers(
             capabilities={
                 "recent": _Query(self, "recent"),
+                "recent_explicit": _Query(self, "recent"),
                 "profile": _Query(self, "profile"),
+                "profile_explicit": _Query(self, "profile"),
                 "match": _Query(self, "match"),
+                "match_explicit": _Query(self, "match"),
                 "stats": _Query(self, "stats"),
                 "stats_explicit": _Query(self, "stats"),
                 "last": _Query(self, "last"),
@@ -92,8 +98,11 @@ class Dota2Module:
                 capability: CapabilityHealth(status=state, reason=reason)
                 for capability in (
                     "recent",
+                    "recent_explicit",
                     "profile",
+                    "profile_explicit",
                     "match",
+                    "match_explicit",
                     "stats",
                     "stats_explicit",
                     "last",
@@ -165,7 +174,12 @@ class _Query:
             return failure(ErrorCode.MODULE_UNAVAILABLE, "Dota 2 查询服务暂不可用。")
         except (ValueError, TypeError, json.JSONDecodeError):
             return failure(ErrorCode.UNPARSED, "OpenDota 返回的数据格式无法识别。")
-        except Exception:
+        except Exception as exc:
+            _LOG.warning(
+                "Dota query failed operation=%s type=%s",
+                self.operation,
+                type(exc).__name__,
+            )
             return failure(ErrorCode.MODULE_UNAVAILABLE, "Dota 2 查询服务暂不可用。")
 
 
@@ -197,8 +211,12 @@ def _source_failure(exc: SourceHttpError):
 
 
 async def _resolve_input(services, context, parameters, operation):
+    command_input = (
+        context.origin is InvocationOrigin.COMMAND
+        and not context.capability_id.endswith("_explicit")
+    )
     if operation == "match":
-        if context.origin is InvocationOrigin.COMMAND:
+        if command_input:
             raw = parameters.get("command")
             if not isinstance(raw, str):
                 raise _QueryFailure(ErrorCode.PARAMETER_ERROR, "请提供比赛 ID。")
@@ -229,7 +247,7 @@ async def _resolve_input(services, context, parameters, operation):
         )
         return target, None, match_id, False
 
-    if context.origin is InvocationOrigin.COMMAND:
+    if command_input:
         raw = parameters.get("command")
         if not isinstance(raw, str):
             raise _QueryFailure(ErrorCode.PARAMETER_ERROR, "命令参数格式无效。")
@@ -483,16 +501,50 @@ def _cache_key(operation, target, limit, match_id):
 async def _load_projection(scope, operation, target, limit, match_id):
     key = _cache_key(operation, target, limit, match_id)
     projection = await _cache_get(scope, key)
+    if not valid_projection(operation, projection, target, limit, match_id):
+        projection = None
     hit = projection is not None
     if projection is None:
-        payload = await _fetch(scope, operation, target, limit, match_id)
-        projection = _project(operation, payload, target, limit, match_id)
+        if operation in ("stats", "last"):
+            rows, fetched_at, hit = await _load_window(scope, target, limit)
+            projection = _project_list(operation, rows, target, limit)
+            projection["fetched_at"] = fetched_at
+        else:
+            payload = await _fetch(scope, operation, target, limit, match_id)
+            projection = _project(operation, payload, target, limit, match_id)
         if operation in ("stats", "last", "match"):
-            projection["fetched_at"] = datetime.now(UTC).isoformat()
+            projection.setdefault("fetched_at", datetime.now(UTC).isoformat())
         await _cache_put(scope, key, projection)
     if operation in ("stats", "last", "match"):
         return {**projection, "cache_hit": hit}
     return projection
+
+
+async def _load_window(scope, target, limit):
+    key = f"opendota:window:v1:{target}:{limit}"
+    cached = await _cache_get(scope, key)
+    rows = decode_window(cached, target, limit)
+    if rows is not None:
+        return rows, cached["fetched_at"], True
+    payload = await _fetch(scope, "recent", target, limit, None)
+    if not isinstance(payload, list):
+        raise ValueError("recent matches payload must be a list")
+    rows = []
+    for entry in payload[:limit]:
+        normalized = normalize_recent([entry], limit=1)
+        rows.append(normalized[0] if normalized else None)
+    fetched_at = datetime.now(UTC).isoformat()
+    await _cache_put(
+        scope,
+        key,
+        {
+            "account_id32": str(target),
+            "limit": limit,
+            "fetched_at": fetched_at,
+            "rows": [_recent_dict(row) if row is not None else None for row in rows],
+        },
+    )
+    return rows, fetched_at, False
 
 
 def _focus(match, target):
@@ -514,6 +566,11 @@ async def _cache_get(scope, key):
         return None
     if result.status is not CacheLookupStatus.HIT or result.entry is None:
         return None
+    if (
+        type(result.entry.payload.get("schema_version")) is not int
+        or result.entry.payload.get("schema_version") != VERSION
+    ):
+        return None
     projection = result.entry.payload.get("projection")
     return projection if isinstance(projection, Mapping) else None
 
@@ -522,7 +579,7 @@ async def _cache_put(scope, key, projection):
     try:
         await scope.cache.put(
             key,
-            {"projection": projection},
+            {"schema_version": VERSION, "projection": projection},
             ttl_seconds=_CACHE_TTL,
             visibility=CacheVisibility.PUBLIC,
         )
@@ -530,27 +587,34 @@ async def _cache_put(scope, key, projection):
         return
 
 
-def _project(operation, payload, target, limit, match_id):
-    if operation in ("stats", "last"):
-        stats = project_stats(payload, limit=limit)
-        if operation == "stats":
-            return {"account_id32": str(target), "stats": stats}
-        rows = normalize_recent(payload, limit=limit)
-        if not rows:
-            raise _QueryFailure(
-                ErrorCode.NO_RECORDS,
-                "OpenDota 返回的最近20场范围内没有有效比赛；未继续查找更早比赛。",
+def _project_list(operation, rows, target, limit):
+    stats = project_normalized_stats(rows, limit=limit)
+    if operation == "stats":
+        return {"account_id32": str(target), "stats": stats}
+    valid = [row for row in rows if row is not None]
+    if not valid:
+        raise _QueryFailure(
+            ErrorCode.NO_RECORDS,
+            "OpenDota 返回的最近20场范围内没有有效比赛；未继续查找更早比赛。",
+        )
+    return {
+        "account_id32": str(target),
+        "match_id": valid[0].match_id,
+        "requested_limit": limit,
+        **{
+            name: stats[name]
+            for name in (
+                "received_count",
+                "sample_count",
+                "invalid_count",
+                "duplicate_count",
+                "coverage",
             )
-        return {
-            "account_id32": str(target),
-            "match_id": rows[0].match_id,
-            "requested_limit": limit,
-            "received_count": stats["received_count"],
-            "sample_count": stats["sample_count"],
-            "invalid_count": stats["invalid_count"],
-            "duplicate_count": stats["duplicate_count"],
-            "coverage": stats["coverage"],
-        }
+        },
+    }
+
+
+def _project(operation, payload, target, limit, match_id):
     if operation == "recent":
         rows = normalize_recent(payload, limit=limit)
         if not rows:

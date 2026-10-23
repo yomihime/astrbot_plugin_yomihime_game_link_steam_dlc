@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { JSDOM } from 'jsdom';
-import { mount } from '../../packages/steam_dlc/pages/entry.js';
+import { mount, installDOM, runtime } from './source-build.mjs';
 
 const clone = value => structuredClone(value);
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
@@ -33,6 +33,7 @@ function snapshot(moduleId = 'dota2') {
 let fixtureSequence = 0;
 function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, service = {}, context: contextPatch = {} } = {}) {
   const dom = new JSDOM('<!doctype html><div id="root"></div>');
+  installDOM(dom);
   const container = dom.window.document.querySelector('#root');
   const abort = new AbortController();
   let scopeCurrent = true, state = snapshot(moduleId), notifications = 0;
@@ -85,7 +86,10 @@ for (const moduleId of ['steam', 'dota2', 'cs2', 'deadlock']) {
     const f = fixture({ moduleId, routeId: 'home' });
     assert.match(f.text(), new RegExp(`/ygl ${moduleId} `));
     assert.match(f.text(), /运行健康请在模块管理中查看/);
-    if (['cs2', 'deadlock'].includes(moduleId)) assert.match(f.text(), /游戏数据功能待实现/);
+    if (moduleId === 'cs2') assert.match(f.text(), /生产游戏数据查询受来源留存政策限制，当前已阻止/);
+    if (moduleId === 'deadlock') assert.match(f.text(), /默认使用最近 20 条已收录记录/);
+    assert.ok(f.container.querySelector('.ui-page .ui-page-header h1'));
+    assert.ok(f.container.querySelector('.ui-settings-layout .ui-settings-group'));
     f.page.update({ ...f.context, available: false });
     assert.match(f.text(), /当前页面入口不可用/);
     assert.deepEqual(f.calls, []);
@@ -103,6 +107,54 @@ for (const moduleId of ['steam', 'dota2', 'cs2', 'deadlock']) {
     f.close();
   });
 }
+
+test('public provider updates theme and locale without remounting focused drafts or changing reply_theme', async () => {
+  let providerProps;
+  const setup = runtime.UiProvider.setup;
+  runtime.UiProvider.setup = (props, context) => { providerProps = props; return setup(props, context); };
+  const f = fixture();
+  runtime.UiProvider.setup = setup;
+  try {
+    await settle();
+    const input = f.container.querySelector('[name=timezone]');
+    const select = f.container.querySelector('[name=reply_theme]');
+    input.focus();
+    f.input('timezone', 'Europe/London');
+    const navigation = f.page.navigationImpact();
+    f.page.update({...f.context, theme: 'dark', locale: 'en-US'});
+    await settle();
+    assert.equal(providerProps.theme, 'dark');
+    assert.equal(providerProps.locale, 'en-US');
+    assert.equal(f.container.querySelector('.ui-page').dataset.theme, 'dark');
+    assert.equal(f.container.querySelector('.steam-dlc-view').lang, 'en-US');
+    assert.equal(f.container.querySelector('[name=timezone]'), input);
+    assert.equal(f.container.querySelector('[name=reply_theme]'), select);
+    assert.equal(f.dom.window.document.activeElement, input);
+    assert.equal(input.value, 'Europe/London');
+    assert.equal(select.value, '1', 'web theme never edits image reply_theme');
+    assert.deepEqual(f.page.navigationImpact(), navigation);
+    assert.deepEqual(f.calls, [['current']], 'context presentation change does not make service calls');
+  } finally { runtime.UiProvider.setup = setup; f.close(); }
+});
+
+test('theme update during a pending write retains its focus, single-flight state and CAS sequence', async () => {
+  const pending = deferred();
+  const f = fixture(); await settle();
+  const original = f.config.save;
+  f.config.save = async (...args) => { await pending.promise; return original(...args); };
+  f.input('timezone', 'UTC');
+  const button = f.container.querySelector('[data-action=save]');
+  button.focus(); f.submit();
+  f.page.update({...f.context, theme: 'dark', locale: 'en-US'}); await settle();
+  assert.equal(f.container.querySelector('[data-action=save]'), button);
+  assert.equal(f.dom.window.document.activeElement, button);
+  assert.equal(f.page.navigationImpact().pending, true);
+  f.submit();
+  pending.resolve(); await settle();
+  assert.deepEqual(f.calls, [['current'], ['save', 7, {timezone: 'UTC'}], ['current']]);
+  assert.match(f.text(), /已保存/);
+  f.close();
+});
 
 test('timezone save and follow-Core clear use exact sequential CAS revisions', async () => {
   const f = fixture(); await settle();
@@ -296,9 +348,11 @@ test('missing descriptors disables editing without fabricating theme choices', a
   assert.match(f.text(), /配置读取未完成/); assert.equal(f.container.querySelectorAll('select').length, 0); f.close();
 });
 
-test('unavailable mount makes no config calls and permits later fresh read', async () => {
+test('unavailable mount makes no config calls and permits later manual fresh read', async () => {
   const f = fixture({ available: false }); await settle(); assert.deepEqual(f.calls, []);
   f.page.update({ ...f.context, available: true }); await settle();
+  assert.deepEqual(f.calls, [], 'restoring a binding never resends a request');
+  f.click('refresh'); await settle();
   assert.deepEqual(f.calls, [['current']]); f.close();
 });
 

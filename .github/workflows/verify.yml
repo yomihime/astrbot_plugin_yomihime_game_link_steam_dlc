@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: yomihime/astrbot_plugin_yomihime_game_link
-          ref: cb8b162decc7bf1cc36489dc9cc26cbdb36008af
+          ref: 95879bfb108f06a47b2d8b1090c30e1156f0a9f3
           path: .ci-core
           persist-credentials: false
       - uses: actions/setup-python@v6
@@ -32,9 +32,13 @@ jobs:
           cache: npm
       - name: Verify page lifetime and configuration behavior
         if: matrix.python == '3.13'
+        env:
+          YGL_CORE_ROOT: .ci-core
         run: |
           npm ci --ignore-scripts
+          npm ci --prefix .ci-core/pages/frontend --ignore-scripts
           npm run test:pages
+          node scripts/build_pages.mjs --core-root=.ci-core --check
           python scripts/sync_page_resources.py --check
       - name: Install pinned validation tools
         run: python -m pip install setuptools==80.9.0 wheel==0.45.1 ruff==0.12.0 mypy==1.17.1
@@ -44,8 +48,8 @@ jobs:
         run: |
           echo '/.ci-core/' >> .git/info/exclude
           python -m pip wheel --no-deps --no-build-isolation --wheel-dir .ci-core/wheelhouse ./.ci-core
-          python -m pip install --no-deps .ci-core/wheelhouse/yomihime_game_link_sdk-0.1.0a13-py3-none-any.whl
-          python -c "import yomihime_game_link_sdk as s; assert s.__version__ == '0.1.0a13'; print(s.__file__)"
+          python -m pip install --no-deps .ci-core/wheelhouse/yomihime_game_link_sdk-0.1.0a14-py3-none-any.whl
+          python -c "import yomihime_game_link_sdk as s; assert s.__version__ == '0.1.0a14'; print(s.__file__)"
       - name: Verify offline behavior and boundaries
         run: |
           python -m unittest discover -s tests -v

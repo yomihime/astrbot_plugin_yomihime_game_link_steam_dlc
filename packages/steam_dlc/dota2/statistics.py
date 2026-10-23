@@ -32,13 +32,15 @@ def _turbo_group(game_mode: int | None) -> str:
     return "non_turbo" if known_mode(game_mode) else "unknown"
 
 
-def _streak(matches: list[RecentMatch], chronology: bool) -> dict[str, Any]:
-    if not chronology or matches[0].outcome == "unknown":
+def _streak(matches: list[RecentMatch | None], chronology: bool) -> dict[str, Any]:
+    if not chronology or not matches or matches[0] is None:
         return {"outcome": None, "count": None}
     outcome = matches[0].outcome
+    if outcome == "unknown":
+        return {"outcome": None, "count": None}
     count = 0
     for match in matches:
-        if match.outcome == "unknown":
+        if match is None or match.outcome == "unknown":
             return {"outcome": None, "count": None}
         if match.outcome != outcome:
             break
@@ -58,24 +60,36 @@ def project_stats(payload: object, *, limit: int = 20) -> dict[str, Any]:
         raise ValueError("limit must be an integer from 1 to 20")
     if not isinstance(payload, list):
         raise ValueError("recent matches payload must be a list")
-    window = payload[:limit]
+    window = []
+    for row in payload[:limit]:
+        normalized = normalize_recent([row], limit=1)
+        window.append(normalized[0] if normalized else None)
+    return project_normalized_stats(window, limit=limit)
+
+
+def project_normalized_stats(
+    window: list[RecentMatch | None], *, limit: int
+) -> dict[str, Any]:
+    """Use a validated source window, retaining invalid-row streak barriers."""
     matches: list[RecentMatch] = []
+    streak_rows: list[RecentMatch | None] = []
     seen: set[int] = set()
     invalid_count = duplicate_count = 0
-    for row in window:
-        normalized = normalize_recent([row], limit=1)
-        if not normalized:
+    for match in window:
+        if match is None:
             invalid_count += 1
+            streak_rows.append(None)
             continue
-        match = normalized[0]
         # normalize_recent validated the identifier, retaining its old format.
         assert match.match_id is not None
         match_id = int(match.match_id)
         if match_id in seen:
             duplicate_count += 1
+            streak_rows.append(None)
             continue
         seen.add(match_id)
         matches.append(match)
+        streak_rows.append(match)
 
     totals = _counts(matches)
     averages: dict[str, Any] = {}
@@ -125,5 +139,5 @@ def project_stats(payload: object, *, limit: int = 20) -> dict[str, Any]:
             "known_time_count": len(times),
             "chronology_confirmed": chronology,
         },
-        "streak": _streak(matches, chronology),
+        "streak": _streak(streak_rows, chronology),
     }

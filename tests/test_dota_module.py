@@ -199,7 +199,7 @@ class TestDotaModule(unittest.IsolatedAsyncioTestCase):
         projection = MappingProxyType({"account_id32": "123", "matches": (row,)})
         self.cache.cached = CacheEntry(
             key="opendota:recent:123:5",
-            payload={"projection": projection},
+            payload={"schema_version": 1, "projection": projection},
             expires_at=datetime.now(UTC) + timedelta(minutes=1),
         )
         result = await self.handlers["recent"].invoke(

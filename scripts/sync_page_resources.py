@@ -1,8 +1,13 @@
-"""Synchronize one page source into four disjoint, hash-pinned module scopes."""
+"""Synchronize built page resources and styles into four hash-pinned scopes.
+
+Run node scripts/build_pages.mjs first. This script never copies source modules
+into production entries: each entry must be the externalized build output.
+"""
 
 import argparse
 import hashlib
 import json
+import posixpath
 import stat
 from pathlib import Path
 
@@ -14,18 +19,29 @@ MODULES = {"steam": "Steam", "dota2": "Dota2", "cs2": "CS2", "deadlock": "Deadlo
 def synchronize(root=ROOT, *, check=False):
     root = Path(root).resolve(strict=True)
     package = root / "packages/steam_dlc"
-    sources = {
-        name: source_bytes(package / "pages" / name, root)
-        for name in ("entry.js", "style.css")
-    }
+    style = source_bytes(package / "pages/style.css", root)
     path = package / "yomihime.manifest.json"
-    manifest = json.loads(source_bytes(path, root))
+    manifest_bytes = source_bytes(path, root)
+    manifest = json.loads(manifest_bytes)
     if {module["module_id"] for module in manifest["modules"]} != set(MODULES):
         raise ValueError("expected exactly four DLC modules")
-    drift = []
+    drift, writes = [], []
     for module in manifest["modules"]:
         module_id = module["module_id"]
         base = f"pages/{module_id}"
+        sources = {
+            "entry.js": source_bytes(package / base / "entry.js", root),
+            "style.css": style,
+        }
+        # The digest changes a directory name, never projection depth.
+        projected_entry = (
+            f"module-assets/steam_dlc/{module_id}/pages/p{'0' * 64}/{base}/entry.js"
+        )
+        runtime_import = posixpath.relpath(
+            "runtime.js", posixpath.dirname(projected_entry)
+        )
+        if runtime_import.encode("ascii") not in sources["entry.js"]:
+            raise ValueError("page must be built against the external projection")
         for name, payload in sources.items():
             target = package / base / name
             if target.exists():
@@ -48,8 +64,7 @@ def synchronize(root=ROOT, *, check=False):
                                 raise ValueError(
                                     "page output parent must be a regular directory"
                                 )
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_bytes(payload)
+                    writes.append((target, payload))
         common = {
             "entry": f"{base}/entry.js",
             "styles": [f"{base}/style.css"],
@@ -73,7 +88,12 @@ def synchronize(root=ROOT, *, check=False):
                 **common,
             },
         ]
+        page_resource_paths = {f"{base}/{name}" for name in sources}
         resources = [
+            resource
+            for resource in module.get("resources", [])
+            if resource["path"] not in page_resource_paths
+        ] + [
             {"path": f"{base}/{name}", "sha256": hashlib.sha256(payload).hexdigest()}
             for name, payload in sources.items()
         ]
@@ -85,6 +105,13 @@ def synchronize(root=ROOT, *, check=False):
     if drift and check:
         raise ValueError("page resource drift: " + ", ".join(drift))
     if not check:
+        if source_bytes(path, root) != manifest_bytes:
+            raise ValueError("manifest changed during page resource synchronization")
+        # Validate every module before mutating any output. A missed/invalid
+        # build in a later module must leave all earlier styles untouched.
+        for target, payload in writes:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(payload)
         path.write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
