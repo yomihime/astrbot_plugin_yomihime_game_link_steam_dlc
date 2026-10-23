@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import json
 import re
 from datetime import UTC, datetime
@@ -17,7 +16,7 @@ from yomihime_game_link_sdk.storage import (
     CacheVisibility,
 )
 
-from .cache_validation import valid_projection
+from .cache_validation import mutable_json, valid_projection
 from .normalization import (
     VERSION,
     normalize_app,
@@ -149,7 +148,10 @@ async def load(scope, operation, target, country="CN", language="schinese"):
         lookup = await scope.cache.lookup(CacheQuery(key, visibility))
         cache_status = lookup.status.value
         if lookup.status is CacheLookupStatus.HIT and lookup.entry is not None:
-            payload = copy.deepcopy(dict(lookup.entry.payload))
+            try:
+                payload = mutable_json(lookup.entry.payload)
+            except ValueError:
+                payload = None
             if valid_projection(payload, operation, target, country, language):
                 payload["cache"] = {
                     "status": "hit",

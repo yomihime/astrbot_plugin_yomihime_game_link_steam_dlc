@@ -8,7 +8,7 @@ import unittest
 import zlib
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 
 import yomihime_game_link_sdk as ygl
 from yomihime_game_link_sdk.errors import CacheUnavailable
@@ -227,6 +227,16 @@ class NormalizationTests(unittest.TestCase):
         self.assertIsNone(queries._dimensions(b"HTML", "image/png"))
 
 
+def _sdk_json(value):
+    # Canonical SDK cache values expose read-only objects and tuple arrays.
+    # The actual CacheEntry below therefore exercises nested frozen containers.
+    if isinstance(value, dict):
+        return MappingProxyType({key: _sdk_json(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return tuple(_sdk_json(item) for item in value)
+    return value
+
+
 class _Cache:
     def __init__(self):
         self.rows, self.puts = {}, []
@@ -242,7 +252,9 @@ class _Cache:
             else CacheLookup(
                 CacheLookupStatus.HIT,
                 ygl.CacheEntry(
-                    query.key, payload, datetime.now(UTC) + timedelta(minutes=5)
+                    query.key,
+                    _sdk_json(payload),
+                    datetime.now(UTC) + timedelta(minutes=5),
                 ),
             )
         )
@@ -521,11 +533,60 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 count,
             )
+
             self.assertEqual(second.model_facts.facts["cache"]["status"], "hit")
             self.assertEqual(
                 first.model_facts.facts["fetched_at"],
                 second.model_facts.facts["fetched_at"],
             )
+
+    async def test_sdk_frozen_entry_all_projection_hot_hits_preserve_time_without_http(
+        self,
+    ):
+        scope = await self.scopes.bind(self.context)
+        for operation, target, country, language in (
+            ("search", "Portal", "CN", "schinese"),
+            ("app", "620", "CN", "schinese"),
+            ("profile", SID, "GLOBAL", "english"),
+            ("recent", SID, "GLOBAL", "english"),
+            ("games", SID, "GLOBAL", "english"),
+        ):
+            first = await queries.load(scope, operation, target, country, language)
+            key = queries.cache_key(operation, target, country, language)
+            visibility = (
+                ygl.CacheVisibility.PUBLIC if operation in ("search", "app") else None
+            )
+            lookup = await self.scopes.cache.lookup(ygl.CacheQuery(key, visibility))
+            self.assertIsInstance(lookup.entry, ygl.CacheEntry)
+            self.assertIsInstance(lookup.entry.payload["data"], MappingProxyType)
+            self.assertIsInstance(lookup.entry.payload["warnings"], tuple)
+            self.assertTrue(
+                queries.valid_projection(
+                    lookup.entry.payload, operation, target, country, language
+                )
+            )
+            before = len(self.scopes.http.calls)
+            second = await queries.load(scope, operation, target, country, language)
+            self.assertEqual(len(self.scopes.http.calls), before)
+            self.assertEqual(second["cache"]["status"], "hit")
+            self.assertEqual(second["fetched_at"], first["fetched_at"])
+            self.assertEqual(second["data"], first["data"])
+
+    async def test_load_cache_authority_and_cancellation_never_become_misses(self):
+        scope = await self.scopes.bind(self.context)
+        for error in (
+            ygl.AccessDenied(),
+            ygl.InvalidInvocation(),
+            asyncio.CancelledError(),
+        ):
+
+            async def denied(query, error=error):
+                raise error
+
+            self.scopes.cache.lookup = denied
+            with self.assertRaises(type(error)):
+                await queries.load(scope, "app", "620")
+        self.assertEqual(self.scopes.http.calls, [])
 
     async def test_valid_asset_fetch_uses_explicit_source_path_query(self):
         def chunk(tag, content):

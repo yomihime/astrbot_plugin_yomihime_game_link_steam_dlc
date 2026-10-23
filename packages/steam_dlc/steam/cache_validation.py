@@ -1,6 +1,8 @@
 """Rebuild frozen Steam DTO shapes before trusting a cached projection."""
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
+from math import isfinite
 
 from .normalization import (
     VERSION,
@@ -12,6 +14,36 @@ from .normalization import (
     normalize_app,
     normalize_search,
 )
+
+
+def mutable_json(value):
+    """Copy public SDK immutable JSON containers into ordinary JSON values.
+
+    CacheEntry payloads may recursively expose Mapping and tuple. Never use
+    pickle/deepcopy or Core internals to copy them. The frozen DTO schema is
+    shallow and bounded; reject corrupt cycles/deep containers before walking
+    beyond its possible shape.
+    """
+    remaining = 10000
+
+    def rebuild(item, depth):
+        nonlocal remaining
+        remaining -= 1
+        if remaining < 0 or depth > 16:
+            raise ValueError("Cached projection exceeds DTO structural bounds")
+        if isinstance(item, Mapping):
+            if any(not isinstance(key, str) for key in item):
+                raise ValueError("Cached JSON object keys must be strings")
+            return {key: rebuild(child, depth + 1) for key, child in item.items()}
+        if isinstance(item, (list, tuple)):
+            return [rebuild(child, depth + 1) for child in item]
+        if item is None or type(item) in (str, int, bool):
+            return item
+        if type(item) is float and isfinite(item):
+            return item
+        raise ValueError("Cached value is not public SDK JSON")
+
+    return rebuild(value, 0)
 
 
 def _same_json(left, right):
@@ -152,6 +184,14 @@ def _account(data, operation, target):
 
 
 def valid_projection(value, operation, target, country, language):
+    try:
+        value = mutable_json(value)
+    except ValueError:
+        return False
+    return _valid_mutable_projection(value, operation, target, country, language)
+
+
+def _valid_mutable_projection(value, operation, target, country, language):
     if not isinstance(value, dict) or not isinstance(value.get("data"), dict):
         return False
     if set(value) != {
