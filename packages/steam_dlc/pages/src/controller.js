@@ -14,6 +14,7 @@ export const MODULES = Object.freeze({
       ['/ygl steam profile [账号]', '查看公开资料；昵称、头像、等级逐项标明可用性。'],
       ['/ygl steam recent [账号]', '查看主页最近展示的公开样本，不代表完整两周游戏列表。'],
       ['/ygl steam games [账号]', '查看来源可用的公开样本；完整游戏库增强需要可选 Steam Key。'],
+      ['/ygl steam wall [账号] [--source games|recent|full] [--all-apps] [--limit 1..200] [--refresh]', '生成有界时长海报墙；默认排除软件等非游戏应用。公开样本与完整库明确分开。'],
       ['/ygl steam status', '查看使用说明。'],
     ],
   },
@@ -152,9 +153,15 @@ export function mountController(container, options) {
   let form, saveButton, refreshButton, discardButton;
   const retainDrafts = () => {
     if (!partition || !current()) return;
-    partition.drafts = new Map([...drafts].filter(([name, draft]) =>
-      (name === 'timezone' || name === 'reply_theme') && (draft.kind === 'clear'
-        || (draft.kind === 'set' && typeof draft.value === 'string' && draft.value.length <= MAX_RETAINED_VALUE_LENGTH))));
+    partition.drafts = new Map([...drafts].filter(([name, draft]) => {
+      const allowed = name === 'timezone' || name === 'reply_theme'
+        || (moduleId === 'steam' && (name === 'poster_include_apps' || name === 'poster_limit'));
+      const value = draft.rawValue ?? draft.value;
+      return allowed && (draft.kind === 'clear' || (draft.kind === 'set'
+        && ['string', 'boolean', 'number'].includes(typeof value)
+        && !(typeof value === 'number' && !Number.isFinite(value))
+        && !(typeof value === 'string' && value.length > MAX_RETAINED_VALUE_LENGTH)));
+    }));
   };
   const revokePartition = () => {
     if (partition ? ordinaryPartitions.get(initialIdentity) === partition && partition.token === partitionToken : options.routeId === 'home') {
@@ -178,10 +185,12 @@ export function mountController(container, options) {
         reset.setAttribute('aria-disabled', String(!active() || !baseline));
       }
     }
+    if (cacheButton) cacheButton.setAttribute('aria-disabled', String(!active() || pending));
     notify();
   };
 
-  const fieldNames = moduleId === 'dota2' ? ['timezone', 'reply_theme'] : ['reply_theme'];
+  const fieldNames = moduleId === 'dota2' ? ['timezone', 'reply_theme']
+    : moduleId === 'steam' ? ['reply_theme', 'poster_include_apps', 'poster_limit'] : ['reply_theme'];
   const validateSnapshot = snapshot => {
     if (!snapshot || !Number.isSafeInteger(snapshot.revision) || snapshot.revision < 1
       || !snapshot.fields || !snapshot.descriptors) throw Error('invalid_snapshot');
@@ -193,6 +202,11 @@ export function mountController(container, options) {
         || descriptor.choices.some(choice => typeof choice.label !== 'string'
           || !(choice.value === null || typeof choice.value === 'string')))) throw Error('invalid_snapshot');
       if (name === 'timezone' && descriptor.value_schema?.type !== 'string') throw Error('invalid_snapshot');
+      if (name === 'poster_include_apps' && (descriptor.value_schema?.type !== 'boolean'
+        || typeof descriptor.default !== 'boolean' || typeof field.value !== 'boolean')) throw Error('invalid_snapshot');
+      if (name === 'poster_limit' && (descriptor.value_schema?.type !== 'integer'
+        || descriptor.value_schema.minimum !== 1 || descriptor.value_schema.maximum !== 200
+        || !Number.isInteger(descriptor.default) || !Number.isInteger(field.value))) throw Error('invalid_snapshot');
     }
     return snapshot;
   };
@@ -201,6 +215,9 @@ export function mountController(container, options) {
     return draft ? draft.kind === 'clear' ? baseline.descriptors[name].default : draft.value
       : baseline.fields[name].value;
   };
+  const choicesFor = name => name === 'poster_include_apps'
+    ? [{ value: false, label: '仅游戏' }, { value: true, label: '全部应用' }]
+    : baseline.descriptors[name].choices;
   const edit = (name, draft) => {
     if (!active() || !baseline) return;
     const field = baseline.fields[name];
@@ -213,7 +230,8 @@ export function mountController(container, options) {
     draftVersion += 1;
     controls.get(name).error.textContent = '';
     controls.get(name).control.setAttribute('aria-invalid', 'false');
-    const cannotRetain = drafts.size && (!partition || [...drafts.values()].some(value => value.kind === 'set' && value.value.length > MAX_RETAINED_VALUE_LENGTH));
+    const cannotRetain = drafts.size && (!partition || [...drafts.values()].some(value => value.kind === 'set'
+      && typeof (value.rawValue ?? value.value) === 'string' && (value.rawValue ?? value.value).length > MAX_RETAINED_VALUE_LENGTH));
     say(cannotRetain ? '输入超过草稿保留上限，请先修正再切页。' : drafts.size ? '有未保存的修改。' : '', 'warning');
     sync();
   };
@@ -221,15 +239,16 @@ export function mountController(container, options) {
     for (const [name, { control, error, hint }] of controls) {
       hint.textContent = baseline.descriptors[name].description;
       const value = effective(name);
-      if (name === 'reply_theme') {
-        const choices = baseline.descriptors[name].choices;
+      if (name === 'reply_theme' || name === 'poster_include_apps') {
+        const choices = choicesFor(name);
         control.replaceChildren(...choices.map((choice, index) => {
           const option = node('option', choice.label);
           option.value = String(index);
           return option;
         }));
         control.value = String(choices.findIndex(choice => same(choice.value, value)));
-      } else control.value = typeof value === 'string' ? value : '';
+      } else if (name === 'poster_limit' && drafts.get(name)?.rawValue !== undefined) control.value = drafts.get(name).rawValue;
+      else control.value = typeof value === 'string' || typeof value === 'number' ? String(value) : '';
       error.textContent = baseline.fields[name].state !== 'valid' && !drafts.has(name)
         ? '当前配置无效，请修改或恢复默认后保存。' : '';
       control.setAttribute('aria-invalid', String(Boolean(error.textContent)));
@@ -239,8 +258,10 @@ export function mountController(container, options) {
     for (const name of fieldNames) {
       const descriptor = baseline.descriptors[name];
       const row = node('div', undefined, 'steam-dlc-field');
-      const label = node('label', name === 'timezone' ? '输出时区' : '回复主题');
-      const control = node(name === 'reply_theme' ? 'select' : 'input');
+      const label = node('label', name === 'timezone' ? '输出时区'
+        : name === 'reply_theme' ? '回复主题'
+          : name === 'poster_include_apps' ? '海报包含全部应用' : '海报项目上限');
+      const control = node(name === 'reply_theme' || name === 'poster_include_apps' ? 'select' : 'input');
       control.className = 'ui-control';
       control.id = `steam-dlc-${moduleId}-${name}`;
       label.htmlFor = control.id;
@@ -255,6 +276,10 @@ export function mountController(container, options) {
         control.autocomplete = 'off';
         control.maxLength = Math.min(descriptor.value_schema.maxLength ?? MAX_RETAINED_VALUE_LENGTH, MAX_RETAINED_VALUE_LENGTH);
       }
+      if (name === 'poster_limit') {
+        control.type = 'number'; control.min = String(descriptor.value_schema.minimum);
+        control.max = String(descriptor.value_schema.maximum); control.step = '1';
+      }
       const reset = node('button', '恢复默认');
       reset.className = 'ui-button';
       reset.type = 'button';
@@ -264,12 +289,17 @@ export function mountController(container, options) {
         edit(name, { kind: 'clear' });
         displayValues();
       });
-      listen(control, name === 'reply_theme' ? 'change' : 'input', () => {
+      listen(control, name === 'reply_theme' || name === 'poster_include_apps' ? 'change' : 'input', () => {
         if (!active() || !baseline) return;
-        if (name === 'reply_theme') {
-          const choice = baseline.descriptors[name].choices[Number(control.value)];
+        if (name === 'reply_theme' || name === 'poster_include_apps') {
+          const choice = choicesFor(name)[Number(control.value)];
           if (!choice) return;
           edit(name, choice.value === null ? { kind: 'clear' } : { kind: 'set', value: choice.value });
+        } else if (name === 'poster_limit') {
+          const rawValue = control.value;
+          edit(name, control.validity.valid && rawValue !== ''
+            ? { kind: 'set', value: Number(rawValue) }
+            : { kind: 'set', value: null, rawValue });
         } else edit(name, { kind: 'set', value: control.value });
       });
       controls.set(name, { control, reset, error, hint });
@@ -326,7 +356,12 @@ export function mountController(container, options) {
           try { new Intl.DateTimeFormat('zh-CN', { timeZone: draft.value }).format(); }
           catch { problem = '请输入有效的 IANA 时区，例如 Asia/Shanghai。'; }
         }
-      } else if (!descriptor.choices.some(choice => same(choice.value, draft.value))) problem = '请选择当前可用的回复主题。';
+      } else if (name === 'poster_limit') {
+        const schema = descriptor.value_schema;
+        if (draft.rawValue !== undefined || !Number.isInteger(draft.value)
+          || draft.value < schema.minimum || draft.value > schema.maximum) problem = '请输入 1 到 200 之间的整数。';
+      } else if (name === 'poster_include_apps' && typeof draft.value !== 'boolean') problem = '请选择是否包含全部应用。';
+      else if (name === 'reply_theme' && !descriptor.choices.some(choice => same(choice.value, draft.value))) problem = '请选择当前可用的回复主题。';
       controls.get(name).error.textContent = problem;
       controls.get(name).control.setAttribute('aria-invalid', String(Boolean(problem)));
       if (problem) valid = false;
@@ -393,6 +428,40 @@ export function mountController(container, options) {
     }
   };
 
+  let cacheButton, cacheValue;
+  let cacheGeneration = 0;
+  const validateCacheStatus = response => {
+    const data = response?.data;
+    if (!data || data.schema_version !== 1 || !['success', 'partial_success'].includes(data.status)
+      || data.privacy !== 'public' || !data.document || !Array.isArray(data.document.blocks)) throw Error('invalid_cache_status');
+    for (const block of data.document.blocks) {
+      if (block?.kind !== 'fields' || !block.fields || typeof block.fields !== 'object') continue;
+      const value = block.fields.cache;
+      if (!value || Object.keys(value).sort().join(',') !== 'bytes,evictions,items,max_bytes,max_items'
+        || Object.values(value).some(number => !Number.isSafeInteger(number) || number < 0)) continue;
+      return value;
+    }
+    throw Error('invalid_cache_status');
+  };
+  const refreshCache = async () => {
+    if (!active() || pending || !cacheButton) return;
+    const ticket = ++cacheGeneration;
+    pending = true; sync();
+    try {
+      const response = await options.services.invoke('wall_cache_status', {});
+      if (!active() || ticket !== cacheGeneration) return;
+      const value = validateCacheStatus(response);
+      cacheValue.textContent = `缓存：${value.items} 项 / ${value.bytes} 字节；上限 ${value.max_items} 项 / ${value.max_bytes} 字节；已淘汰 ${value.evictions} 项。`;
+      say('缓存状态已刷新。此操作只读取统计；重新验证封面请使用 --refresh。', 'success');
+    } catch {
+      if (!active() || ticket !== cacheGeneration) return;
+      cacheValue.textContent = '缓存状态暂不可用。';
+      say('读取缓存状态失败，请稍后重试。', 'error');
+    } finally {
+      if (current() && ticket === cacheGeneration) { pending = false; sync(); }
+    }
+  };
+
   if (module && options.routeId === 'home') {
     root.append(node('p', module.summary));
     root.append(node('h3', '命令帮助'));
@@ -403,6 +472,15 @@ export function mountController(container, options) {
       list.append(term, node('dd', help));
     }
     root.append(list);
+    if (moduleId === 'steam') {
+      root.append(node('h3', '时长海报墙'));
+      root.append(node('p', '默认按累计游玩时长排序并以 √分钟 作为面积权重，压低极端时长差异；显示的实际时长保持原值。只纳入可确认的游戏，未知类型或时长单独说明，不按名称猜测，也不把缺失当作零。', 'steam-dlc-hint'));
+      root.append(node('p', '默认使用公开样本：games 是主页 mostPlayed 样本，recent 是近期展示样本，两者都不是完整游戏库。full 需要可选 Steam Web API Key，目前未配置。缺失或权限受限会明确标注，不把未知时长当作零。全部应用选项会把软件等非游戏应用也纳入。项目上限为 1–200，结果按页码和项目范围标注；封面等比例裁切以填满块，不会拉伸。重新验证封面请在命令中使用 --refresh。', 'steam-dlc-hint'));
+      cacheValue = node('p', '尚未读取缓存状态。', 'steam-dlc-cache-value');
+      cacheButton = node('button', '刷新缓存状态'); cacheButton.className = 'ui-button'; cacheButton.type = 'button'; cacheButton.dataset.action = 'refresh-cache';
+      listen(cacheButton, 'click', () => { void refreshCache(); });
+      root.append(cacheValue, cacheButton);
+    }
     if (moduleId === 'dota2') root.append(node('p', '账号可用 Dota ID32 或 SteamID64。自然语言工具需要明确账号；关联与解除关联请使用私聊 Steam 命令。', 'steam-dlc-hint'));
   } else if (module && options.routeId === 'settings') {
     form = node('form');
@@ -436,7 +514,7 @@ export function mountController(container, options) {
 
   const dispose = () => {
     if (disposed) return;
-    disposed = true; generation += 1; pending = false;
+    disposed = true; generation += 1; cacheGeneration += 1; pending = false;
     if (messageTimer !== null) { clearTimeout(messageTimer); messageTimer = null; }
     // Normal route disposal and scope-only revocation are indistinguishable in
     // contract v1. Retained ordinary drafts stay bounded; identity/error evidence
@@ -449,6 +527,7 @@ export function mountController(container, options) {
   unregister = options.scope.onDispose(dispose);
   sync();
   if (form) void read();
+  if (cacheButton) void refreshCache();
   return {
     update(next) {
       if (disposed || revoked) return;
@@ -458,6 +537,7 @@ export function mountController(container, options) {
         revokePartition();
         say('模块运行上下文已变化，请重新进入页面。', 'error');
       } else if (wasAvailable !== context.available) {
+        cacheGeneration += 1;
         generation += 1; pending = false; ready = false;
         say('页面可用状态已变化，请核对刷新后的配置。');
       }

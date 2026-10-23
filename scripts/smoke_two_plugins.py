@@ -807,7 +807,7 @@ async def main():
             in {"bind", "binding", "identity", "unbind"}
             for handle in handles
         )
-        for module_id, count in (("steam", 5), ("deadlock", 5), ("cs2", 0)):
+        for module_id, count in (("steam", 6), ("deadlock", 5), ("cs2", 0)):
             assert (
                 sum(handle.module_id == "steam_dlc/" + module_id for handle in handles)
                 == count

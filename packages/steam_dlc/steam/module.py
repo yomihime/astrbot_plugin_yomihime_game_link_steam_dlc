@@ -15,6 +15,8 @@ from ..shared.steam_ids import (
 from .normalization import app_id
 from .presentation import result as query_result
 from .queries import QueryFailure, image, load
+from .wall import CacheStatusHandler, MaterialsHandler, WallHandler
+from .wall_materials import MaterialPreparer
 
 _PRIVATE = ygl.Privacy.PRIVATE
 _QUERIES = (
@@ -27,7 +29,8 @@ _QUERIES = (
     "recent_explicit",
     "games_explicit",
 )
-_CAPABILITIES = ("bind", "binding", "unbind", "identity", "status") + _QUERIES
+_WALL = ("wall", "wall_explicit", "wall_materials", "wall_cache_status")
+_CAPABILITIES = ("bind", "binding", "unbind", "identity", "status") + _QUERIES + _WALL
 
 
 class Factory:
@@ -39,11 +42,22 @@ class SteamModule:
     def __init__(self, services):
         self._services = services
         self._running = False
+        self._materials = MaterialPreparer()
 
     def handlers(self):
         return ygl.ModuleHandlers(
             {
-                name: _Query(self, name) if name in _QUERIES else _Handler(self, name)
+                name: (
+                    WallHandler(self, explicit=name == "wall_explicit")
+                    if name in ("wall", "wall_explicit")
+                    else MaterialsHandler(self)
+                    if name == "wall_materials"
+                    else CacheStatusHandler(self)
+                    if name == "wall_cache_status"
+                    else _Query(self, name)
+                    if name in _QUERIES
+                    else _Handler(self, name)
+                )
                 for name in _CAPABILITIES
             },
             {},
@@ -52,9 +66,11 @@ class SteamModule:
 
     async def start(self):
         self._running = True
+        self._materials.start()
 
     async def stop(self):
         self._running = False
+        await self._materials.stop()
 
     async def check_health(self):
         status = (

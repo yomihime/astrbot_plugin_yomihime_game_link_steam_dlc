@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "package_id": "steam_dlc",
-  "package_version": "0.1.0-alpha.4",
+  "package_version": "0.1.0-alpha.5",
   "contract_version": "2.0",
   "author": "yomihime",
   "license": "AGPL-3.0-only",
@@ -12,7 +12,7 @@
       "route": "steam",
       "category": "platform",
       "factory_entry": "steam.module:Factory",
-      "module_version": "0.1.0-alpha.4",
+      "module_version": "0.1.0-alpha.5",
       "capabilities": [
         {
           "capability_id": "bind",
@@ -286,6 +286,141 @@
             "steam_avatar",
             "steam_avatar_fastly"
           ]
+        },
+        {
+          "capability_id": "wall",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "maxLength": 512
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "owner",
+          "required_sources": [
+            "steam_community"
+          ],
+          "required_capabilities": [
+            {
+              "module_id": "steam_dlc/steam",
+              "capability_id": "wall_materials"
+            }
+          ]
+        },
+        {
+          "capability_id": "wall_explicit",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "games",
+                  "recent",
+                  "full"
+                ]
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 200
+              },
+              "all_apps": {
+                "type": "boolean"
+              },
+              "refresh": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "account"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "steam_community"
+          ],
+          "required_capabilities": [
+            {
+              "module_id": "steam_dlc/steam",
+              "capability_id": "wall_materials"
+            }
+          ]
+        },
+        {
+          "capability_id": "wall_materials",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "phase": {
+                "type": "string",
+                "enum": [
+                  "metadata",
+                  "images"
+                ]
+              },
+              "app_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 10
+                },
+                "description": "1..200 AppIDs; count and decimal syntax checked by the handler."
+              },
+              "country": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 2
+              },
+              "language": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 24
+              },
+              "refresh": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "phase",
+              "app_ids"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "privacy_floor": "public",
+          "required_sources": [
+            "steam_browse",
+            "steam_store_image"
+          ]
+        },
+        {
+          "capability_id": "wall_cache_status",
+          "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_and_public_web",
+          "effect": "read_only",
+          "privacy_floor": "public"
         }
       ],
       "commands": [
@@ -354,6 +489,14 @@
           "parameter_mode": "raw_tail",
           "raw_tail_parameter": "command",
           "help_text": "最多5款 legacy mostPlayedGames 样本，非全部游戏库；可指定 ID32/SteamID64。"
+        },
+        {
+          "operation_path": "wall",
+          "capability_id": "wall",
+          "parameter_mapping": {},
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "command",
+          "help_text": "私聊生成累计时长海报：公开 games/recent 样本；可用 --source、--all-apps、--limit 1..200、--refresh。完整库需要另行配置可选 Steam Key。"
         }
       ],
       "tools": [
@@ -400,6 +543,18 @@
             "account": "account"
           },
           "description": "必须由用户明确提供 account ID32/SteamID64，不能读取或推导本人默认绑定。仅按返回字段解释；未知不填零。已弃用 Community XML 最多5款 mostPlayedGames 样本，不是完整游戏库。"
+        },
+        {
+          "name": "steam_dlc_steam_wall",
+          "capability_id": "wall_explicit",
+          "parameter_mapping": {
+            "account": "account",
+            "source": "source",
+            "limit": "limit",
+            "all_apps": "all_apps",
+            "refresh": "refresh"
+          },
+          "description": "为用户明确提供的 account ID32/SteamID64 生成累计时长海报。禁止读取或推导默认绑定。games/recent 是公开主页样本，不是完整库；full 当前未配置可选 Steam Key。默认仅游戏，保留未知及剔除计数。"
         }
       ],
       "display": {
@@ -419,6 +574,7 @@
           "role": "home",
           "title": "帮助与状态",
           "order": 0,
+          "capability_id": "wall_cache_status",
           "entry": "pages/steam/entry.js",
           "styles": [
             "pages/steam/style.css"
@@ -431,7 +587,9 @@
           "title": "设置",
           "order": 10,
           "config_fields": [
-            "reply_theme"
+            "reply_theme",
+            "poster_include_apps",
+            "poster_limit"
           ],
           "entry": "pages/steam/entry.js",
           "styles": [
@@ -443,11 +601,11 @@
       "resources": [
         {
           "path": "pages/steam/entry.js",
-          "sha256": "c8d5c0d56837e92ce6f12006bec26330492f09598cd568893c0abba3385b9310"
+          "sha256": "4c4d55091dde2cdf23c24d8ad4e3ffebc512b5e1b6693e971eef5bd7fe15e609"
         },
         {
           "path": "pages/steam/style.css",
-          "sha256": "cb04e8796eb1a38f93ba9031e3881e11833a62179afe273013faf5ee30e587ee"
+          "sha256": "3748acda3616f2e2bf82bf24d9ef7447230d13ad350e54e4fd32d0eeb2a6c640"
         }
       ],
       "sources": [
@@ -485,6 +643,32 @@
           "host": "shared.akamai.steamstatic.com",
           "timeout_seconds": 8,
           "requests_per_minute": 30
+        },
+        {
+          "source_id": "steam_browse",
+          "host": "api.steampowered.com",
+          "timeout_seconds": 10,
+          "requests_per_minute": 30
+        }
+      ],
+      "config_fields": [
+        {
+          "name": "poster_include_apps",
+          "default": false,
+          "description": "时长海报是否纳入软件等应用；默认只包含来源明确分类的游戏。",
+          "value_schema": {
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "poster_limit",
+          "default": 60,
+          "description": "海报最多纳入项数（1..200），超过图像预算时连续分页。",
+          "value_schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
         }
       ]
     },
@@ -493,7 +677,7 @@
       "route": "dota2",
       "category": "game",
       "factory_entry": "dota2.module:Factory",
-      "module_version": "0.1.0-alpha.4",
+      "module_version": "0.1.0-alpha.5",
       "capabilities": [
         {
           "capability_id": "recent",
@@ -951,11 +1135,11 @@
       "resources": [
         {
           "path": "pages/dota2/entry.js",
-          "sha256": "c8d5c0d56837e92ce6f12006bec26330492f09598cd568893c0abba3385b9310"
+          "sha256": "4c4d55091dde2cdf23c24d8ad4e3ffebc512b5e1b6693e971eef5bd7fe15e609"
         },
         {
           "path": "pages/dota2/style.css",
-          "sha256": "cb04e8796eb1a38f93ba9031e3881e11833a62179afe273013faf5ee30e587ee"
+          "sha256": "3748acda3616f2e2bf82bf24d9ef7447230d13ad350e54e4fd32d0eeb2a6c640"
         }
       ]
     },
@@ -964,7 +1148,7 @@
       "route": "cs2",
       "category": "game",
       "factory_entry": "cs2.module:Factory",
-      "module_version": "0.1.0-alpha.4",
+      "module_version": "0.1.0-alpha.5",
       "capabilities": [
         {
           "capability_id": "status",
@@ -1172,11 +1356,11 @@
       "resources": [
         {
           "path": "pages/cs2/entry.js",
-          "sha256": "c8d5c0d56837e92ce6f12006bec26330492f09598cd568893c0abba3385b9310"
+          "sha256": "4c4d55091dde2cdf23c24d8ad4e3ffebc512b5e1b6693e971eef5bd7fe15e609"
         },
         {
           "path": "pages/cs2/style.css",
-          "sha256": "cb04e8796eb1a38f93ba9031e3881e11833a62179afe273013faf5ee30e587ee"
+          "sha256": "3748acda3616f2e2bf82bf24d9ef7447230d13ad350e54e4fd32d0eeb2a6c640"
         }
       ]
     },
@@ -1185,7 +1369,7 @@
       "route": "deadlock",
       "category": "game",
       "factory_entry": "deadlock.module:Factory",
-      "module_version": "0.1.0-alpha.4",
+      "module_version": "0.1.0-alpha.5",
       "capabilities": [
         {
           "capability_id": "status",
@@ -1623,11 +1807,11 @@
       "resources": [
         {
           "path": "pages/deadlock/entry.js",
-          "sha256": "c8d5c0d56837e92ce6f12006bec26330492f09598cd568893c0abba3385b9310"
+          "sha256": "4c4d55091dde2cdf23c24d8ad4e3ffebc512b5e1b6693e971eef5bd7fe15e609"
         },
         {
           "path": "pages/deadlock/style.css",
-          "sha256": "cb04e8796eb1a38f93ba9031e3881e11833a62179afe273013faf5ee30e587ee"
+          "sha256": "3748acda3616f2e2bf82bf24d9ef7447230d13ad350e54e4fd32d0eeb2a6c640"
         }
       ],
       "sources": [

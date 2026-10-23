@@ -28,10 +28,22 @@ function snapshot(moduleId = 'dota2') {
       value_schema: { type: 'string', minLength: 1, maxLength: 64 },
     };
   }
+  if (moduleId === 'steam') {
+    value.fields.poster_include_apps = { value: false, state: 'valid', present: false, source: 'default' };
+    value.descriptors.poster_include_apps = {
+      description: '默认仅纳入游戏；开启后包含软件等全部应用。', default: false,
+      value_schema: { type: 'boolean' },
+    };
+    value.fields.poster_limit = { value: 60, state: 'valid', present: false, source: 'default' };
+    value.descriptors.poster_limit = {
+      description: '最多纳入 200 项。', default: 60,
+      value_schema: { type: 'integer', minimum: 1, maximum: 200 },
+    };
+  }
   return value;
 }
 let fixtureSequence = 0;
-function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, service = {}, context: contextPatch = {} } = {}) {
+function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, service = {}, invoke = async () => cacheResponse(), context: contextPatch = {} } = {}) {
   const dom = new JSDOM('<!doctype html><div id="root"></div>');
   installDOM(dom);
   const container = dom.window.document.querySelector('#root');
@@ -57,7 +69,7 @@ function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, s
   };
   const page = mount(container, {
     routeId, context,
-    services: { config, invoke() { assert.fail('business invoke forbidden'); }, credentials: new Proxy({}, { get() { assert.fail('credentials forbidden'); } }) },
+    services: { config, invoke(id, parameters) { calls.push(['invoke', id, clone(parameters)]); return invoke(id, parameters); }, credentials: new Proxy({}, { get() { assert.fail('credentials forbidden'); } }) },
     scope: { signal: abort.signal, isCurrent: () => scopeCurrent, onDispose(callback) { disposal.add(callback); return () => disposal.delete(callback); } },
     onNavigationStateChange() { notifications++; },
   });
@@ -81,8 +93,15 @@ function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, s
   };
 }
 
+function cacheResponse(value = { bytes: 12345, items: 7, max_bytes: 8000000, max_items: 32, evictions: 2 }) {
+  return { data: { schema_version: 1, status: 'success', privacy: 'public', document: {
+    title: 'Steam 海报缓存', subject: 'Steam DLC', sources: [], timestamps: {},
+    blocks: [{ kind: 'fields', fields: { cache: value } }],
+  }, provenance: [], timestamps: {}, warnings: [], model_facts: null, error: null } };
+}
+
 for (const moduleId of ['steam', 'dota2', 'cs2', 'deadlock']) {
-  test(`${moduleId} home has actual command help and availability, without API calls`, () => {
+  test(`${moduleId} home has actual command help and availability`, async () => {
     const f = fixture({ moduleId, routeId: 'home' });
     assert.match(f.text(), new RegExp(`/ygl ${moduleId} `));
     assert.match(f.text(), /运行健康请在模块管理中查看/);
@@ -90,16 +109,21 @@ for (const moduleId of ['steam', 'dota2', 'cs2', 'deadlock']) {
     if (moduleId === 'deadlock') assert.match(f.text(), /默认使用最近 20 条已收录记录/);
     assert.ok(f.container.querySelector('.ui-page .ui-page-header h1'));
     assert.ok(f.container.querySelector('.ui-settings-layout .ui-settings-group'));
+    if (moduleId === 'steam') {
+      await settle();
+      assert.deepEqual(f.calls, [['invoke', 'wall_cache_status', {}]]);
+      assert.match(f.text(), /7 项 \/ 12345 字节/);
+    }
     f.page.update({ ...f.context, available: false });
     assert.match(f.text(), /当前页面入口不可用/);
-    assert.deepEqual(f.calls, []);
+    if (moduleId !== 'steam') assert.deepEqual(f.calls, []);
     assert.deepEqual(Object.keys(f.page.navigationImpact()).sort(), ['credentials', 'ordinary', 'pending', 'version']);
     f.close();
   });
   test(`${moduleId} settings render only declared dynamic fields`, async () => {
     const f = fixture({ moduleId });
     await settle();
-    assert.equal(f.container.querySelectorAll('input,select').length, moduleId === 'dota2' ? 2 : 1);
+    assert.equal(f.container.querySelectorAll('input,select').length, moduleId === 'dota2' ? 2 : moduleId === 'steam' ? 3 : 1);
     assert.equal(f.container.querySelector('select option:last-child').textContent, '林间');
     assert.equal(f.container.querySelector('select').value, '1');
     assert.ok(!f.container.querySelector('input[type=password]'));
@@ -530,4 +554,68 @@ test('exact authorization failure during save revokes cached intent', async () =
   assert.match(original.text(), /授权或模块上下文已失效/); original.close();
   const returned = fixture({ context: original.context }); await settle();
   assert.equal(returned.page.navigationImpact().ordinary, false); returned.close();
+});
+
+test('Steam poster settings save boolean and integer values with their JSON types', async () => {
+  const f = fixture({ moduleId: 'steam' }); await settle();
+  f.input('poster_include_apps', '1'); f.input('poster_limit', '64');
+  f.submit(); await settle();
+  const save = f.calls.find(call => call[0] === 'save');
+  assert.deepEqual(save, ['save', 7, { poster_include_apps: true, poster_limit: 64 }]);
+  assert.equal(typeof save[2].poster_include_apps, 'boolean');
+  assert.equal(typeof save[2].poster_limit, 'number');
+  f.close();
+});
+
+test('invalid Steam poster limit remains visible, retained, and blocks saving', async () => {
+  const f = fixture({ moduleId: 'steam' }); await settle();
+  f.input('poster_limit', '201'); f.submit(); await settle();
+  assert.equal(f.container.querySelector('[name=poster_limit]').value, '201');
+  assert.match(f.text(), /1 到 200 之间的整数/);
+  assert.equal(f.calls.some(call => call[0] === 'save'), false);
+  const context = f.context; f.close();
+  const reopened = fixture({ moduleId: 'steam', context }); await settle();
+  assert.equal(reopened.container.querySelector('[name=poster_limit]').value, '201');
+  assert.equal(reopened.page.navigationImpact().ordinary, true);
+  reopened.close();
+});
+
+test('standard boolean schema loads, retains through remount, and saves as a boolean', async () => {
+  const f = fixture({ moduleId: 'steam' }); await settle();
+  const context = f.context;
+  f.input('poster_include_apps', '1');
+  assert.equal(f.container.querySelector('[name=poster_include_apps] option:checked').textContent, '全部应用');
+  f.close();
+  const reopened = fixture({ moduleId: 'steam', context }); await settle();
+  assert.equal(reopened.container.querySelector('[name=poster_include_apps] option:checked').textContent, '全部应用');
+  assert.equal(reopened.page.navigationImpact().ordinary, true);
+  reopened.submit(); await settle();
+  const save = reopened.calls.find(call => call[0] === 'save');
+  assert.deepEqual(save, ['save', 7, { poster_include_apps: true }]);
+  assert.equal(typeof save[2].poster_include_apps, 'boolean');
+  reopened.close();
+});
+
+test('Steam cache refresh failure is readable and retry succeeds without claiming poster fetch', async () => {
+  let attempts = 0;
+  const f = fixture({ moduleId: 'steam', routeId: 'home', invoke: async () => {
+    if (++attempts === 1) throw Error('private internal detail');
+    return cacheResponse();
+  } }); await settle();
+  assert.match(f.text(), /缓存状态暂不可用/);
+  assert.doesNotMatch(f.text(), /private internal detail/);
+  f.click('refresh-cache'); await settle();
+  assert.match(f.text(), /7 项 \/ 12345 字节/);
+  assert.match(f.text(), /此操作只读取统计/);
+  assert.equal(attempts, 2); f.close();
+});
+
+test('stale Steam cache response cannot update the home page after epoch change', async () => {
+  const read = deferred();
+  const f = fixture({ moduleId: 'steam', routeId: 'home', invoke: () => read.promise });
+  f.page.update({ ...f.context, epoch: 4 });
+  read.resolve(cacheResponse()); await settle();
+  assert.doesNotMatch(f.text(), /7 项 \/ 12345 字节/);
+  assert.equal(f.page.navigationImpact().pending, false);
+  f.close();
 });

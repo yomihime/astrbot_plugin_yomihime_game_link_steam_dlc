@@ -14,4 +14,6 @@
 .steam-dlc-message:empty,.steam-dlc-field-error:empty { display:none; }
 .steam-dlc-help dt { margin-top:16px; overflow-wrap:anywhere; }
 .steam-dlc-help dd { margin:4px 0 12px; color:var(--ui-muted); }
+.steam-dlc-view .steam-dlc-cache-value { overflow-wrap:anywhere; }
+.steam-dlc-view [data-action=refresh-cache][aria-disabled=true] { color:var(--ui-muted); cursor:default; opacity:.75; }
 @media(max-width:599px) { .steam-dlc-field { grid-template-columns:minmax(0,1fr); gap:8px; } .steam-dlc-field .steam-dlc-hint,.steam-dlc-field-error { grid-column:1; } .steam-dlc-field button { justify-self:start; } }

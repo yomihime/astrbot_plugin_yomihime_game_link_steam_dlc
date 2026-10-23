@@ -76,6 +76,11 @@ def synchronize(root=ROOT, *, check=False):
                 "role": "home",
                 "title": "帮助与状态",
                 "order": 0,
+                **(
+                    {"capability_id": "wall_cache_status"}
+                    if module_id == "steam"
+                    else {}
+                ),
                 **common,
             },
             {
@@ -84,7 +89,12 @@ def synchronize(root=ROOT, *, check=False):
                 "title": "设置",
                 "order": 10,
                 "config_fields": (["timezone"] if module_id == "dota2" else [])
-                + ["reply_theme"],
+                + ["reply_theme"]
+                + (
+                    ["poster_include_apps", "poster_limit"]
+                    if module_id == "steam"
+                    else []
+                ),
                 **common,
             },
         ]

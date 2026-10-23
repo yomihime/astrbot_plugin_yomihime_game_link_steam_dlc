@@ -12,7 +12,7 @@ from io import BytesIO
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SDK_VERSION = "0.1.0a14"
+SDK_VERSION = "0.1.0a15"
 QUERY_TOOLS = {
     "steam": {
         "search": ("search", "query"),
@@ -21,6 +21,7 @@ QUERY_TOOLS = {
             name: (name + "_explicit", "account")
             for name in ("profile", "recent", "games")
         },
+        "wall": ("wall_explicit", "account"),
     },
     "dota2": {
         name: (name + "_explicit", "match_id" if name == "match" else "account")

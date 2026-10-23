@@ -31,7 +31,9 @@ export function mount(container, options) {
       }),
       aside: () => h(Surface, {title: settings ? '设置说明' : '数据与账号'}, {default: () => [
         h(StatusHint, {}, {default: () => settings
-          ? '网页浅深主题与命令图片回复主题分别设置。回复主题选项由当前授权配置提供。'
+          ? moduleId === 'steam'
+            ? '可设置回复主题、海报默认是否包含非游戏应用，以及每次海报墙最多纳入的项目数。海报墙默认只使用可见的公开游戏样本。'
+            : '网页浅深主题与命令图片回复主题分别设置。回复主题选项由当前授权配置提供。'
           : module?.source || '当前页面没有可用的模块声明。'}),
         h('p', {class: 'steam-dlc-hint'}, settings
           ? '保存后会重新读取并核对结果；冲突或未确认结果需要手动刷新。'
