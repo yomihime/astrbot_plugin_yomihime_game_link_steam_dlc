@@ -290,7 +290,7 @@ function y(e, t) {
 			F() && o === y && (b = !1, U());
 		}
 	}, Z, Q, $ = 0, le = (e) => {
-		let t = e?.data;
+		let t = e;
 		if (!t || t.schema_version !== 1 || !["success", "partial_success"].includes(t.status) || t.privacy !== "public" || !t.document || !Array.isArray(t.document.blocks)) throw Error("invalid_cache_status");
 		for (let e of t.document.blocks) {
 			if (e?.kind !== "fields" || !e.fields || typeof e.fields != "object") continue;

@@ -431,7 +431,7 @@ export function mountController(container, options) {
   let cacheButton, cacheValue;
   let cacheGeneration = 0;
   const validateCacheStatus = response => {
-    const data = response?.data;
+    const data = response;
     if (!data || data.schema_version !== 1 || !['success', 'partial_success'].includes(data.status)
       || data.privacy !== 'public' || !data.document || !Array.isArray(data.document.blocks)) throw Error('invalid_cache_status');
     for (const block of data.document.blocks) {

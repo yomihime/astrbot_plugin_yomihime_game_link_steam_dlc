@@ -94,10 +94,10 @@ function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, s
 }
 
 function cacheResponse(value = { bytes: 12345, items: 7, max_bytes: 8000000, max_items: 32, evictions: 2 }) {
-  return { data: { schema_version: 1, status: 'success', privacy: 'public', document: {
-    title: 'Steam 海报缓存', subject: 'Steam DLC', sources: [], timestamps: {},
+  return { schema_version: 1, status: 'success', privacy: 'public', document: {
+    title: 'Steam 海报缓存', subject: 'Steam DLC', sources: [], timestamps: [],
     blocks: [{ kind: 'fields', fields: { cache: value } }],
-  }, provenance: [], timestamps: {}, warnings: [], model_facts: null, error: null } };
+  }, provenance: [], timestamps: [], warnings: [], model_facts: null, error: null };
 }
 
 for (const moduleId of ['steam', 'dota2', 'cs2', 'deadlock']) {
@@ -608,6 +608,25 @@ test('Steam cache refresh failure is readable and retry succeeds without claimin
   assert.match(f.text(), /7 项 \/ 12345 字节/);
   assert.match(f.text(), /此操作只读取统计/);
   assert.equal(attempts, 2); f.close();
+});
+
+test('Steam cache projection rejects private, wrong-schema, malformed-count, and nested envelopes', async () => {
+  const valid = { bytes: 12345, items: 7, max_bytes: 8000000, max_items: 32, evictions: 2 };
+  const invalid = [
+    { ...cacheResponse(), privacy: 'private' },
+    { ...cacheResponse(), schema_version: 2 },
+    cacheResponse({ ...valid, bytes: -1 }),
+    cacheResponse({ ...valid, items: 1.5 }),
+    cacheResponse({ ...valid, max_items: Number.MAX_SAFE_INTEGER + 1 }),
+    { data: cacheResponse() },
+  ];
+  for (const response of invalid) {
+    const f = fixture({ moduleId: 'steam', routeId: 'home', invoke: async () => response });
+    await settle();
+    assert.match(f.text(), /缓存状态暂不可用/);
+    assert.doesNotMatch(f.text(), /12345 字节/);
+    f.close();
+  }
 });
 
 test('stale Steam cache response cannot update the home page after epoch change', async () => {
