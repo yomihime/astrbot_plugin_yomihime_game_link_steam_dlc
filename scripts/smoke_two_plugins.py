@@ -946,19 +946,18 @@ async def main():
                         provider_tool_output = await profile_handle.tool.call(
                             provider_tool_context, account="99"
                         )
-                        assert json.loads(provider_tool_output) == {
-                            "error": {
-                                "code": "module_unavailable",
-                                "message": MODULE_UNAVAILABLE_TEXT,
-                            }
-                        }, provider_tool_output
-                        assert len(transport_calls) == before
+                        provider_facts = json.loads(provider_tool_output)
+                        assert provider_facts["account_id32"] == "99", provider_facts
+                        assert provider_facts["profile"]["account_id32"] == "99"
+                        assert len(transport_calls) == before + 1
+                        assert transport_calls[-1]["host"] == "api.opendota.com"
+                        assert transport_calls[-1]["path"] == "/api/players/99"
                         assert not provider_tool_event.calls
-                        result["management"]["provider_disabled_tool_error"] = (
-                            json.loads(provider_tool_output)
+                        result["management"]["provider_disabled_explicit_tool"] = (
+                            provider_facts
                         )
                         passed(
-                            "provider-disabled-published-tool-fixed-error-without-http"
+                            "provider-disabled-explicit-tool-independent-default-command-denied"
                         )
         passed("four-modules-real-admin-disable-enable-and-provider-offline")
         passed("real-dashboard-api-modules-settings-and-public-catalog")
@@ -1107,7 +1106,7 @@ if __name__ == "__main__":
                 "inflight-rebind-target-snapshot-and-unbind",
                 "tools-explicit-target-and-no-binding-tools",
                 "four-modules-real-admin-disable-enable-and-provider-offline",
-                "provider-disabled-published-tool-fixed-error-without-http",
+                "provider-disabled-explicit-tool-independent-default-command-denied",
                 "real-dashboard-api-modules-settings-and-public-catalog",
                 "dlc-reload-old-lease-and-late-termination-safe",
                 "old-tool-epoch-rejected-after-dlc-reload",
