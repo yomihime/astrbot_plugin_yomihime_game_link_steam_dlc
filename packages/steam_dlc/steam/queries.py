@@ -139,30 +139,33 @@ def cache_key(operation, target, country, language):
     )
 
 
-async def load(scope, operation, target, country="CN", language="schinese"):
+async def load(
+    scope, operation, target, country="CN", language="schinese", *, cache=True
+):
     key = cache_key(operation, target, country, language)
     # Public store data can be shared. Account samples remain in the authorized
     # invocation's owner partition; public visibility is not permission to share
     # a default binding or the user's derived selection.
     visibility = CacheVisibility.PUBLIC if operation in ("search", "app") else None
-    cache_status = "miss"
-    try:
-        lookup = await scope.cache.lookup(CacheQuery(key, visibility))
-        cache_status = lookup.status.value
-        if lookup.status is CacheLookupStatus.HIT and lookup.entry is not None:
-            try:
-                payload = mutable_json(lookup.entry.payload)
-            except ValueError:
-                payload = None
-            if valid_projection(payload, operation, target, country, language):
-                payload["cache"] = {
-                    "status": "hit",
-                    "fetched_at": payload["fetched_at"],
-                }
-                return payload
-            cache_status = "rejected"
-    except CacheUnavailable:
-        cache_status = "unavailable"
+    cache_status = "miss" if cache else "bypassed"
+    if cache:
+        try:
+            lookup = await scope.cache.lookup(CacheQuery(key, visibility))
+            cache_status = lookup.status.value
+            if lookup.status is CacheLookupStatus.HIT and lookup.entry is not None:
+                try:
+                    payload = mutable_json(lookup.entry.payload)
+                except ValueError:
+                    payload = None
+                if valid_projection(payload, operation, target, country, language):
+                    payload["cache"] = {
+                        "status": "hit",
+                        "fetched_at": payload["fetched_at"],
+                    }
+                    return payload
+                cache_status = "rejected"
+        except CacheUnavailable:
+            cache_status = "unavailable"
     warnings = []
     now = datetime.now(UTC).isoformat()
     if operation == "search":
@@ -238,10 +241,11 @@ async def load(scope, operation, target, country="CN", language="schinese"):
         "availability": data.get("availability", {}),
         "warnings": warnings,
     }
-    try:
-        await scope.cache.put(key, result, ttl_seconds=300, visibility=visibility)
-    except CacheUnavailable:
-        result["cache"]["status"] = "unavailable"
+    if cache:
+        try:
+            await scope.cache.put(key, result, ttl_seconds=300, visibility=visibility)
+        except CacheUnavailable:
+            result["cache"]["status"] = "unavailable"
     return result
 
 

@@ -164,6 +164,46 @@ class HandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(missing.status, ygl.ResultStatus.ERROR)
         self.scope.records.collection.assert_not_awaited()
 
+    async def test_llm_explicit_wall_uses_no_account_or_selection_cache(self):
+        tool = SimpleNamespace(
+            origin=ygl.InvocationOrigin.LLM_TOOL,
+            parent_id=None,
+            actor_id="synthetic-owner",
+        )
+        put = self.scope.cache.put
+
+        async def public_only(*args, **kwargs):
+            if kwargs.get("visibility") is not CacheVisibility.PUBLIC:
+                raise ygl.AccessDenied()
+            return await put(*args, **kwargs)
+
+        with patch.object(self.scope.cache, "put", side_effect=public_only):
+            response = (
+                await self.module.handlers()
+                .capabilities["wall_explicit"]
+                .invoke(tool, {"account": "2"})
+            )
+        self.assertEqual(response.status, ygl.ResultStatus.PARTIAL_SUCCESS)
+        self.mock_load.assert_awaited_once_with(
+            self.scope, "games", "76561197960265730", cache=False
+        )
+        self.assertTrue(self.scope.cache.puts)
+        self.assertTrue(
+            all(
+                visibility is CacheVisibility.PUBLIC
+                for visibility, _, _ in self.scope.cache.puts
+            )
+        )
+        self.assertEqual(
+            [
+                key
+                for _, key, _ in self.scope.cache.puts
+                if key.startswith("steam-wall-v1:result:")
+            ],
+            [],
+        )
+        self.scope.records.collection.assert_not_awaited()
+
     async def test_full_blocked_visible_not_substituted_and_default_nested_guard(self):
         full = (
             await self.module.handlers()

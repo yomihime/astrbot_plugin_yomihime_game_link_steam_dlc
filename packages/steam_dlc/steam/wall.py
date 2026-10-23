@@ -316,7 +316,12 @@ class WallHandler:
                 ]
             target = _account(target)
             scope = await self.owner._services.scopes.bind(context)
-            projection = await load(scope, value["source"], target)
+            if context.origin is ygl.InvocationOrigin.LLM_TOOL:
+                # Tool cache defaults to PUBLIC in Core. Account lists and
+                # personal selections must not enter that shared partition.
+                projection = await load(scope, value["source"], target, cache=False)
+            else:
+                projection = await load(scope, value["source"], target)
             rows, _ = source_rows(projection)
             # Only a bounded public AppID set crosses the preparation capability.
             candidates = [row["app_id"] for row in rows[:200]]
@@ -399,15 +404,16 @@ class WallHandler:
             theme = settings.get("reply_theme", "warm_paper")
             if theme not in ("warm_paper", "cool_white", "deep_indigo"):
                 theme = "warm_paper"
-            try:
-                await scope.cache.put(
-                    selection_key(target, selection, theme),
-                    selection,
-                    ttl_seconds=300,
-                    visibility=CacheVisibility.USER,
-                )
-            except ygl.CacheUnavailable:
-                pass
+            if context.origin is ygl.InvocationOrigin.COMMAND:
+                try:
+                    await scope.cache.put(
+                        selection_key(target, selection, theme),
+                        selection,
+                        ttl_seconds=300,
+                        visibility=CacheVisibility.USER,
+                    )
+                except ygl.CacheUnavailable:
+                    pass
             return result(selection, private=not self.explicit, theme=theme)
         except (ValueError, TypeError, KeyError, AttributeError):
             return failure(

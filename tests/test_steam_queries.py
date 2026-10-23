@@ -9,6 +9,7 @@ import zlib
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import MappingProxyType, SimpleNamespace
+from unittest.mock import AsyncMock
 
 import yomihime_game_link_sdk as ygl
 from yomihime_game_link_sdk.errors import CacheUnavailable
@@ -424,6 +425,20 @@ class _Scopes:
 
 
 class QueryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_account_load_can_skip_all_cache_io_for_explicit_tool_wall(self):
+        scope = _Scopes()
+        scope.cache = SimpleNamespace(
+            lookup=AsyncMock(side_effect=AssertionError("account cache read")),
+            put=AsyncMock(side_effect=AssertionError("account cache write")),
+        )
+        result = await queries.load(scope, "games", SID, cache=False)
+        self.assertEqual(result["target"], SID)
+        self.assertEqual(len(result["data"]["games"]), 5)
+        self.assertEqual(result["cache"]["status"], "bypassed")
+        self.assertEqual(len(scope.http.calls), 1)
+        scope.cache.lookup.assert_not_awaited()
+        scope.cache.put.assert_not_awaited()
+
     async def asyncSetUp(self):
         self.scopes = _Scopes()
         self.module = await Factory().create(SimpleNamespace(scopes=self.scopes))
