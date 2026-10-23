@@ -130,6 +130,130 @@ def scope():
 
 
 class MaterialTests(unittest.IsolatedAsyncioTestCase):
+    async def test_core_decoder_rejection_is_per_image_and_preserves_wall_labels(self):
+        from test_steam_wall import projection, row
+
+        from packages.steam_dlc.steam.wall import select
+        from packages.steam_dlc.steam.wall_presentation import result
+
+        target, service = scope(), MaterialPreparer()
+        original_fetch, original_store = target.http.fetch, target.resources.store
+
+        async def fetch(request):
+            response = await original_fetch(request)
+            if request.source_id == "steam_store_image" and "/apps/1/" in request.path:
+                return ygl.HttpResponse(
+                    response.status_code,
+                    response.headers,
+                    response.body + b"decoder-reject",
+                )
+            return response
+
+        async def store(media, content, **kwargs):
+            # Simulate the canonical Core decoder boundary after DLC's valid
+            # PNG header/dimensions preflight; no real decoder is claimed here.
+            if content.endswith(b"decoder-reject"):
+                raise ygl.ParameterError("invalid image")
+            return await original_store(media, content, **kwargs)
+
+        target.http.fetch, target.resources.store = fetch, store
+        materials = await service.prepare(target, ["1", "3"])
+        self.assertIsNone(materials["items"][0]["asset_id"])
+        self.assertIsNotNone(materials["items"][1]["asset_id"])
+        self.assertEqual(materials["counters"]["image_rejected"], 2)
+        selection = select(
+            projection(
+                [
+                    row(1, "12.5", name="Rejected game"),
+                    row(3, "1.25", name="Valid game"),
+                ]
+            ),
+            materials,
+        )
+        response = result(selection)
+        self.assertEqual(response.status, ygl.ResultStatus.PARTIAL_SUCCESS)
+        self.assertEqual(selection["counts"]["missing_images"], 1)
+        bad, good = response.document.card.blocks[0].items
+        self.assertEqual(
+            (bad.title, bad.caption, bad.image), ("Rejected game", "12.5 小时", None)
+        )
+        self.assertEqual((good.title, good.caption), ("Valid game", "1.25 小时"))
+        self.assertIsNotNone(good.image)
+
+    async def test_decoder_rejection_on_refresh_retains_verified_positive(self):
+        target, service = scope(), MaterialPreparer()
+        cold = await service.prepare(target, ["1"])
+        original = cold["items"][0]["asset_id"]
+        records = {
+            key: dict(value)
+            for key, value in target.cache.values.items()
+            if value.get("asset_id") == original
+        }
+
+        async def reject(media, content, **kwargs):
+            raise ygl.ParameterError("invalid image")
+
+        target.resources.store = reject
+        target.http.version = 2
+        refreshed = await service.prepare(target, ["1"], refresh=True)
+        self.assertEqual(refreshed["items"][0]["asset_id"], original)
+        self.assertEqual(refreshed["counters"]["image_rejected"], 1)
+        self.assertEqual(refreshed["counters"]["stale_images"], 1)
+        for key, record in records.items():
+            self.assertEqual(target.cache.values[key], record)
+        hot = await service.prepare(target, ["1"])
+        self.assertEqual(hot["items"][0]["asset_id"], original)
+        self.assertEqual(hot["counters"]["image_requests"], 0)
+
+    async def test_resource_store_rejection_does_not_swallow_other_failures(self):
+        for failure in (
+            ygl.AccessDenied(),
+            ygl.InvalidInvocation(),
+            asyncio.CancelledError(),
+            TypeError("unexpected"),
+            ValueError("unexpected"),
+        ):
+            with self.subTest(failure=type(failure).__name__):
+                target, service = scope(), MaterialPreparer()
+
+                async def reject(media, content, **kwargs):
+                    raise failure
+
+                target.resources.store = reject
+                with self.assertRaises(type(failure)):
+                    await service.prepare(target, ["1"])
+
+    async def test_refresh404_preserves_verified_ref_and_later_refresh_recovers(self):
+        target, service = scope(), MaterialPreparer()
+        cold = await service.prepare(target, ["1"])
+        original = cold["items"][0]["asset_id"]
+        image_entries = {
+            key: dict(value)
+            for key, value in target.cache.values.items()
+            if value.get("asset_id") == original
+        }
+        self.assertTrue(image_entries)
+
+        target.http.image_status = 404
+        missing = await service.prepare(target, ["1"], refresh=True)
+        self.assertEqual(missing["items"][0]["asset_id"], original)
+        self.assertEqual(missing["counters"]["image_requests"], 1)
+        # A failed refresh cannot replace an existing positive cache record or
+        # advance its timestamp, ETag, source version or resource reference.
+        for key, entry in image_entries.items():
+            self.assertEqual(target.cache.values[key], entry)
+        hot = await MaterialPreparer().prepare(target, ["1"])
+        self.assertEqual(hot["items"][0]["asset_id"], original)
+        self.assertEqual(hot["counters"]["image_requests"], 0)
+
+        target.http.image_status = 200
+        target.http.version = 2
+        updated = await service.prepare(target, ["1"], refresh=True)
+        self.assertIsNotNone(updated["items"][0]["asset_id"])
+        self.assertNotEqual(updated["items"][0]["asset_id"], original)
+        self.assertEqual(updated["counters"]["image_requests"], 1)
+        self.assertEqual(target.http.requests[-1].headers["If-None-Match"], '"image-1"')
+
     async def test_two_phases_hot_frozen_cache_new_preparer_and_source_update(self):
         target = scope()
         first = MaterialPreparer()

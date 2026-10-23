@@ -67,12 +67,25 @@ def result(selection, *, private=True, theme="warm_paper"):
         )
         for row in selection["rows"]
     )
+    visible_sources = [
+        coverage + "；不是完整游戏库。",
+        f"来源{counts['source_rows']}项 · 去重后{counts['unique']}项 · 符合{counts['eligible']}项 · 本次纳入{counts['included']}项 · 筛除{counts['filtered']}项 · limit截取{counts['limited']}项",
+        f"未知类型{counts['unknown_type']}项 · 未知时长{counts['unknown_duration']}项 · 未游玩{counts['zero_duration']}项；分类计数可交叉。",
+        f"缺图{counts['missing_images']}项使用备用块。",
+        "权重=sqrt(累计分钟)；比例受限、尺寸分档，面积非递减，非精确比例。",
+        "等比cover有界裁边，不拉伸；网页显示小时换算仅用于权重，精度不提升。",
+        f"来源原始时间：{selection['fetched_at']}",
+    ]
+    if counts.get("metadata_unexamined"):
+        visible_sources.append(
+            f"另有{counts['metadata_unexamined']}项未在本次元数据预算内验证类型。"
+        )
     card = (
         cards.Document(
             "Steam · 公开样本海报",
             (cards.WeightedCollage(items),),
             subtitle=f"{kind} · {counts['included']}项 · 累计时长平方根权重",
-            sources=(coverage, str(selection["fetched_at"])),
+            sources=tuple(visible_sources),
             theme=theme,
         )
         if items

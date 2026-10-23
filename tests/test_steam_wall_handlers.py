@@ -10,9 +10,65 @@ from test_steam_wall_materials import scope
 from yomihime_game_link_sdk.storage import CacheVisibility
 
 from packages.steam_dlc.steam.module import SteamModule
+from packages.steam_dlc.steam.wall import select
+from packages.steam_dlc.steam.wall_presentation import result as wall_result
 
 
 class HandlerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_card_visible_summary_retains_coverage_counts_and_area_semantics(
+        self,
+    ):
+        data = projection(
+            [
+                row(1, "10"),
+                row(1, "10"),
+                row(2, "1000"),
+                row(3, None),
+                row(4, "0"),
+                row(5, "20"),
+                row(6, "9"),
+                row(7, "8"),
+            ]
+        )
+        materials = {
+            "items": [
+                {"app_id": str(appid), "app_type": "software" if appid == 2 else "game"}
+                for appid in (1, 2, 3, 4, 6, 7)
+            ]
+        }
+        selection = select(data, materials, limit=1)
+        response = wall_result(selection)
+        card = response.document.card
+        visible = "\n".join((card.title, card.subtitle, *card.sources))
+        for text in (
+            "公开样本",
+            "不是完整游戏库",
+            "仅已确认游戏",
+            "XML",
+            "来源8项",
+            "去重后7项",
+            "本次纳入1项",
+            "筛除4项",
+            "limit截取2项",
+            "未知类型1项",
+            "未知时长1项",
+            "未游玩1项",
+            "分类计数可交叉",
+            "缺图1项",
+            "sqrt(累计分钟)",
+            "尺寸分档",
+            "面积非递减",
+            "非精确比例",
+            "有界裁边",
+            "不拉伸",
+            "2026-01-01T00:00:00Z",
+        ):
+            self.assertIn(text, visible)
+        self.assertIsNone(response.model_facts)
+        all_apps = wall_result(select(data, materials, limit=1, all_apps=True))
+        self.assertIn("全部应用（含软件及未知类型）", all_apps.document.card.subtitle)
+        self.assertEqual(len(card.blocks), 1)
+
     async def asyncSetUp(self):
         self.scope = scope()
         self.context = SimpleNamespace(

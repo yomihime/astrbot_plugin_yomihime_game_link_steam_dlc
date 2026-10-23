@@ -428,6 +428,12 @@ class MaterialPreparer:
                     counters["image_hits"] += 1
                     return usable
                 if response.status_code == 404:
+                    if usable:
+                        # Retain the verified positive record and its original
+                        # source metadata. A failed refresh must not make the
+                        # next invocation forget a still-readable local image.
+                        counters["stale_images"] += 1
+                        return usable
                     await self._put(
                         scope,
                         key,
@@ -463,6 +469,14 @@ class MaterialPreparer:
                     reference = await scope.resources.store(
                         media, body, visibility=PUBLIC, ttl_seconds=TTL
                     )
+                except ygl.ParameterError:
+                    # Core performs the full decoder validation after this
+                    # adapter's header preflight. Reject only this candidate;
+                    # authority, cancellation and unexpected failures propagate.
+                    counters["image_rejected"] += 1
+                    if usable:
+                        counters["stale_images"] += 1
+                    return usable
                 except ygl.ServiceUnavailable:
                     counters["budget_skipped"] += 1
                     return usable
@@ -521,6 +535,7 @@ class MaterialPreparer:
                 "stale_images",
                 "image_bytes",
                 "budget_skipped",
+                "image_rejected",
                 "rate_limited",
                 "retry_after",
             )
