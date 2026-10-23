@@ -215,6 +215,7 @@ def _account(value):
 
 
 def _input(context, parameters, operation):
+    target: str | None
     country, language = (
         parameters.get("country", "CN"),
         parameters.get("language", "schinese"),
@@ -310,7 +311,18 @@ class _Query:
                 default_target = True
                 identity = await _Handler(self.owner, "identity").invoke(context, {})
                 if identity.status is not ygl.ResultStatus.SUCCESS:
-                    return identity
+                    unbound = (
+                        identity.error is not None
+                        and identity.error.code is ygl.ErrorCode.UNBOUND
+                    )
+                    return failure(
+                        ygl.ErrorCode.UNBOUND
+                        if unbound
+                        else ygl.ErrorCode.MODULE_UNAVAILABLE,
+                        "尚未关联 Steam 账号，请先执行 /ygl steam bind。"
+                        if unbound
+                        else "Steam 身份服务暂不可用。",
+                    )
                 target = parse_steam_id(
                     identity.document.ordered_blocks[0].fields["identity"]["steam_id64"]
                 )
@@ -331,7 +343,7 @@ class _Query:
             return failure(
                 exc.code,
                 exc.message,
-                privacy=_PRIVATE if default_target else ygl.Privacy.PUBLIC,
+                privacy=ygl.Privacy.PUBLIC,
                 retry_after_seconds=exc.retry_after,
             )
         except ygl.SourceHttpError as exc:
@@ -343,20 +355,20 @@ class _Query:
             return failure(
                 code,
                 "Steam 来源暂不可用，请稍后重试。",
-                privacy=_PRIVATE if default_target else ygl.Privacy.PUBLIC,
+                privacy=ygl.Privacy.PUBLIC,
                 retry_after_seconds=exc.retry_after_seconds,
             )
         except (ygl.ServiceUnavailable, ygl.InvalidInvocation, ygl.AccessDenied):
             return failure(
                 ygl.ErrorCode.MODULE_UNAVAILABLE,
                 "Steam 查询服务或本次授权暂不可用。",
-                privacy=_PRIVATE if default_target else ygl.Privacy.PUBLIC,
+                privacy=ygl.Privacy.PUBLIC,
             )
         except PermissionError:
             return failure(
                 ygl.ErrorCode.NOT_PUBLIC,
                 "Steam 资料需要登录或未公开；未视为空库。",
-                privacy=_PRIVATE if default_target else ygl.Privacy.PUBLIC,
+                privacy=ygl.Privacy.PUBLIC,
             )
         except LookupError:
             return failure(
@@ -367,11 +379,11 @@ class _Query:
             return failure(
                 ygl.ErrorCode.UNPARSED,
                 "Steam 数据结构或返回身份无法验证；未将缺失资料视为零。",
-                privacy=_PRIVATE if default_target else ygl.Privacy.PUBLIC,
+                privacy=ygl.Privacy.PUBLIC,
             )
         except ygl.OperationTimeout:
             return failure(
                 ygl.ErrorCode.UPSTREAM_ERROR,
                 "Steam 查询超时，请稍后重试。",
-                privacy=_PRIVATE if default_target else ygl.Privacy.PUBLIC,
+                privacy=ygl.Privacy.PUBLIC,
             )

@@ -90,7 +90,7 @@ def result(operation, projection, default_target, avatar=None):
     )
     lines.append("缺失字段=未知；样本均值与胜率各自排除未知值。")
     clean = tuple(literal(line, 600) or "" for line in lines)
-    panels = tuple(cards.Text(line) for line in clean)
+    panels: tuple[cards.Block, ...] = tuple(cards.Text(line) for line in clean)
     if avatar is not None:
         panels = (cards.Image(avatar, width=96, height=96),) + panels
     facts = {

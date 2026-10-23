@@ -3,7 +3,9 @@
 import asyncio
 import copy
 import json
+import struct
 import unittest
+import zlib
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -352,17 +354,25 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.scopes.binds, 0)
         self.assertEqual(self.scopes.http.calls, [])
 
-    async def test_default_binding_is_private_facts_none_and_other_user_unbound(self):
+    async def test_default_query_public_contract_facts_none_identity_stays_private(
+        self,
+    ):
         for operation in ("profile", "recent", "games"):
             result = await self.call(operation, {"command": ""})
             self.assertIsNone(result.model_facts)
-            self.assertEqual(result.privacy, ygl.Privacy.PRIVATE)
-            self.assertEqual(result.document.privacy, ygl.Privacy.PRIVATE)
+            self.assertEqual(result.privacy, ygl.Privacy.PUBLIC)
+            self.assertEqual(result.document.privacy, ygl.Privacy.PUBLIC)
             self.assertIsNotNone(result.document.card)
         other = await self.call(
             "profile", context=replace(self.context, actor_id="bob")
         )
         self.assertEqual(other.error.code, ygl.ErrorCode.UNBOUND)
+        self.assertEqual(other.privacy, ygl.Privacy.PUBLIC)
+        self.assertIsNone(other.model_facts)
+        identity = await self.call("identity")
+        self.assertEqual(identity.privacy, ygl.Privacy.PRIVATE)
+        self.assertEqual(identity.document.privacy, ygl.Privacy.PRIVATE)
+        self.assertIsNone(identity.model_facts)
 
     async def test_derived_command_and_explicit_capability_never_default(self):
         for context, name in (
@@ -469,6 +479,89 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
                 for block in result.document.card.blocks
             )
         )
+
+    async def test_nested_bad_app_cache_refetches_once_then_hot_hit(self):
+        await self.call("app", {"app_id": "620"})
+        entry = next(iter(self.scopes.cache.rows.values()))
+        entry["data"]["developers"] = [1]
+        self.assertFalse(
+            queries.valid_projection(entry, "app", "620", "CN", "schinese")
+        )
+        before = len(self.scopes.http.calls)
+        first = await self.call("app", {"app_id": "620"})
+        after = len(self.scopes.http.calls)
+        second = await self.call("app", {"app_id": "620"})
+        self.assertEqual(first.status, ygl.ResultStatus.SUCCESS)
+        self.assertEqual(second.status, ygl.ResultStatus.SUCCESS)
+        self.assertEqual(after - before, 2)  # appdetails + optional review HTML
+        self.assertEqual(len(self.scopes.http.calls), after)
+        self.assertEqual(first.model_facts.facts["cache"]["status"], "rejected")
+        self.assertEqual(second.model_facts.facts["cache"]["status"], "hit")
+        self.assertEqual(
+            first.model_facts.facts["fetched_at"],
+            second.model_facts.facts["fetched_at"],
+        )
+        self.assertEqual(second.model_facts.facts["region"], "CN")
+        self.assertEqual(second.model_facts.facts["language"], "schinese")
+
+    async def test_normal_account_projections_hit_cache_preserve_time_and_sample_types(
+        self,
+    ):
+        for operation in ("profile", "recent", "games"):
+            first = await self.call(operation, {"command": "1"})
+            count = sum(
+                request.source_id == "steam_community"
+                for request in self.scopes.http.calls
+            )
+            second = await self.call(operation, {"command": "1"})
+            self.assertEqual(
+                sum(
+                    request.source_id == "steam_community"
+                    for request in self.scopes.http.calls
+                ),
+                count,
+            )
+            self.assertEqual(second.model_facts.facts["cache"]["status"], "hit")
+            self.assertEqual(
+                first.model_facts.facts["fetched_at"],
+                second.model_facts.facts["fetched_at"],
+            )
+
+    async def test_valid_asset_fetch_uses_explicit_source_path_query(self):
+        def chunk(tag, content):
+            return (
+                struct.pack("!I", len(content))
+                + tag
+                + content
+                + struct.pack("!I", zlib.crc32(tag + content))
+            )
+
+        png = (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack("!2I5B", 1, 1, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(b"\0\0\0\0"))
+            + chunk(b"IEND", b"")
+        )
+        seen = []
+
+        async def bounded(request):
+            seen.append(request)
+            return response(png, "image/png")
+
+        projection = {
+            "operation": "app",
+            "target": "620",
+            "data": {
+                "header_image_url": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/620/header.png?t=123"
+            },
+        }
+        asset = await queries.image(
+            SimpleNamespace(http=SimpleNamespace(fetch=bounded)), projection
+        )
+        self.assertEqual(asset.kind, "png")
+        self.assertEqual(asset.content, png)
+        self.assertEqual(seen[0].source_id, "steam_store_image")
+        self.assertEqual(seen[0].query, (("t", "123"),))
 
     async def test_content_type_identity_loginwall_rate_limit_fail_distinctly(self):
         cases = (

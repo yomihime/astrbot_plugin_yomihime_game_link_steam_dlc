@@ -1,15 +1,20 @@
+import asyncio
 import json
 import unittest
 from types import SimpleNamespace
 
 import yomihime_game_link_sdk as ygl
 from yomihime_game_link_sdk.contexts import InvocationOrigin, InvocationView
-from yomihime_game_link_sdk.errors import SourceHttpError
+from yomihime_game_link_sdk.errors import (
+    AccessDenied,
+    InvalidInvocation,
+    SourceHttpError,
+)
 from yomihime_game_link_sdk.services import HttpResponse
 from yomihime_game_link_sdk.storage import CacheLookupStatus
 
 from packages.steam_dlc.deadlock import normalization as norm
-from packages.steam_dlc.deadlock.module import Module, avatar_asset
+from packages.steam_dlc.deadlock.module import Module, avatar_asset, load, valid_cached
 
 
 def context(operation, origin=InvocationOrigin.LLM_TOOL):
@@ -230,6 +235,109 @@ class Queries(unittest.IsolatedAsyncioTestCase):
         r = await self.invoke("stats_explicit", {"account": "123"})
         self.assertEqual(r.status, ygl.ResultStatus.SUCCESS)
         self.assertEqual(len(self.http.requests), 2)
+
+    async def test_complete_history_cache_schema_self_heals_once(self):
+        mutations = {
+            "numeric": lambda p: p["history"]["matches"][0].update(
+                kills="broken-numeric-field"
+            ),
+            "metadata": lambda p: p["history"].pop("sample_count"),
+            "boolean_counter": lambda p: p["history"].update(received_count=True),
+            "count_relationship": lambda p: p["history"].update(valid_count=999),
+            "timestamp": lambda p: p.update(fetched_at="2026-10-23T12:00:00"),
+            "availability": lambda p: p["field_availability"]["kills"].update(
+                available="broken"
+            ),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                self.cache.values.clear()
+                await self.invoke("recent_explicit", {"account": "123"})
+                projection = next(iter(self.cache.values.values()))["projection"]
+                mutate(projection)
+                self.assertFalse(valid_cached(projection, "history", 123, None, 20))
+                before = len(self.http.requests)
+                first = await self.invoke("stats_explicit", {"account": "123"})
+                second = await self.invoke("stats_explicit", {"account": "123"})
+                self.assertEqual(
+                    (first.status, second.status), (ygl.ResultStatus.SUCCESS,) * 2
+                )
+                self.assertEqual(len(self.http.requests) - before, 1)
+                self.assertFalse(first.model_facts.facts["cache_hit"])
+                self.assertTrue(second.model_facts.facts["cache_hit"])
+
+    async def test_nested_profile_and_match_cache_values_are_validated(self):
+        cases = (
+            (
+                "profile_explicit",
+                {"account": "123"},
+                "profile",
+                123,
+                None,
+                lambda p: p["profile"]["rank"].update(badge="broken"),
+                2,
+            ),
+            (
+                "match_explicit",
+                {"match_id": "902"},
+                "match",
+                None,
+                "902",
+                lambda p: p["match"].update(player_count=10),
+                1,
+            ),
+            (
+                "match_explicit",
+                {"match_id": "902"},
+                "match",
+                None,
+                "902",
+                lambda p: p["match"]["players"][0].update(deaths=[]),
+                1,
+            ),
+        )
+        for (
+            operation,
+            parameters,
+            kind,
+            account,
+            mid,
+            mutate,
+            expected_fetches,
+        ) in cases:
+            with self.subTest(operation=operation, expected_fetches=expected_fetches):
+                self.cache.values.clear()
+                await self.invoke(operation, parameters)
+                projection = next(iter(self.cache.values.values()))["projection"]
+                self.assertTrue(valid_cached(projection, kind, account, mid, 20))
+                mutate(projection)
+                self.assertFalse(valid_cached(projection, kind, account, mid, 20))
+                before = len(self.http.requests)
+                for _ in range(2):
+                    self.assertEqual(
+                        (await self.invoke(operation, parameters)).status,
+                        ygl.ResultStatus.SUCCESS,
+                    )
+                self.assertEqual(len(self.http.requests) - before, expected_fetches)
+
+    async def test_cache_authorization_and_cancellation_are_not_misses(self):
+        for exception in (
+            AccessDenied(),
+            InvalidInvocation(),
+            asyncio.CancelledError(),
+        ):
+            with self.subTest(exception=type(exception).__name__):
+
+                async def denied_lookup(query):
+                    raise exception
+
+                scope = SimpleNamespace(
+                    http=self.http, cache=SimpleNamespace(lookup=denied_lookup)
+                )
+                before = len(self.http.requests)
+                with self.assertRaises(type(exception)):
+                    await load(scope, "history", 123, 20, None)
+                self.assertEqual(len(self.http.requests), before)
 
     async def test_child_command_cannot_resolve_private_default(self):
         from dataclasses import replace

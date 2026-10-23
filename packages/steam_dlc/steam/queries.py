@@ -17,6 +17,7 @@ from yomihime_game_link_sdk.storage import (
     CacheVisibility,
 )
 
+from .cache_validation import valid_projection
 from .normalization import (
     VERSION,
     normalize_app,
@@ -135,79 +136,6 @@ def cache_key(operation, target, country, language):
             }
         )
     )
-
-
-def valid_projection(value, operation, target, country, language):
-    if not isinstance(value, dict):
-        return False
-    if (
-        value.get("schema_version") != VERSION
-        or value.get("operation") != operation
-        or value.get("target") != target
-        or value.get("region") != country
-        or value.get("language") != language
-        or not isinstance(value.get("data"), dict)
-    ):
-        return False
-    data = value["data"]
-    if (
-        not isinstance(value.get("warnings"), list)
-        or not isinstance(value.get("source"), str)
-        or not isinstance(value.get("scope"), str)
-    ):
-        return False
-    if operation == "search":
-        if not isinstance(data.get("candidates"), list) or len(data["candidates"]) > 10:
-            return False
-        if any(
-            not isinstance(row, dict)
-            or not isinstance(row.get("app_id"), str)
-            or "name" not in row
-            for row in data["candidates"]
-        ):
-            return False
-    elif operation == "app":
-        if data.get("app_id") != target or data.get("price_state") not in (
-            "free",
-            "priced",
-            "unreleased",
-            "no_local_price",
-        ):
-            return False
-        if not {
-            "name",
-            "price_display",
-            "currency",
-            "type",
-            "discount_percent",
-            "release_date",
-            "coming_soon",
-            "developers",
-            "publishers",
-            "store_url",
-        }.issubset(data):
-            return False
-    else:
-        profile, rows = data.get("profile"), data.get("games")
-        if (
-            not isinstance(profile, dict)
-            or profile.get("steam_id64") != target
-            or not {"nickname", "level", "profile_url"}.issubset(profile)
-        ):
-            return False
-        if not isinstance(rows, list) or len(rows) > (5 if operation == "games" else 3):
-            return False
-        if any(
-            not isinstance(row, dict)
-            or not {"name", "app_id", "hours_on_record", "hours_recent"}.issubset(row)
-            for row in rows
-        ):
-            return False
-    try:
-        stamp = datetime.fromisoformat(value["fetched_at"])
-        return stamp.tzinfo is not None and stamp <= datetime.now(UTC)
-    except (KeyError, TypeError, ValueError):
-        return False
 
 
 async def load(scope, operation, target, country="CN", language="schinese"):
@@ -405,8 +333,9 @@ async def image(scope, projection):
     if request is None:
         return None
     try:
+        source, path, query = request
         body, media = await fetch(
-            scope, *request[:2], request[2], expected="image", max_bytes=512_000
+            scope, source, path, query=query, expected="image", max_bytes=512_000
         )
         size = _dimensions(body, media)
         if (

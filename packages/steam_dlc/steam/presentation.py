@@ -10,7 +10,7 @@ def _value(value):
 
 def result(projection, *, default_target=False, asset=None):
     operation, data = projection["operation"], projection["data"]
-    lines = []
+    lines: list[str] = []
     if operation == "search":
         title = "Steam · 商店搜索"
         rows = data["candidates"]
@@ -89,7 +89,9 @@ def result(projection, *, default_target=False, asset=None):
         f"缓存：{projection['cache']['status']} · 原始获取时间：{projection['cache']['fetched_at']}"
     )
     lines.extend(projection.get("warnings", []))
-    privacy = ygl.Privacy.PRIVATE if default_target else ygl.Privacy.PUBLIC
+    # Capability privacy is fixed PUBLIC, matching explicit account commands.
+    # Default selection stays isolated by owner cache and the whole facts=None.
+    privacy = ygl.Privacy.PUBLIC
     blocks = tuple(ygl.TextBlock(line) for line in lines)
     panels = ([cards.Image(asset, height=160)] if asset else []) + [
         cards.Text(line) for line in lines

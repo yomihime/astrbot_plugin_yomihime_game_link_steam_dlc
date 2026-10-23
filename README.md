@@ -69,7 +69,7 @@ CS2 的 Leetify 匿名资料→近期→单场 API 路线可用，适配器和�
 ## 数据与隐私边界
 
 - Steam 是唯一账号关联 owner。关联数据由 SDK USER records 保存；停用、重启或卸载 DLC 不触发自动删除。`unbind` 保留版本记录所需的 tombstone。
-- Steam 身份依赖只向已声明且获授权的消费者提供私有 identity 文档。Dota/Deadlock 公开查询保持其来源可见性；所有默认关联查询整份抑制模型 facts，Steam 默认账号结果为 PRIVATE。显式公开查询可以呈现实际来源字段。
+- Steam 身份依赖只向已声明且获授权的消费者提供私有 identity 文档。Steam/Dota/Deadlock 公开查询保持其来源可见性；所有默认关联查询整份抑制模型 facts。显式公开查询可以呈现实际来源字段。
 - Dota 2 通过 SDK HTTP、配置和缓存接口访问固定 OpenDota 主机 `api.opendota.com`，仅使用固定 GET 查询路径，不提交 POST、不调用任意 URL。接口不可用、限流、超时或无记录时返回稳定错误；不自动重试。
 - 时间戳按 UTC 处理；展示时区由 Dota 配置 `timezone` 控制，默认 `Asia/Shanghai`。
 - Valve 官方简体中文英雄名称映射收录于源码 [hero_names.py](packages/steam_dlc/shared/hero_names.py)，共 127 条。来源为 [Dota 2 官方英雄数据接口](https://www.dota2.com/datafeed/herolist?language=schinese)，源响应 SHA-256 为 `c3d7e9ac5b145aa066857645dd89612f51643dd8b3354d2beccf41ddebb0f054`；未知 ID 使用显式编号回退。

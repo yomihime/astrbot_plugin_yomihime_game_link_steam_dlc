@@ -32,6 +32,7 @@ from yomihime_game_link_sdk.storage import (
 from ..shared.output import failure, success
 from ..shared.steam_ids import account_id32, parse_dota_account, parse_steam_id
 from . import normalization as norm
+from .cache_validation import valid_projection
 from .presentation import result
 
 SOURCE = "deadlock_api"
@@ -55,7 +56,7 @@ class Module:
         self.services, self.running = services, False
 
     def handlers(self):
-        handlers = {"status": _Status()}
+        handlers: dict[str, _Status | Query] = {"status": _Status()}
         for operation in OPERATIONS:
             handlers[operation] = Query(self, operation)
             handlers[operation + "_explicit"] = Query(self, operation)
@@ -201,7 +202,8 @@ def explicit(value):
 
 
 async def resolve(services, context, parameters, operation):
-    account, mid, limit = None, None, 20
+    account, mid = None, None
+    limit: str | int = 20
     if context.origin is InvocationOrigin.COMMAND:
         raw = parameters.get("command", "")
         if not isinstance(raw, str) or len(raw) > 256:
@@ -361,58 +363,9 @@ async def fetch(scope, path, query=()):
 
 
 def valid_cached(candidate, kind, account, mid, limit):
-    try:
-        if kind == "history":
-            history = candidate["history"]
-            rows = history["matches"]
-            if (
-                candidate["account_id32"] != str(account)
-                or history["requested_limit"] != limit
-                or not isinstance(rows, (list, tuple))
-                or len(rows) > limit
-            ):
-                return False
-            fields = set(norm.DeadlockRecent.__dataclass_fields__)
-            return all(
-                isinstance(row, Mapping)
-                and set(row) == fields
-                and norm.identifier(row["match_id"]) == row["match_id"]
-                and row["outcome"] in ("win", "loss", "unknown")
-                for row in rows
-            )
-        if kind == "profile":
-            p = candidate["profile"]
-            return (
-                p["account_id32"] == str(account)
-                and isinstance(p["rank"], Mapping)
-                and all(k in p["rank"] for k in ("badge", "tier", "subrank", "status"))
-                and all(
-                    k in p
-                    for k in ("name", "profile_status", "last_updated", "avatar_url")
-                )
-            )
-        m = candidate["match"]
-        return (
-            m["match_id"] == str(mid)
-            and isinstance(m["players"], (list, tuple))
-            and 0 < len(m["players"]) <= 64
-            and all(
-                set(p) == set(norm.DeadlockPlayer.__dataclass_fields__)
-                for p in m["players"]
-            )
-            and all(
-                k in m
-                for k in (
-                    "game_mode",
-                    "match_mode",
-                    "winning_team",
-                    "duration_s",
-                    "player_count",
-                )
-            )
-        )
-    except (KeyError, TypeError, AttributeError):
-        return False
+    return valid_projection(
+        candidate, kind, account, mid, limit, version=VERSION, source=SOURCE
+    )
 
 
 async def load(scope, operation, account, limit, mid):
