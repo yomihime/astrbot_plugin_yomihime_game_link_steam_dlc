@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "package_id": "steam_dlc",
-  "package_version": "0.1.0-alpha.2",
+  "package_version": "0.1.0-alpha.3",
   "contract_version": "2.0",
   "author": "yomihime",
   "license": "AGPL-3.0-only",
@@ -12,7 +12,7 @@
       "route": "steam",
       "category": "platform",
       "factory_entry": "steam.module:Factory",
-      "module_version": "0.1.0-alpha.2",
+      "module_version": "0.1.0-alpha.3",
       "capabilities": [
         {
           "capability_id": "bind",
@@ -164,7 +164,8 @@
           "privacy_floor": "public",
           "required_sources": [
             "steam_community",
-            "steam_avatar"
+            "steam_avatar",
+            "steam_avatar_fastly"
           ]
         },
         {
@@ -188,7 +189,8 @@
           "privacy_floor": "public",
           "required_sources": [
             "steam_community",
-            "steam_avatar"
+            "steam_avatar",
+            "steam_avatar_fastly"
           ]
         },
         {
@@ -209,7 +211,8 @@
           "privacy_floor": "public",
           "required_sources": [
             "steam_community",
-            "steam_avatar"
+            "steam_avatar",
+            "steam_avatar_fastly"
           ]
         },
         {
@@ -233,7 +236,8 @@
           "privacy_floor": "public",
           "required_sources": [
             "steam_community",
-            "steam_avatar"
+            "steam_avatar",
+            "steam_avatar_fastly"
           ]
         },
         {
@@ -254,7 +258,8 @@
           "privacy_floor": "public",
           "required_sources": [
             "steam_community",
-            "steam_avatar"
+            "steam_avatar",
+            "steam_avatar_fastly"
           ]
         },
         {
@@ -278,7 +283,8 @@
           "privacy_floor": "public",
           "required_sources": [
             "steam_community",
-            "steam_avatar"
+            "steam_avatar",
+            "steam_avatar_fastly"
           ]
         }
       ],
@@ -469,6 +475,12 @@
           "requests_per_minute": 30
         },
         {
+          "source_id": "steam_avatar_fastly",
+          "host": "avatars.fastly.steamstatic.com",
+          "timeout_seconds": 8,
+          "requests_per_minute": 30
+        },
+        {
           "source_id": "steam_store_image",
           "host": "shared.akamai.steamstatic.com",
           "timeout_seconds": 8,
@@ -481,7 +493,7 @@
       "route": "dota2",
       "category": "game",
       "factory_entry": "dota2.module:Factory",
-      "module_version": "0.1.0-alpha.2",
+      "module_version": "0.1.0-alpha.3",
       "capabilities": [
         {
           "capability_id": "recent",
@@ -952,7 +964,7 @@
       "route": "cs2",
       "category": "game",
       "factory_entry": "cs2.module:Factory",
-      "module_version": "0.1.0-alpha.2",
+      "module_version": "0.1.0-alpha.3",
       "capabilities": [
         {
           "capability_id": "status",
@@ -1173,7 +1185,7 @@
       "route": "deadlock",
       "category": "game",
       "factory_entry": "deadlock.module:Factory",
-      "module_version": "0.1.0-alpha.2",
+      "module_version": "0.1.0-alpha.3",
       "capabilities": [
         {
           "capability_id": "status",

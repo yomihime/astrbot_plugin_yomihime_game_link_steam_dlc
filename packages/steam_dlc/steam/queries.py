@@ -19,6 +19,7 @@ from yomihime_game_link_sdk.storage import (
 from .cache_validation import mutable_json, valid_projection
 from .normalization import (
     VERSION,
+    avatar_source,
     normalize_app,
     normalize_legacy,
     normalize_profile,
@@ -52,6 +53,7 @@ def validate_final_url(response, source, path):
         "steam_store": "store.steampowered.com",
         "steam_community": "steamcommunity.com",
         "steam_avatar": "avatars.steamstatic.com",
+        "steam_avatar_fastly": "avatars.fastly.steamstatic.com",
         "steam_store_image": "shared.akamai.steamstatic.com",
     }
     try:
@@ -257,12 +259,9 @@ def image_request(url, operation, target):
             or parsed.fragment
         ):
             return None
-        if (
-            parsed.hostname == "avatars.steamstatic.com"
-            and re.fullmatch(r"/[0-9a-f]{40}(?:_full|_medium)?\.jpg", parsed.path)
-            and not parsed.query
-        ):
-            return "steam_avatar", parsed.path, ()
+        avatar = avatar_source(url)
+        if avatar is not None:
+            return avatar[0], avatar[1], ()
         if (
             operation == "app"
             and parsed.hostname == "shared.akamai.steamstatic.com"

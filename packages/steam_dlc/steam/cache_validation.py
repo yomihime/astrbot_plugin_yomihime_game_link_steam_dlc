@@ -8,6 +8,7 @@ from .normalization import (
     VERSION,
     app_id,
     availability,
+    avatar_source,
     hours,
     integer,
     literal,
@@ -125,6 +126,11 @@ def _account(data, operation, target):
         not isinstance(profile, dict)
         or not isinstance(rows, list)
         or len(rows) > (5 if operation == "games" else 3)
+    ):
+        raise ValueError
+    if (
+        profile.get("avatar_url") is not None
+        and avatar_source(profile["avatar_url"]) is None
     ):
         raise ValueError
     rebuilt_profile = {

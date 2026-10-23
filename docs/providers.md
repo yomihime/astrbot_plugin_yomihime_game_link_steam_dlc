@@ -13,6 +13,8 @@
 
 Steam 主页允许 SDK 声明的最多两次匿名 HTTPS GET 同源跳转，仅 `/profiles/` 与 `/id/` 路径。请求仍只接受明确 ID32/SteamID64；自定义 vanity URL 不是用户输入入口。最终路径、内容类型、登录墙与嵌入账号身份均需核对。其他来源保持默认拒绝跳转。
 
+头像从实际头像元素的 `src` 或受限 `srcset` 读取，忽略装饰头像框。下载仅接受已声明的 `avatars.steamstatic.com` 与 `avatars.fastly.steamstatic.com` 及受限头像路径；不会为装饰图扩大图片来源，失败时保留文字资料。
+
 Steam 完整数据增强对应 GetPlayerSummaries、GetSteamLevel、GetRecentlyPlayedGames 与 GetOwnedGames。OwnedGames 请求明确 `include_played_free_games=true`，避免漏掉免费游戏；Key 不能穿透私密库。四接口的请求/规范化已做合成合同验证，但当前外包桥接未提供安全静态 Key 注入，未声明普通秘密配置或启用该来源。完整库增强 blocked，真实 Key 路径 unrun；不能把 Key 填进普通 config、USER records、源码或 JSON cache。
 
 Leetify 指南要求来源署名并不存 API 数据。适配器保留 `Data Provided by Leetify` 与来源链接，Premier Rating、地图竞技段位、FACEIT level/ELO 和 Leetify 分析评分各自独立。当前 Host 会持久化工具日志、对话历史及消息附件，因而生产能力在 scope/HTTP 前停用；不靠关闭全局隐私保护或引入其他平台登录来解除限制。独立 Steam 素材不受该 provider 的缓存策略影响。

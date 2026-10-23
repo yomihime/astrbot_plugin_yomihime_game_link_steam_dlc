@@ -9,8 +9,110 @@ from html.parser import HTMLParser
 from unicodedata import category
 from urllib.parse import urlsplit
 
-VERSION = "steam-query-v1"
+VERSION = "steam-query-v2"
 _HOURS = re.compile(r"(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?\Z")
+_AVATAR_SOURCES = {
+    "avatars.steamstatic.com": "steam_avatar",
+    "avatars.fastly.steamstatic.com": "steam_avatar_fastly",
+}
+
+
+def avatar_source(value):
+    """Validate an actual avatar metadata URL without fetching or rewriting it."""
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > 1000
+        or any(
+            character.isspace() or ord(character) < 32 or 127 <= ord(character) <= 159
+            for character in value
+        )
+    ):
+        return None
+    try:
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname not in _AVATAR_SOURCES
+            or parsed.netloc.lower() not in (parsed.hostname, parsed.hostname + ":443")
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.port not in (None, 443)
+            or parsed.query
+            or parsed.fragment
+            or not re.fullmatch(r"/[0-9a-f]{40}(?:_full|_medium)?\.jpg", parsed.path)
+        ):
+            return None
+        return _AVATAR_SOURCES[parsed.hostname], parsed.path
+    except ValueError:
+        return None
+
+
+def _srcset_avatar(value):
+    """A small static srcset subset: <=4 candidates, x or w, no mixed units.
+
+    Steam avatars use ordinary fixed hash URLs. Reject malformed/ambiguous
+    sets instead of guessing, interpreting scripts or accepting arbitrary URLs.
+    """
+    if not isinstance(value, str) or not value.strip() or len(value) > 4096:
+        return None
+    candidates = value.split(",")
+    if len(candidates) > 4:
+        return None
+    ranked = []
+    units, seen = set(), set()
+    for candidate in candidates:
+        tokens = candidate.split()
+        if len(tokens) not in (1, 2) or avatar_source(tokens[0]) is None:
+            return None
+        descriptor = tokens[1] if len(tokens) == 2 else "1x"
+        if re.fullmatch(r"(?:[0-9]{1,2}(?:\.[0-9]{1,3})?|\.[0-9]{1,3})x", descriptor):
+            unit, rank = "x", float(descriptor[:-1])
+            if not 0 < rank <= 4:
+                return None
+        elif re.fullmatch(r"[1-9][0-9]{0,3}w", descriptor):
+            unit, rank = "w", float(descriptor[:-1])
+            if rank > 2048:
+                return None
+        else:
+            return None
+        if (unit, rank) in seen:
+            return None
+        seen.add((unit, rank))
+        units.add(unit)
+        ranked.append((rank, tokens[0]))
+    if len(units) != 1:
+        return None
+    return min(ranked)[1]
+
+
+def _profile_avatar(node):
+    if node is None:
+        return None
+
+    def images(current):
+        if current.has("profile_avatar_frame") or current.tag in (
+            "script",
+            "style",
+            "template",
+        ):
+            return
+        if current.tag == "img":
+            yield current
+        for child in current.children:
+            if isinstance(child, Node):
+                yield from images(child)
+
+    for index, candidate in enumerate(images(node)):
+        if index >= 8:
+            break
+        source = candidate.attrs.get("src")
+        if avatar_source(source) is not None:
+            return source
+        source = _srcset_avatar(candidate.attrs.get("srcset"))
+        if source is not None:
+            return source
+    return None
 
 
 def literal(value, limit=300):
@@ -170,11 +272,7 @@ def normalize_profile(text, steam_id):
         int(raw_level) if raw_level and re.fullmatch(r"[0-9]{1,6}", raw_level) else None
     )
     avatar_node = tree.first("playerAvatarAutoSizeInner") or tree.first("playerAvatar")
-    avatar = (
-        next((n.attrs.get("src") for n in avatar_node.walk() if n.tag == "img"), None)
-        if avatar_node
-        else None
-    )
+    avatar = _profile_avatar(avatar_node)
     rows = []
     for node in (n for n in tree.walk() if n.has("recent_game")):
         game = node.first("game_name")
@@ -246,7 +344,9 @@ def normalize_legacy(body, steam_id):
     profile = {
         "steam_id64": steam_id,
         "nickname": literal(root.findtext("steamID")),
-        "avatar_url": literal(root.findtext("avatarFull"), 1000),
+        "avatar_url": root.findtext("avatarFull")
+        if avatar_source(root.findtext("avatarFull"))
+        else None,
         "level": None,
         "profile_url": f"https://steamcommunity.com/profiles/{steam_id}/",
     }

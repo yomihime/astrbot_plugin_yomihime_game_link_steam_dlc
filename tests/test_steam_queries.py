@@ -22,12 +22,16 @@ SID = "76561197960265729"
 OTHER = "76561197960265730"
 
 
-def profile_html(sid=SID, level="23", count=3):
+def profile_html(sid=SID, level="23", count=3, avatar_markup=None):
     rows = "".join(
         f'<div class="recent_game"><div class="game_info_details">1,234.5 hrs on record<br>last played on 1 Oct</div>'
         f'<div class="game_name"><a href="https://store.steampowered.com/app/{570 + i}/">Game &lt;b&gt;{i}&lt;/b&gt;</a></div></div>'
         for i in range(count)
     )
+    if avatar_markup is None:
+        avatar_markup = (
+            '<img src="https://avatars.steamstatic.com/' + "a" * 40 + '_full.jpg">'
+        )
     return (
         "<html><script>g_rgProfileData = "
         + json.dumps({"steamid": sid, "personaname": "Synthetic [gold]"})
@@ -35,9 +39,9 @@ def profile_html(sid=SID, level="23", count=3):
         '<span class="actual_persona_name">Synthetic [gold]</span>'
         f'<div class="persona_level"><span class="friendPlayerLevelNum">{level}</span></div>'
         '<span class="friendPlayerLevelNum">9999</span>'
-        '<div class="playerAvatarAutoSizeInner"><img src="https://avatars.steamstatic.com/'
-        + "a" * 40
-        + '_full.jpg"></div>'
+        '<div class="playerAvatarAutoSizeInner">'
+        + avatar_markup
+        + "</div>"
         + rows
         + "</html>"
     )
@@ -82,6 +86,88 @@ REVIEW_HTML = '<a href="https://store.steampowered.com/app/620/">App</a><a class
 
 
 class NormalizationTests(unittest.TestCase):
+    def test_profile_frame_subtree_is_skipped_and_srcset_only_avatar_is_selected(self):
+        canonical = "https://avatars.steamstatic.com/" + "b" * 40 + "_full.jpg"
+        actual = "https://avatars.fastly.steamstatic.com/" + "c" * 40 + "_full.jpg"
+        # Even an allowed hash URL inside a frame subtree is decorative.
+        markup = (
+            '<div class="profile_avatar_frame"><a><img src="'
+            + canonical
+            + '"></a></div>'
+        )
+        markup += '<a><img srcset="' + actual + " 1x, " + canonical + ' 2x"></a>'
+        data = norm.normalize_profile(profile_html(avatar_markup=markup), SID)
+        self.assertEqual(data["profile"]["avatar_url"], actual)
+        self.assertEqual(data["profile"]["availability"]["avatar_url"], "available")
+        self.assertEqual(
+            queries.image_request(actual, "profile", SID),
+            ("steam_avatar_fastly", "/" + "c" * 40 + "_full.jpg", ()),
+        )
+        unchanged = norm.normalize_profile(profile_html(), SID)
+        self.assertEqual(
+            unchanged["profile"]["avatar_url"],
+            "https://avatars.steamstatic.com/" + "a" * 40 + "_full.jpg",
+        )
+
+    def test_srcset_subset_is_bounded_and_invalid_avatar_does_not_get_guessed(self):
+        actual = "https://avatars.fastly.steamstatic.com/" + "c" * 40 + "_full.jpg"
+        canonical = "https://avatars.steamstatic.com/" + "d" * 40 + "_medium.jpg"
+        self.assertEqual(
+            norm._srcset_avatar(actual + " 184w, " + canonical + " 92w"), canonical
+        )
+        self.assertEqual(norm._srcset_avatar(actual), actual)
+        invalid_sets = (
+            actual + " 0x",
+            actual + " 5x",
+            actual + " 1q",
+            actual + " 1x 2x",
+            actual + " 1x, " + canonical + " 92w",
+            actual + " 1x, " + canonical + " 1x",
+            actual + ",",
+            ", ".join(actual + f" {index}x" for index in range(1, 6)),
+            actual + " " * 4097,
+            "javascript:alert(1) 1x",
+            "data:image/jpeg;base64,AAAA 1x",
+            actual.replace("avatars.fastly.steamstatic.com", "unknown.example") + " 1x",
+        )
+        for srcset in invalid_sets:
+            data = norm.normalize_profile(
+                profile_html(avatar_markup='<img srcset="' + srcset + '">'), SID
+            )
+            self.assertIsNone(data["profile"]["avatar_url"])
+            self.assertEqual(
+                data["profile"]["availability"]["avatar_url"], "not_provided"
+            )
+
+    def test_unknown_and_decorative_urls_and_script_template_images_are_not_avatars(
+        self,
+    ):
+        actual = "https://avatars.fastly.steamstatic.com/" + "c" * 40 + "_full.jpg"
+        markup = (
+            '<script>const candidate="'
+            + actual
+            + '";</script><template><img src="'
+            + actual
+            + '"></template>'
+        )
+        markup += '<div class="profile_avatar_frame"><img src="' + actual + '"></div>'
+        markup += '<img src="https://shared.fastly.steamstatic.com/community_assets/items/synthetic/frame.png">'
+        data = norm.normalize_profile(profile_html(avatar_markup=markup), SID)
+        self.assertIsNone(data["profile"]["avatar_url"])
+        for value in (
+            actual.replace("https:", "http:"),
+            actual + "?secret=x",
+            actual + "#fragment",
+            actual.replace(
+                "avatars.fastly.steamstatic.com",
+                "avatars.fastly.steamstatic.com.evil.example",
+            ),
+            "https://shared.fastly.steamstatic.com/" + "c" * 40 + "_full.jpg",
+            actual.replace("https://", "https://user:secret@"),
+        ):
+            self.assertIsNone(norm.avatar_source(value))
+            self.assertIsNone(queries.image_request(value, "profile", SID))
+
     def test_profile_real_level_not_unrelated_badge_and_hours_precision(self):
         result = norm.normalize_profile(profile_html(), SID)
         self.assertEqual(result["profile"]["level"], 23)
@@ -274,7 +360,11 @@ class _HTTP:
         self.calls.append(request)
         if self.override:
             return self.override(request)
-        if request.source_id in ("steam_avatar", "steam_store_image"):
+        if request.source_id in (
+            "steam_avatar",
+            "steam_avatar_fastly",
+            "steam_store_image",
+        ):
             raise ygl.SourceHttpError("transport_failed")
         if request.path == "/api/storesearch/":
             return response(
@@ -515,6 +605,112 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(second.model_facts.facts["region"], "CN")
         self.assertEqual(second.model_facts.facts["language"], "schinese")
+
+    async def test_avatar_version_ignores_old_frame_cache_and_repairs_frozen_new_corruption(
+        self,
+    ):
+        scope = await self.scopes.bind(self.context)
+        first = await queries.load(scope, "profile", SID, "GLOBAL", "english")
+        current_key = queries.cache_key("profile", SID, "GLOBAL", "english")
+        self.assertEqual(norm.VERSION, "steam-query-v2")
+        old_key = current_key.replace(norm.VERSION, "steam-query-v1")
+        stale = self.scopes.cache.rows.pop((current_key, None))
+        stale["schema_version"] = "steam-query-v1"
+        stale["data"]["profile"]["avatar_url"] = (
+            "https://shared.fastly.steamstatic.com/community_assets/items/synthetic/frame.png"
+        )
+        self.scopes.cache.rows[old_key, None] = stale
+        self.assertFalse(
+            queries.valid_projection(
+                _sdk_json(stale), "profile", SID, "GLOBAL", "english"
+            )
+        )
+        before = len(self.scopes.http.calls)
+        fresh = await queries.load(scope, "profile", SID, "GLOBAL", "english")
+        self.assertEqual(len(self.scopes.http.calls) - before, 1)
+        self.assertEqual(fresh["schema_version"], norm.VERSION)
+        self.assertEqual(
+            fresh["data"]["profile"]["avatar_url"],
+            first["data"]["profile"]["avatar_url"],
+        )
+        self.scopes.cache.rows[current_key, None]["data"]["profile"]["avatar_url"] = (
+            stale["data"]["profile"]["avatar_url"]
+        )
+        deltas, stamps = [], []
+        for status in ("rejected", "hit"):
+            before = len(self.scopes.http.calls)
+            repaired = await queries.load(scope, "profile", SID, "GLOBAL", "english")
+            deltas.append(len(self.scopes.http.calls) - before)
+            stamps.append(repaired["fetched_at"])
+            self.assertEqual(repaired["cache"]["status"], status)
+        self.assertEqual(deltas, [1, 0])
+        self.assertEqual(stamps[0], stamps[1])
+
+    async def test_fastly_avatar_resource_uses_only_exact_declared_source(self):
+        data = norm.normalize_profile(
+            profile_html(
+                avatar_markup='<img srcset="https://avatars.fastly.steamstatic.com/'
+                + "c" * 40
+                + '_full.jpg 1x">'
+            ),
+            SID,
+        )
+        projection = {"operation": "profile", "target": SID, "data": data}
+        scope = await self.scopes.bind(self.context)
+        self.assertIsNone(await queries.image(scope, projection))
+        self.assertEqual(len(self.scopes.http.calls), 1)
+        self.assertEqual(self.scopes.http.calls[0].source_id, "steam_avatar_fastly")
+        self.assertEqual(self.scopes.http.calls[0].path, "/" + "c" * 40 + "_full.jpg")
+        self.assertEqual(self.scopes.http.calls[0].query, ())
+
+    async def test_fastly_avatar_sdk_response_final_url_matches_exact_source(self):
+        def chunk(tag, content):
+            return (
+                struct.pack("!I", len(content))
+                + tag
+                + content
+                + struct.pack("!I", zlib.crc32(tag + content))
+            )
+
+        png = (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack("!2I5B", 1, 1, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(b"\0\0\0\0"))
+            + chunk(b"IEND", b"")
+        )
+        actual = "https://avatars.fastly.steamstatic.com/" + "c" * 40 + "_full.jpg"
+        seen = []
+
+        async def bounded(request):
+            seen.append(request)
+            return ygl.HttpResponse(
+                200, {"Content-Type": "image/png"}, png, final_url=actual
+            )
+
+        projection = {
+            "operation": "profile",
+            "target": SID,
+            "data": {"profile": {"avatar_url": actual}},
+        }
+        asset = await queries.image(
+            SimpleNamespace(http=SimpleNamespace(fetch=bounded)), projection
+        )
+        self.assertEqual(asset.kind, "png")
+        self.assertEqual(asset.content, png)
+        self.assertEqual(seen[0].source_id, "steam_avatar_fastly")
+        with self.assertRaises(queries.QueryFailure):
+            queries.validate_final_url(
+                ygl.HttpResponse(
+                    200,
+                    {},
+                    b"",
+                    actual.replace(
+                        "avatars.fastly.steamstatic.com", "avatars.steamstatic.com"
+                    ),
+                ),
+                "steam_avatar_fastly",
+                "/" + "c" * 40 + "_full.jpg",
+            )
 
     async def test_normal_account_projections_hit_cache_preserve_time_and_sample_types(
         self,
