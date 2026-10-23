@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "package_id": "steam_dlc",
-  "package_version": "0.1.0-alpha.3",
+  "package_version": "0.1.0-alpha.4",
   "contract_version": "2.0",
   "author": "yomihime",
   "license": "AGPL-3.0-only",
@@ -12,7 +12,7 @@
       "route": "steam",
       "category": "platform",
       "factory_entry": "steam.module:Factory",
-      "module_version": "0.1.0-alpha.3",
+      "module_version": "0.1.0-alpha.4",
       "capabilities": [
         {
           "capability_id": "bind",
@@ -493,7 +493,7 @@
       "route": "dota2",
       "category": "game",
       "factory_entry": "dota2.module:Factory",
-      "module_version": "0.1.0-alpha.3",
+      "module_version": "0.1.0-alpha.4",
       "capabilities": [
         {
           "capability_id": "recent",
@@ -964,7 +964,7 @@
       "route": "cs2",
       "category": "game",
       "factory_entry": "cs2.module:Factory",
-      "module_version": "0.1.0-alpha.3",
+      "module_version": "0.1.0-alpha.4",
       "capabilities": [
         {
           "capability_id": "status",
@@ -1185,7 +1185,7 @@
       "route": "deadlock",
       "category": "game",
       "factory_entry": "deadlock.module:Factory",
-      "module_version": "0.1.0-alpha.3",
+      "module_version": "0.1.0-alpha.4",
       "capabilities": [
         {
           "capability_id": "status",
