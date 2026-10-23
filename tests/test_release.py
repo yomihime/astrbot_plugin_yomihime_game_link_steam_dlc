@@ -7,6 +7,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from yomihime_game_link_sdk.contexts import InvocationOrigin
+from yomihime_game_link_sdk.declarations import (
+    CapabilityDescriptor,
+    CapabilityEffect,
+    InvocationPolicy,
+    PrivacyFloor,
+)
+
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
     "dlc_release", ROOT / "scripts/build_release.py"
@@ -140,3 +148,51 @@ class ReleaseResourcesTest(unittest.TestCase):
         self.save_manifest()
         with self.assertRaisesRegex(ValueError, "explicit public target"):
             release.inventory(self.root)
+
+    def test_registered_tools_have_public_read_only_dependency_closure(self):
+        capabilities = {
+            (
+                "steam_dlc/" + module["module_id"],
+                capability["capability_id"],
+            ): capability
+            for module in self.manifest["modules"]
+            for capability in module["capabilities"]
+        }
+        for module in self.manifest["modules"]:
+            for tool in module["tools"]:
+                pending = [("steam_dlc/" + module["module_id"], tool["capability_id"])]
+                seen = set()
+                while pending:
+                    key = pending.pop()
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    capability = capabilities[key]
+                    descriptor = CapabilityDescriptor(
+                        capability_id=key[1],
+                        input_schema=capability["input_schema"],
+                        invocation_policy=InvocationPolicy(
+                            capability["invocation_policy"]
+                        ),
+                        effect=CapabilityEffect(capability["effect"]),
+                        privacy_floor=PrivacyFloor(capability["privacy_floor"]),
+                        invocation_origins=(
+                            tuple(
+                                map(InvocationOrigin, capability["invocation_origins"])
+                            )
+                            if "invocation_origins" in capability
+                            else None
+                        ),
+                    )
+                    with self.subTest(tool=tool["name"], dependency=key):
+                        self.assertIs(descriptor.effect, CapabilityEffect.READ_ONLY)
+                        self.assertIs(descriptor.privacy_floor, PrivacyFloor.PUBLIC)
+                        self.assertIn(
+                            InvocationOrigin.LLM_TOOL, descriptor.effective_origins
+                        )
+                    for dependency in capability.get("required_capabilities", []):
+                        pending.append(
+                            (key[0], dependency)
+                            if isinstance(dependency, str)
+                            else (dependency["module_id"], dependency["capability_id"])
+                        )
