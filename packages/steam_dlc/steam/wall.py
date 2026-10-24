@@ -2,23 +2,37 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 import re
 import shlex
 from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
-from typing import Any, TypedDict
+from typing import Any
 
 from .normalization import app_id, literal
 
 VERSION = "steam-wall-v1"
+MAX_SAFE_LIMIT = 2**53 - 1
+_DECIMAL = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?\Z")
 
 
-class _MaterialResult(TypedDict):
-    items: list[dict[str, Any]]
-    counters: dict[str, int]
+def parse_limit(value):
+    """Full finite decimal, truncated toward zero, with JSON-safe integer output."""
+    if isinstance(value, bool) or not isinstance(value, (str, int, float, Decimal)):
+        raise ValueError("数量必须是完整有限数值。")
+    raw = str(value).strip()
+    if len(raw) > 128 or not _DECIMAL.fullmatch(raw):
+        raise ValueError("数量必须是完整有限数值，不能为空或包含其他文字。")
+    try:
+        number = Decimal(raw)
+    except InvalidOperation as exc:
+        raise ValueError("数量必须是完整有限数值。") from exc
+    if not number.is_finite() or number.copy_abs() >= Decimal(MAX_SAFE_LIMIT + 1):
+        raise ValueError("数量超过安全数值范围，请选择不限。")
+    converted = int(number)
+    if converted < 20:
+        raise ValueError("数量向零截断后至少为20。")
+    return converted
 
 
 def options(
@@ -29,6 +43,9 @@ def options(
         "account": parameters.get("account"),
         "source": parameters.get("source", defaults.get("poster_source", "games")),
         "limit": parameters.get("limit", default_limit),
+        "limit_mode": parameters.get(
+            "limit_mode", defaults.get("poster_limit_mode", "top")
+        ),
         "all_apps": parameters.get("all_apps", default_apps),
         "refresh": parameters.get("refresh", False),
         **{
@@ -78,9 +95,11 @@ def options(
                 index += 1
                 value = args[index]
                 if token == "--limit":
-                    if not re.fullmatch(r"[0-9]{1,4}", value):
-                        raise ValueError("数量必须是1..1000整数。")
-                    result["limit"] = int(value)
+                    if value == "all":
+                        result["limit_mode"] = "all"
+                    else:
+                        result["limit_mode"] = "top"
+                        result["limit"] = parse_limit(value)
                 else:
                     result[token[2:]] = value
             elif token.startswith("--"):
@@ -91,6 +110,11 @@ def options(
                 seen.add("account")
                 result["account"] = token
             index += 1
+    # Structured tools have an integer contract; only CLI/UI accept decimal text.
+    if "limit" in parameters and raw is None:
+        if type(parameters["limit"]) is not int:
+            raise ValueError("结构化数量必须是整数；不限请使用limit_mode=all。")
+    result["limit"] = parse_limit(result["limit"])
     if (
         result["mode"] == "legacy"
         and "limit" not in parameters
@@ -100,7 +124,8 @@ def options(
     if (
         result["source"] not in ("games", "recent", "full")
         or type(result["limit"]) is not int
-        or not 1 <= result["limit"] <= 1000
+        or result["limit"] < 20
+        or result["limit_mode"] not in ("top", "all")
         or type(result["all_apps"]) is not bool
         or type(result["refresh"]) is not bool
         or result["mode"] not in ("dense", "legacy")
@@ -108,10 +133,13 @@ def options(
         or result["aspect"] not in ("2:3", "9:16", "1:2")
         or result["quality"] not in ("normal", "hd")
         or result["fit"] not in ("cover", "contain")
-        or (result["mode"] == "legacy" and result["limit"] > 200)
+        or (
+            result["mode"] == "legacy"
+            and (result["limit"] > 200 or result["limit_mode"] == "all")
+        )
     ):
         raise ValueError(
-            "来源games/recent/full；密排数量1..1000，legacy最多200；请检查预设/比例/清晰度/裁剪选项。"
+            "来源games/recent/full；数量至少20或不限，legacy最多200；请检查预设/比例/清晰度/裁剪选项。"
         )
     return result
 
@@ -143,8 +171,8 @@ def cumulative(row):
 
 def source_rows(projection):
     rows = projection.get("data", {}).get("games")
-    if not isinstance(rows, (list, tuple)) or len(rows) > 20000:
-        raise ValueError("来源游戏列表缺失或超过受控范围。")
+    if not isinstance(rows, (list, tuple)):
+        raise ValueError("来源游戏列表缺失；未将缺失资料视为空库。")
     unique: dict[str, dict[str, Any]] = {}
     counts = {
         "source_rows": len(rows),
@@ -203,12 +231,14 @@ def select(
     aspect="2:3",
     quality="normal",
     fit="cover",
+    limit_mode="top",
 ):
     from .career import span_for_minutes
 
     if (
         type(limit) is not int
-        or not 1 <= limit <= (1000 if mode == "dense" else 200)
+        or not 1 <= limit <= (MAX_SAFE_LIMIT if mode == "dense" else 200)
+        or limit_mode not in ("top", "all")
         or type(all_apps) is not bool
     ):
         raise ValueError("Invalid wall selection")
@@ -248,7 +278,7 @@ def select(
         if not all_apps and kind != "game":
             continue
         counts["eligible"] += 1
-        if len(selected) >= limit:
+        if limit_mode == "top" and len(selected) >= limit:
             continue
         row = dict(
             row,
@@ -272,12 +302,15 @@ def select(
     )
     counts["api_minutes"] = sum(row["precision"] == "api_minutes" for row in selected)
     counts["metadata_unexamined"] = sum(
-        row["app_id"] not in metadata
+        (
+            row["app_id"] not in metadata
+            or metadata[row["app_id"]].get("app_type", "unknown") == "unknown"
+        )
         and row["minutes"] is not None
         and Decimal(row["minutes"]) > 0
         for row in rows
     )
-    counts["requested"] = limit
+    counts["requested"] = "all" if limit_mode == "all" else limit
     counts["omitted"] = counts["limited"]
     return {
         "schema": VERSION,
@@ -298,316 +331,9 @@ def select(
         "rule": "sqrt(cumulative_minutes); equal minutes ordered by numeric AppID",
         "all_apps": all_apps,
         "limit": limit,
+        "limit_mode": limit_mode,
         "counters": dict(materials.get("counters", {})),
     }
-
-
-def selection_key(target, selection, theme):
-    # Owner partition is mandatory at the call site, even for explicit public accounts.
-    canonical = json.dumps(
-        [target, selection, theme],
-        sort_keys=True,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    return VERSION + ":result:" + hashlib.sha256(canonical.encode()).hexdigest()
-
-
-class WallHandler:
-    def __init__(self, owner, *, explicit=False):
-        self.owner, self.explicit = owner, explicit
-
-    async def invoke(self, context, parameters):
-        import yomihime_game_link_sdk as ygl
-        from yomihime_game_link_sdk.declarations import CapabilityReference
-        from yomihime_game_link_sdk.storage import CacheVisibility
-
-        from ..shared.output import failure
-        from .cache_validation import mutable_json
-        from .module import _account, _Handler
-        from .queries import QueryFailure, load
-        from .wall_materials import VERSION as MATERIAL_VERSION
-        from .wall_presentation import result
-
-        privacy = ygl.Privacy.PUBLIC if self.explicit else ygl.Privacy.PRIVATE
-        if not self.owner._running:
-            return failure(
-                ygl.ErrorCode.MODULE_UNAVAILABLE, "Steam 模块未启用。", privacy=privacy
-            )
-        try:
-            config = await self.owner._services.config.current()
-            settings = config.values
-            value = options(
-                context,
-                parameters,
-                default_limit=settings.get("poster_limit", 500),
-                default_apps=settings.get("poster_include_apps", True),
-                defaults=settings,
-            )
-            if value["source"] == "full":
-                from yomihime_game_link_sdk.storage import SecretMetadataState
-
-                configured = any(
-                    meta.field == "credential_steam_key"
-                    and meta.state is SecretMetadataState.ACTIVE
-                    for meta in getattr(config, "secret_metadata", ())
-                )
-                if not configured:
-                    state = {
-                        "status": "needs_configuration",
-                        "full_library": "optional_key_unconfigured",
-                        "complete_library": False,
-                        "sample_fallback": False,
-                    }
-                    return ygl.CapabilityResult(
-                        "steam-wall-full-unconfigured",
-                        ygl.ResultStatus.NEEDS_SELECTION,
-                        document=ygl.DisplayDocument(
-                            "Steam · 完整库海报未配置",
-                            "Steam DLC",
-                            (
-                                ygl.TextBlock(
-                                    "完整库需要部署者配置一把可选Steam Web API Key，请在可信管理页配置；Key不会绕过玩家隐私。未用公开样本替代，可明确选择 --source games 或 recent。"
-                                ),
-                                ygl.FieldsBlock({"availability": state}),
-                            ),
-                            privacy=privacy,
-                        ),
-                        privacy=privacy,
-                        model_facts=ygl.FactDocument(state) if self.explicit else None,
-                    )
-            if context.origin is not ygl.InvocationOrigin.COMMAND and not self.explicit:
-                raise ValueError(
-                    "默认海报只接受用户直接命令；工具必须明确提供account。"
-                )
-            target = value["account"]
-            if target is None:
-                if (
-                    self.explicit
-                    or context.origin is not ygl.InvocationOrigin.COMMAND
-                    or context.parent_id is not None
-                    or not context.actor_id
-                ):
-                    raise ValueError(
-                        "工具海报查询必须明确提供account；默认账号只接受用户直接命令。"
-                    )
-                identity = await _Handler(self.owner, "identity").invoke(context, {})
-                if identity.status is not ygl.ResultStatus.SUCCESS:
-                    return failure(
-                        identity.error.code
-                        if identity.error
-                        else ygl.ErrorCode.UNBOUND,
-                        "尚未关联Steam账号，或身份服务暂不可用。",
-                        privacy=privacy,
-                    )
-                target = identity.document.ordered_blocks[0].fields["identity"][
-                    "steam_id64"
-                ]
-            target = _account(target)
-            scope = await self.owner._services.scopes.bind(context)
-            if value["source"] == "full":
-                from .career import load_full
-
-                revision = next(
-                    (
-                        meta.revision
-                        for meta in getattr(config, "secret_metadata", ())
-                        if meta.field == "credential_steam_key"
-                    ),
-                    0,
-                )
-                projection = await load_full(
-                    scope,
-                    target,
-                    credential_revision=revision,
-                    cache=context.origin is ygl.InvocationOrigin.COMMAND
-                    and context.parent_id is None,
-                    refresh=value["refresh"],
-                )
-            elif (
-                context.origin is not ygl.InvocationOrigin.COMMAND
-                or context.parent_id is not None
-            ):
-                # Tool cache defaults to PUBLIC in Core. Account lists and
-                # personal selections must not enter that shared partition.
-                projection = await load(scope, value["source"], target, cache=False)
-            else:
-                projection = await load(scope, value["source"], target)
-            rows, _ = source_rows(projection)
-            # Only a bounded public AppID set crosses the preparation capability.
-            candidates = [
-                row["app_id"]
-                for row in rows
-                if row["minutes"] is not None and Decimal(row["minutes"]) > 0
-            ][:1000]
-            country, language = "CN", "schinese"
-            combined: _MaterialResult = {"items": [], "counters": {}}
-
-            async def materials(phase, appids):
-                response = await scope.dependencies.invoke(
-                    context,
-                    CapabilityReference("steam_dlc/steam", "wall_materials"),
-                    {
-                        "phase": phase,
-                        "app_ids": appids,
-                        "country": country,
-                        "language": language,
-                        "refresh": value["refresh"],
-                    },
-                )
-                if response.status is ygl.ResultStatus.ERROR:
-                    raise ygl.ServiceUnavailable()
-                if response.document is None or not response.document.ordered_blocks:
-                    raise ValueError("Invalid material response")
-                block = response.document.ordered_blocks[0]
-                payload = mutable_json(block.fields["materials"])
-                if (
-                    payload.get("schema") != MATERIAL_VERSION
-                    or not isinstance(payload.get("items"), list)
-                    or len(payload["items"]) > len(appids)
-                    or not isinstance(payload.get("counters"), dict)
-                    or any(
-                        type(v) is not int or v < 0
-                        for v in payload["counters"].values()
-                    )
-                ):
-                    raise ValueError("Invalid material DTO")
-                for row in payload["items"]:
-                    if not isinstance(row, dict) or row.get("app_id") not in appids:
-                        raise ValueError("Unexpected material AppID")
-                for key, count in payload["counters"].items():
-                    combined["counters"][key] = (
-                        max(combined["counters"].get(key, 0), count)
-                        if key == "retry_after"
-                        else combined["counters"].get(key, 0) + count
-                    )
-                return payload
-
-            if candidates:
-                metadata: dict[str, list[dict[str, object]]] = {"items": []}
-                for start in range(0, len(candidates), 100):
-                    metadata["items"].extend(
-                        (await materials("metadata", candidates[start : start + 100]))[
-                            "items"
-                        ]
-                    )
-                chosen = select(
-                    projection,
-                    metadata,
-                    limit=value["limit"],
-                    all_apps=value["all_apps"],
-                    **{
-                        key: value[key]
-                        for key in ("mode", "preset", "aspect", "quality", "fit")
-                    },
-                )
-                from .career import preflight
-
-                preflight(chosen)
-                if chosen["rows"]:
-                    selected_ids = [row["app_id"] for row in chosen["rows"]]
-                    for start in range(0, len(selected_ids), 100):
-                        combined["items"].extend(
-                            (
-                                await materials(
-                                    "images", selected_ids[start : start + 100]
-                                )
-                            )["items"]
-                        )
-                # Retain classification for excluded rows so coverage counts stay truthful.
-                returned = {row["app_id"]: row for row in combined["items"]}
-                combined["items"] = [
-                    dict(
-                        row,
-                        **(
-                            {"asset_id": returned[row["app_id"]].get("asset_id")}
-                            if row["app_id"] in returned
-                            else {}
-                        ),
-                    )
-                    for row in metadata["items"]
-                ]
-                if combined["counters"].get("image_bytes", 0) > 256 * 1024 * 1024:
-                    raise QueryFailure(
-                        ygl.ErrorCode.PARAMETER_ERROR,
-                        "本次原始封面超过256MiB缓存预算；请减小数量后重试。",
-                    )
-            combined["counters"]["list_requests"] = projection.get(
-                "source_requests",
-                0 if projection.get("cache", {}).get("status") == "hit" else 1,
-            )
-            selection = select(
-                projection,
-                combined,
-                limit=value["limit"],
-                all_apps=value["all_apps"],
-                **{
-                    key: value[key]
-                    for key in ("mode", "preset", "aspect", "quality", "fit")
-                },
-            )
-            theme = settings.get("reply_theme", "warm_paper")
-            if theme not in ("warm_paper", "cool_white", "deep_indigo"):
-                theme = "warm_paper"
-            if (
-                context.origin is ygl.InvocationOrigin.COMMAND
-                and context.parent_id is None
-            ):
-                try:
-                    await scope.cache.put(
-                        selection_key(target, selection, theme),
-                        selection,
-                        ttl_seconds=300,
-                        visibility=CacheVisibility.USER,
-                    )
-                except ygl.CacheUnavailable:
-                    pass
-            from .queries import image
-
-            avatar = (
-                await image(scope, projection) if projection.get("operation") else None
-            )
-            return result(
-                selection, private=not self.explicit, theme=theme, avatar=avatar
-            )
-        except (ValueError, TypeError, KeyError, AttributeError):
-            return failure(
-                ygl.ErrorCode.PARAMETER_ERROR,
-                "海报参数或来源结构无效；未将缺失资料视为零。",
-                privacy=privacy,
-            )
-        except QueryFailure as exc:
-            return failure(
-                exc.code,
-                exc.message,
-                privacy=privacy,
-                retry_after_seconds=exc.retry_after,
-            )
-        except ygl.SourceHttpError as exc:
-            return failure(
-                ygl.ErrorCode.RATE_LIMITED
-                if exc.status_code == 429
-                else ygl.ErrorCode.UPSTREAM_ERROR,
-                "Steam 完整库凭据不可用；请在可信管理页检查或重新配置Steam Key，未用公开样本替代。"
-                if exc.code == "credentials_unavailable"
-                else "Steam 列表来源暂不可用；未用其他来源替代。",
-                privacy=privacy,
-                retry_after_seconds=exc.retry_after_seconds,
-            )
-        except (ygl.ServiceUnavailable, ygl.InvalidInvocation, ygl.AccessDenied):
-            return failure(
-                ygl.ErrorCode.MODULE_UNAVAILABLE,
-                "海报SDK服务或本次授权暂不可用。",
-                privacy=privacy,
-            )
-        except ygl.OperationTimeout:
-            return failure(
-                ygl.ErrorCode.UPSTREAM_ERROR, "Steam海报准备超时。", privacy=privacy
-            )
-        except PermissionError:
-            return failure(
-                ygl.ErrorCode.NOT_PUBLIC, "Steam样本未公开或需要登录。", privacy=privacy
-            )
 
 
 class MaterialsHandler:

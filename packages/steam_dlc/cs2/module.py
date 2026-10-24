@@ -1,6 +1,8 @@
 """CS2 platform queries through public SDK identity/config/HTTP boundaries."""
 
+import math
 import shlex
+from collections.abc import Mapping
 
 import yomihime_game_link_sdk as ygl
 from yomihime_game_link_sdk.contexts import InvocationOrigin
@@ -489,6 +491,19 @@ def _lines(projection):
     return lines
 
 
+def _display_projection(value):
+    # DisplayDocument has an exact numeric domain. Facts retain source numbers.
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise ValueError("non-finite CS2 statistic")
+        return str(value)
+    if isinstance(value, Mapping):
+        return {key: _display_projection(child) for key, child in value.items()}
+    if isinstance(value, (tuple, list)):
+        return tuple(_display_projection(child) for child in value)
+    return value
+
+
 def _result(title, projection, lines, *, model_facts=True, private=False):
     privacy = ygl.Privacy.PRIVATE if private else ygl.Privacy.PUBLIC
     return ygl.CapabilityResult(
@@ -499,7 +514,7 @@ def _result(title, projection, lines, *, model_facts=True, private=False):
             "CS2",
             (
                 *tuple(ygl.TextBlock(line) for line in lines),
-                ygl.FieldsBlock({"cs2": projection}),
+                ygl.FieldsBlock({"cs2": _display_projection(projection)}),
             ),
             privacy=privacy,
         ),

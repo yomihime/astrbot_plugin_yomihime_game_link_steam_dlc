@@ -1,5 +1,8 @@
 // Configuration lifecycle controller shared as source by four independently
 // captured page builds. Presentation components live in the public facade.
+import {mountJobForm} from './job-controller.js';
+import {mountWishlistForm} from './wishlist-controller.js';
+import {mountAnalysisForm} from './analysis-controller.js';
 export const MODULES = Object.freeze({
   steam: {
     title: 'Steam',
@@ -15,7 +18,9 @@ export const MODULES = Object.freeze({
       ['/ygl steam recent [账号]', '查看主页最近展示的公开样本，不代表完整两周游戏列表。'],
       ['/ygl steam games [账号]', '查看来源可用的公开样本；完整游戏库增强需要可选 Steam Key。'],
       ['/ygl steam wall [账号] [--source games|recent|full] [--all-apps] [--limit N] [--refresh]', '生成游戏生涯拼图。来源、时间预设、比例与数量受已保存设置及输出预算约束；完整库需要可选 Key。'],
+      ['/ygl steam wall status|result|cancel|retry <任务ID>', '查看本人任务状态、逐图结果、取消或重试。result支持 --page N --image N，每次只返回选中一张，不自动刷屏。'],
       ['/ygl steam status', '查看使用说明。'],
+      ['/ygl steam wishlist [账号] [--page N] [--country CN]', '匿名查看公开愿望单，每页20项；模型与页面必须提供明确账号。'],
     ],
   },
   dota2: {
@@ -29,6 +34,7 @@ export const MODULES = Object.freeze({
       ['/ygl dota2 last [账号]', '查询该玩家上一场基础结算；省略账号时使用当前用户关联。'],
       ['/ygl dota2 match <match_id> [--account <账号>]', '指定账号查看个人焦点，无账号保持全场概览；不读取默认关联，不提交解析。'],
       ['/ygl dota2 status', '查看功能说明。'],
+      ['/ygl dota2 analyze <比赛ID> --account <玩家账号或本场唯一昵称>', '查看指定玩家的对线、装备、团战和证据边界；网页与Tool仅提供确定性事实，Host模型仅在真实命令路径可选生成。'],
       ['/ygl dota2 watch [账号]', '在当前群或私聊创建自己的比赛订阅；省略账号使用当前 Steam 绑定。'],
       ['/ygl dota2 watchlist', '在当前会话查看自己的订阅；首次建立基线，不补发旧比赛。'],
       ['/ygl dota2 unwatch <订阅ID>', '取消当前会话中自己的订阅。'],
@@ -67,13 +73,33 @@ const identity = context => JSON.stringify([
 const errorCode = error => typeof error?.message === 'string' ? error.message : '';
 const authorityErrors = new Set(['admin_authorization_denied', 'page_revoked', 'page_unavailable', 'stale_context']);
 const SETTINGS = Object.freeze({
-  steam: ['reply_theme', 'poster_source', 'poster_mode', 'poster_preset', 'poster_aspect', 'poster_quality', 'poster_fit', 'poster_include_apps', 'poster_limit'],
+  steam: ['reply_theme', 'poster_source', 'poster_mode', 'poster_preset', 'poster_aspect', 'poster_quality', 'poster_fit', 'poster_include_apps', 'poster_limit_mode', 'poster_limit'],
   dota2: ['timezone', 'reply_theme', 'subscription_enabled', 'poll_interval_seconds', 'opendota_rph', 'commentary_enabled'],
   cs2: ['reply_theme', 'default_platform'], deadlock: ['reply_theme'],
 });
 const LABELS = {timezone: '输出时区', reply_theme: '回复主题', poster_source: '游戏库来源', poster_mode: '拼图布局', poster_preset: '时长预设', poster_aspect: '输出比例', poster_quality: '输出清晰度', poster_fit: '封面适配', poster_include_apps: '包含软件等全部应用', poster_limit: '作品数量上限', subscription_enabled: '启用比赛订阅', poll_interval_seconds: '订阅检查间隔（秒）', opendota_rph: '每小时请求上限', commentary_enabled: '启用模型短评', default_platform: '默认 CS2 来源'};
 const CHOICE_LABELS = {games: '公开主页样本', recent: '近期公开样本', full: '完整游戏库（需要 Key）', dense: '游戏生涯拼图', legacy: '兼容旧布局', single: '单机', standard: '标准', long: '长玩', normal: '标准', hd: '高清', cover: '等比裁切填充', contain: '保留完整封面', perfect: '完美平台', official: '完美收录官匹', '5e': '5E'};
 const CREDENTIALS = {steam: [['credential_steam_key', 'Steam Web API Key']], dota2: [['credential_opendota_key', 'OpenDota Key（可选）']], cs2: [['credential_perfect', '完美扫码授权'], ['credential_fivee', '5E 会话 Token']]};
+LABELS.poster_limit_mode = '作品数量模式';
+CHOICE_LABELS.top = '按时长取前 N 项'; CHOICE_LABELS.all = '不限（来源实际返回范围）';
+
+export function parsePosterLimit(value) {
+  if (typeof value !== 'string' || value.length > 128) throw Error('数量必须是完整有限数值。');
+  const raw = value.trim();
+  const match = /^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:[eE]([+-]?\d+))?$/u.exec(raw);
+  if (!match) throw Error('数量必须是完整有限数值，不能包含其他文字。');
+  const fraction = match[3] ?? match[4] ?? '';
+  const digits = (match[2] || '0') + fraction;
+  const exponent = Number(match[5] || 0) - fraction.length;
+  if (!Number.isSafeInteger(exponent) || exponent > 128) throw Error('数量超过安全数值范围，请选择不限。');
+  let integer = BigInt(digits);
+  if (exponent < -256) integer = 0n;
+  else integer = exponent >= 0 ? integer * 10n ** BigInt(exponent) : integer / 10n ** BigInt(-exponent);
+  if (match[1] === '-') integer = -integer;
+  if (integer > BigInt(Number.MAX_SAFE_INTEGER)) throw Error('数量超过安全数值范围，请选择不限。');
+  if (integer < 20n) throw Error('数量向零截断后至少为20。');
+  return Number(integer);
+}
 
 const PNG_CRC = Uint32Array.from({length: 256}, (_, index) => {
   let value = index;
@@ -81,10 +107,11 @@ const PNG_CRC = Uint32Array.from({length: 256}, (_, index) => {
   return value >>> 0;
 });
 function previewPNG(encoded, window) {
-  if (typeof encoded !== 'string' || !encoded.length || encoded.length > 24000000 || encoded.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(encoded)) throw Error('invalid_images');
-  const binary = window.atob(encoded);
+  const direct = encoded instanceof Uint8Array;
+  if (!direct && (typeof encoded !== 'string' || !encoded.length || encoded.length > 24000000 || encoded.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(encoded))) throw Error('图片内容无法验证。');
+  const binary = direct ? Array.from({length: Math.ceil(encoded.length / 32768)}, (_, index) => String.fromCharCode(...encoded.subarray(index * 32768, (index + 1) * 32768))).join('') : window.atob(encoded);
   if (!binary.startsWith('\x89PNG\r\n\x1a\n')) throw Error('invalid_images');
-  const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+  const bytes = direct ? encoded : Uint8Array.from(binary, char => char.charCodeAt(0));
   const uint = index => ((bytes[index] << 24) | (bytes[index + 1] << 16) | (bytes[index + 2] << 8) | bytes[index + 3]) >>> 0;
   let offset = 8, header = false, palette = false, data = false, dataEnded = false, dataBytes = 0, indexed = false;
   while (offset + 12 <= bytes.length) {
@@ -153,6 +180,7 @@ export function mountController(container, options) {
   let credentialPending = false, authorizationPending = false, credentialSnapshot = null, credentialGeneration = 0;
   let credentialRoot, authorizationSession = null, authorizationTimer = null, cancelRequested = false;
   let previewGeneration = 0;
+  let invalidatePublic = () => {};
   const previewURLs = [], publicInputs = [];
   const credentialControls = new Map();
   let credentialChanged = () => {};
@@ -276,7 +304,7 @@ export function mountController(container, options) {
       if (name === 'poster_include_apps' && (descriptor.value_schema?.type !== 'boolean'
         || typeof descriptor.default !== 'boolean' || typeof field.value !== 'boolean')) throw Error('invalid_snapshot');
       if (name === 'poster_limit' && (descriptor.value_schema?.type !== 'integer'
-        || descriptor.value_schema.minimum !== 1 || ![200, 1000].includes(descriptor.value_schema.maximum)
+        || ![1, 20].includes(descriptor.value_schema.minimum)
         || !Number.isInteger(descriptor.default) || !Number.isInteger(field.value))) throw Error('invalid_snapshot');
     }
     return snapshot;
@@ -329,6 +357,7 @@ export function mountController(container, options) {
     }
   };
   const buildFields = () => {
+    const grid = options.presentation?.grid(form, form.querySelector('.steam-dlc-actions'));
     for (const name of fieldNames) {
       const descriptor = baseline.descriptors[name];
       const row = node('div', undefined, 'steam-dlc-field');
@@ -348,9 +377,10 @@ export function mountController(container, options) {
         control.autocomplete = 'off';
         control.maxLength = Math.min(descriptor.value_schema.maxLength ?? MAX_RETAINED_VALUE_LENGTH, MAX_RETAINED_VALUE_LENGTH);
       }
-      if (descriptor.value_schema?.type === 'integer') {
+      if (!isChoice(name) && descriptor.value_schema?.type === 'integer') {
         control.type = 'number'; control.min = String(descriptor.value_schema.minimum);
-        control.max = String(descriptor.value_schema.maximum); control.step = '1';
+        if (descriptor.value_schema.maximum !== undefined) control.max = String(descriptor.value_schema.maximum); control.step = '1';
+        if (name === 'poster_limit') {control.type = 'text'; control.inputMode = 'decimal'; control.removeAttribute('min'); control.removeAttribute('max');}
       }
       const reset = node('button', '恢复默认');
       reset.className = 'ui-button';
@@ -361,6 +391,19 @@ export function mountController(container, options) {
         edit(name, { kind: 'clear' });
         displayValues();
       });
+      const resets = node('div', undefined, 'steam-dlc-actions'); resets.append(reset);
+      if (name === 'poster_limit') {
+        for (const value of [20, 50, 100, 200, 500, 1000, 'all']) {
+          const shortcut = node('button', value === 'all' ? '不限' : String(value), 'ui-button'); shortcut.type = 'button';
+          listen(shortcut, 'click', () => {
+            if (!active() || !baseline) return;
+            if (controls.has('poster_limit_mode')) edit('poster_limit_mode', {kind: 'set', value: value === 'all' ? 'all' : 'top'});
+            if (value !== 'all') edit(name, {kind: 'set', value});
+            else if (!controls.has('poster_limit_mode')) {say('当前配置尚未提供不限模式，请刷新模块版本。', 'warning'); return;}
+            displayValues();
+          }); resets.append(shortcut);
+        }
+      }
       listen(control, isChoice(name) ? 'change' : 'input', () => {
         if (!active() || !baseline) return;
         if (isChoice(name)) {
@@ -369,14 +412,19 @@ export function mountController(container, options) {
           edit(name, choice.value === null ? { kind: 'clear' } : { kind: 'set', value: choice.value });
         } else if (descriptor.value_schema?.type === 'integer') {
           const rawValue = control.value;
+          if (name === 'poster_limit') {
+            try { edit(name, {kind: 'set', value: parsePosterLimit(rawValue)}); }
+            catch { edit(name, {kind: 'set', value: null, rawValue}); }
+            return;
+          }
           edit(name, name === 'opendota_rph' && rawValue === '' ? {kind: 'clear'} : control.validity.valid && rawValue !== ''
             ? { kind: 'set', value: Number(rawValue) }
             : { kind: 'set', value: null, rawValue });
         } else edit(name, { kind: 'set', value: control.value });
       });
-      controls.set(name, { control, reset, error, hint });
-      row.append(label, control, reset, hint, error);
-      form.insertBefore(row, form.querySelector('.steam-dlc-actions'));
+      const presentation = grid && options.presentation.field(grid, {control, reset: resets, label, hint, error});
+      controls.set(name, { control, reset, error: presentation?.error || error, hint: presentation?.hint || hint });
+      if (!presentation) {row.append(label, control, resets, hint, error); form.insertBefore(row, form.querySelector('.steam-dlc-actions'));}
     }
   };
   const applySnapshot = snapshot => {
@@ -400,7 +448,13 @@ export function mountController(container, options) {
       const snapshot = await options.services.config.current();
       if (!active() || ticket !== generation) return;
       applySnapshot(snapshot);
-      await refreshCredentials();
+      try {await refreshCredentials();}
+      catch (error) {
+        if (!active() || ticket !== generation) return;
+        credentialError(error);
+        if (active()) say('普通配置已读取；来源凭据状态未确认，请单独刷新凭据。', 'warning');
+        return;
+      }
       if (!active() || ticket !== generation) return;
       say(drafts.size ? '已刷新；草稿已保留，请核对后保存。' : manual ? '已刷新。' : '', drafts.size ? 'warning' : 'success');
     } catch (error) {
@@ -433,8 +487,12 @@ export function mountController(container, options) {
         }
       } else if (descriptor.value_schema?.type === 'integer') {
         const schema = descriptor.value_schema;
-        if (draft.rawValue !== undefined || !Number.isInteger(draft.value)
+        if (draft.rawValue !== undefined || !Number.isSafeInteger(draft.value)
           || draft.value < schema.minimum || draft.value > schema.maximum) problem = `请输入 ${schema.minimum} 到 ${schema.maximum} 之间的整数。`;
+        if (name === 'poster_limit') {
+          try { parsePosterLimit(draft.rawValue ?? String(draft.value)); }
+          catch (error) { problem = error.message; }
+        }
       } else if (isChoice(name) && !choicesFor(name).some(choice => same(choice.value, draft.value))) problem = '请选择当前可用的选项。';
       controls.get(name).error.textContent = problem;
       controls.get(name).control.setAttribute('aria-invalid', String(Boolean(problem)));
@@ -488,7 +546,13 @@ export function mountController(container, options) {
       }
       for (const [name, draft] of submitted) if (drafts.get(name) === draft) { drafts.delete(name); draftVersion += 1; }
       applySnapshot(snapshot);
-      await refreshCredentials();
+      try {await refreshCredentials();}
+      catch (error) {
+        if (!active() || ticket !== generation) return;
+        credentialError(error);
+        if (active()) say('普通配置已保存并核对；来源凭据状态未确认，请单独刷新凭据。', 'warning');
+        return;
+      }
       if (!active() || ticket !== generation) return;
       say(drafts.size ? '已保存本次提交；仍有新的未保存修改。' : '已保存。', drafts.size ? 'warning' : 'success');
     } catch (error) {
@@ -533,7 +597,7 @@ export function mountController(container, options) {
       if (!active() || ticket !== cacheGeneration) return;
       const value = validateCacheStatus(response);
       cacheValue.textContent = `缓存：${value.items} 项 / ${value.bytes} 字节；上限 ${value.max_items} 项 / ${value.max_bytes} 字节；已淘汰 ${value.evictions} 项。`;
-      say('缓存状态已刷新。此操作只读取统计；重新验证封面请使用 --refresh。', 'success');
+      say('缓存状态已刷新。此操作只读取统计；普通刷新游戏库会继续复用有效原图。', 'success');
     } catch {
       if (!active() || ticket !== cacheGeneration) return;
       cacheValue.textContent = '缓存状态暂不可用。';
@@ -713,7 +777,12 @@ export function mountController(container, options) {
         const input = node('input'); input.type = 'password'; input.className = 'ui-control';
         input.id = `steam-dlc-${field}`; input.name = field; input.maxLength = 4096;
         input.autocomplete = 'new-password'; input.spellcheck = false; input.setAttribute('aria-label', label);
-        row.input = input; box.append(input);
+        row.input = input;
+        if (options.presentation) {
+          const fieldLabel = node('label', label), hint = node('p', '来源凭据不会作为普通草稿保留。'), error = node('p');
+          hint.id = `${input.id}-hint`; error.id = `${input.id}-error`;
+          options.presentation.field(box, {control: input, label: fieldLabel, hint, error});
+        } else box.append(input);
         listen(input, 'input', sync);
         button(`replace-${field}`, '保存凭据', () => { void credentialAction(field, false); });
         button(`clear-${field}`, '清除凭据', () => { void credentialAction(field, true); });
@@ -749,7 +818,12 @@ export function mountController(container, options) {
     if (choices) {
       input.append(...choices.map(value => { const choice = node('option', CHOICE_LABELS[value] || value); choice.value = value; return choice; }));
     } else { input.type = 'text'; input.maxLength = 128; input.autocomplete = 'off'; }
-    input.value = initial; row.append(text, input); parent.append(row); publicInputs.push(input); return input;
+    input.value = initial;
+    const hint = node('p', '', 'steam-dlc-hint'), error = node('p', '', 'steam-dlc-field-error');
+    hint.id = `${input.id}-hint`; error.id = `${input.id}-error`;
+    if (options.presentation) options.presentation.field(parent, {control: input, label: text, hint, error});
+    else {row.append(text, input); parent.append(row);}
+    publicInputs.push(input); return input;
   };
   const renderCS2 = (projection, target) => {
     if (!['match', 'recent'].includes(projection.kind)) return;
@@ -810,6 +884,15 @@ export function mountController(container, options) {
         wrap.append(table); target.append(wrap);
       }
       const data = block?.kind === 'fields' ? block.fields?.cs2 : null;
+      if (block?.kind === 'fields' && !data) {
+        const fields = node('dl');
+        for (const key of ['比赛ID', '焦点账号', '焦点名称', '英雄ID', '焦点胜负', '时长（秒）']) {
+          if (!(key in (block.fields || {}))) continue;
+          const value = block.fields[key];
+          fields.append(node('dt', key), node('dd', value === null ? '未知' : typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value) : '未提供'));
+        }
+        if (fields.childNodes.length) target.append(fields);
+      }
       if (Array.isArray(data?.sources)) {
         const list = node('dl', undefined, 'steam-dlc-source-status');
         for (const source of data.sources) {
@@ -824,29 +907,18 @@ export function mountController(container, options) {
     for (const warning of response.warnings || []) if (typeof warning === 'string') target.append(node('p', warning, 'steam-dlc-hint'));
     return response.status !== 'needs_selection';
   };
-  const buildPublicForm = collage => {
+  const buildPublicForm = () => {
     const queryForm = node('form', undefined, 'steam-dlc-public-form');
     const result = node('section', undefined, 'steam-dlc-public-result'); result.setAttribute('aria-live', 'polite');
-    const account = publicField(queryForm, 'account', collage ? 'SteamID64（明确账号）' : '玩家账号（SteamID64 / 5E domain）');
+    const grid = options.presentation?.grid(queryForm) || queryForm;
+    const account = publicField(grid, 'account', '玩家账号（SteamID64 / 5E domain）');
     account.required = true;
     let action, platform, limit, season, matchId, focus;
-    const selection = {};
-    if (collage) {
-      for (const [name, label, choices, initial] of [
-        ['source', '来源', ['games', 'recent', 'full'], 'games'], ['mode', '布局', ['dense', 'legacy'], 'dense'],
-        ['preset', '时长预设', ['single', 'standard', 'long'], 'standard'], ['aspect', '比例', ['2:3', '9:16', '1:2'], '2:3'],
-        ['quality', '清晰度', ['normal', 'hd'], 'normal'], ['fit', '封面适配', ['cover', 'contain'], 'cover'],
-      ]) selection[name] = publicField(queryForm, name, label, choices, initial);
-      selection.all_apps = publicField(queryForm, 'all_apps', '包含软件等全部应用', ['true', 'false'], 'true');
-      selection.all_apps.options[0].textContent = '包含'; selection.all_apps.options[1].textContent = '仅游戏';
-      limit = publicField(queryForm, 'limit', '作品数量上限', null, '500'); limit.type = 'number'; limit.min = '1'; limit.max = '1000'; limit.step = '1';
-      root.append(node('p', '公开样本不代表完整库。full 需要已配置的 Steam Key；过大输出会受预算限制。生成后可逐页下载原始 PNG。', 'steam-dlc-hint'));
-    } else {
-      action = publicField(queryForm, 'action', '查询类型', ['profile', 'recent', 'stats', 'last', 'match'], 'profile');
-      platform = publicField(queryForm, 'platform', '来源', ['perfect', 'official', '5e'], 'perfect');
-      season = publicField(queryForm, 'season', '赛季（可选）');
-      limit = publicField(queryForm, 'limit', '近期展示数量', null, '5'); limit.type = 'number'; limit.min = '1'; limit.max = '20'; limit.step = '1';
-      matchId = publicField(queryForm, 'match_id', '来源比赛 ID'); focus = publicField(queryForm, 'focus', '单场焦点账号（可选）');
+      action = publicField(grid, 'action', '查询类型', ['profile', 'recent', 'stats', 'last', 'match'], 'profile');
+      platform = publicField(grid, 'platform', '来源', ['perfect', 'official', '5e'], 'perfect');
+      season = publicField(grid, 'season', '赛季（可选）');
+      limit = publicField(grid, 'limit', '近期展示数量', null, '5'); limit.type = 'number'; limit.min = '1'; limit.max = '20'; limit.step = '1';
+      matchId = publicField(grid, 'match_id', '来源比赛 ID'); focus = publicField(grid, 'focus', '单场焦点账号（可选）');
       const fields = () => {
         season.disabled = !['profile', 'stats'].includes(action.value);
         limit.disabled = action.value !== 'recent'; matchId.disabled = action.value !== 'match'; focus.disabled = action.value !== 'match';
@@ -854,49 +926,27 @@ export function mountController(container, options) {
       };
       listen(action, 'change', fields); fields();
       root.append(node('p', '页面查询始终需要明确账号，不读取本人默认绑定。5E 使用 domain；官匹与 5E 单场仅限来源近期玩家摘要。', 'steam-dlc-hint'));
-    }
-    const submit = node('button', collage ? '生成拼图' : '查询', 'ui-button'); submit.type = 'submit'; submit.dataset.variant = 'primary'; submit.dataset.action = collage ? 'generate' : 'query';
+    const submit = node('button', '查询', 'ui-button'); submit.type = 'submit'; submit.dataset.variant = 'primary'; submit.dataset.action = 'query';
     const actions = node('div', undefined, 'steam-dlc-actions'); actions.append(submit); queryForm.append(actions);
     const run = async statusOnly => {
       if (!active() || pending) return;
       const parameters = statusOnly ? {} : {account: account.value.trim()};
       if (!statusOnly && (!parameters.account || !queryForm.checkValidity())) { say('请填写明确账号并检查输入范围。', 'error'); return; }
-      if (!statusOnly && collage) {
-        Object.assign(parameters, Object.fromEntries(Object.entries(selection).map(([name, input]) => [name, name === 'all_apps' ? input.value === 'true' : input.value])));
-        parameters.limit = Number(limit.value);
-        if (parameters.mode === 'legacy' && parameters.limit > 200) { say('兼容旧布局最多 200 项，请调整数量或选择游戏生涯拼图。', 'error'); return; }
-      } else if (!statusOnly) {
+      if (!statusOnly) {
         Object.assign(parameters, {action: action.value, platform: platform.value});
         if (!season.disabled && season.value.trim()) parameters.season = season.value.trim();
         if (!limit.disabled) parameters.limit = Number(limit.value);
         if (!matchId.disabled) parameters.match_id = matchId.value.trim();
         if (!focus.disabled && focus.value.trim()) parameters.focus = focus.value.trim();
       }
-      const ticket = ++previewGeneration; pending = true; revokePreviews(); result.replaceChildren(node('p', collage ? '正在生成拼图，请等待。' : '正在查询来源。')); sync();
+      const ticket = ++previewGeneration; pending = true; revokePreviews(); result.replaceChildren(node('p', '正在查询来源。')); sync();
       submit.setAttribute('aria-disabled', 'true');
       try {
-        const response = collage ? await options.services.preview('wall_preview', parameters) : await options.services.invoke('query', parameters);
+        const response = await options.services.invoke('query', parameters);
         if (!active() || ticket !== previewGeneration) return;
         const success = renderResult(response, result);
-        if (collage && response.status !== 'error') {
-          if (!['none', 'ready'].includes(response.image_state) || !Array.isArray(response.images) || response.images.length > 8) throw Error('invalid_images');
-          if (response.image_state === 'none' ? response.images.length !== 0 : !success || response.images.length === 0) throw Error('invalid_images');
-          let total = 0;
-          for (const [index, image] of response.images.entries()) {
-            if (image?.media_type !== 'image/png') throw Error('invalid_images');
-            const bytes = previewPNG(image.base64, document.defaultView); total += bytes.length;
-            if (total > 16 * 1024 * 1024) throw Error('invalid_images');
-            const blob = new document.defaultView.Blob([bytes], {type: 'image/png'});
-            const url = document.defaultView.URL.createObjectURL(blob); previewURLs.push(url);
-            const figure = node('figure', undefined, 'steam-dlc-preview'), preview = node('img');
-            preview.src = url; preview.alt = `游戏生涯拼图第 ${index + 1} / ${response.images.length} 页`;
-            const download = node('a', `下载第 ${index + 1} 页 PNG`, 'ui-button'); download.href = url; download.download = `steam-career-${String(index + 1).padStart(2, '0')}.png`;
-            figure.append(preview, download); result.append(figure);
-          }
-        }
         if (response.status === 'needs_selection') say('需要补充选择，请按来源提示配置或改选。', 'warning');
-        else if (success && collage && response.image_state === 'none') say('来源结果已返回，本次没有生成图片。', 'warning');
-        else say(success ? collage ? '拼图已生成，可逐页下载。' : '来源结果已更新。' : '查询未完成，请查看来源反馈。', success ? 'success' : 'warning');
+        else say(success ? '来源结果已更新。' : '查询未完成，请查看来源反馈。', success ? 'success' : 'warning');
       } catch {
         if (!active() || ticket !== previewGeneration) return;
         revokePreviews(); result.replaceChildren(node('p', '请求未完成，或返回内容不完整。请核对来源设置后重试。', 'steam-dlc-field-error'));
@@ -906,12 +956,11 @@ export function mountController(container, options) {
       }
     };
     listen(queryForm, 'submit', event => { event.preventDefault(); void run(false); });
-    if (!collage) {
       const status = node('button', '刷新来源状态', 'ui-button'); status.type = 'button'; status.dataset.action = 'query-status';
       listen(status, 'click', () => { void run(true); }); actions.append(status);
-    }
     root.append(queryForm, result);
-    if (!collage) void run(true);
+    options.presentation?.actions(actions);
+    void run(true);
   };
 
   if (module && options.routeId === 'home') {
@@ -976,11 +1025,26 @@ export function mountController(container, options) {
       drafts.clear(); displayValues(); say('已放弃本模块修改。', 'success'); sync();
     });
     actions.append(saveButton, refreshButton, discardButton);
+    options.presentation?.actions(actions);
     root.append(form);
     form.append(actions);
     root.append(node('p', '回复主题中的“跟随核心”清除模块覆盖值。恢复默认先形成草稿，保存后生效。', 'steam-dlc-hint'));
   } else if (moduleId === 'cs2' && options.routeId === 'query') buildPublicForm(false);
-  else if (moduleId === 'steam' && options.routeId === 'collage') buildPublicForm(true);
+  else if (moduleId === 'steam' && options.routeId === 'collage') {
+    const job = mountJobForm(root, {options, active, field: publicField, parseLimit: parsePosterLimit, validatePNG: bytes => previewPNG(bytes, document.defaultView), say});
+    invalidatePublic = job.dispose;
+    listeners.push(job.dispose);
+  }
+  else if (moduleId === 'steam' && options.routeId === 'wishlist') {
+    const wishlist = mountWishlistForm(root, {options, active, field: publicField, say});
+    invalidatePublic = wishlist.dispose;
+    listeners.push(wishlist.dispose);
+  }
+  else if (moduleId === 'dota2' && options.routeId === 'analysis') {
+    const analysis = mountAnalysisForm(root, {options, active, field: publicField, renderResult, say});
+    invalidatePublic = analysis.dispose;
+    listeners.push(analysis.dispose);
+  }
   else root.append(node('p', '该页面入口未声明，请返回模块列表重新进入。'));
   root.append(message);
 
@@ -1010,10 +1074,12 @@ export function mountController(container, options) {
       const wasAvailable = context.available;
       context = { ...next };
       if (identity(context) !== initialIdentity) {
+        invalidatePublic();
         previewGeneration += 1; revokePreviews(); publicInputs.forEach(input => { input.value = ''; });
         revokePartition();
         say('模块运行上下文已变化，请重新进入页面。', 'error');
       } else if (wasAvailable !== context.available) {
+        invalidatePublic();
         previewGeneration += 1; revokePreviews();
         credentialGeneration += 1; stopAuthorization(); clearCredentialInputs(); authorizationSession = null; credentialPending = false; authorizationPending = false;
         cacheGeneration += 1;

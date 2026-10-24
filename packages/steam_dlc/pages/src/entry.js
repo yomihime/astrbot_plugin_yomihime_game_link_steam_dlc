@@ -1,12 +1,12 @@
 import {createApp, h, shallowRef} from 'vue';
-import {UiProvider, PageHeader, SettingsLayout, Surface, SettingsGroup, StatusHint} from '@game-link/ui';
+import {UiProvider, PageHeader, SettingsLayout, Surface, SettingsGroup, StatusHint, FormField, FormGrid, ActionBar} from '@game-link/ui';
 import {mountController, MODULES} from './controller.js';
 
 /** Public PageModule contract v1. The controller owns services, CAS and drafts;
  * the shared presentation facade owns layout, theme and locale.
  * @param {HTMLElement} container
- * @param {import('../../../../worktrees/game-link-dlc-support/pages/public-contract').PageOptions} options
- * @returns {import('../../../../worktrees/game-link-dlc-support/pages/public-contract').MountedPage}
+ * @param {import('@game-link/page-contract').PageOptions} options
+ * @returns {import('@game-link/page-contract').MountedPage}
  */
 export function mount(container, options) {
   const context = shallowRef({...options.context});
@@ -14,8 +14,48 @@ export function mount(container, options) {
     ? options.context.owner.slice('steam_dlc/'.length) : '';
   const module = MODULES[moduleId];
   const settings = options.routeId === 'settings';
-  const workspaceTitle = options.routeId === 'collage' ? '游戏生涯拼图' : options.routeId === 'query' ? '平台查询' : '';
+  const workspaceTitle = options.routeId === 'collage' ? '游戏生涯拼图' : options.routeId === 'wishlist' ? '公开愿望单' : options.routeId === 'analysis' ? '指定玩家分析' : options.routeId === 'query' ? '平台查询' : '';
   let host, controller, disposed = false, unregister = () => {};
+  const fieldApps = [];
+  const presentation = {
+    actions(container) {
+      const children = [...container.childNodes];
+      const app = createApp({setup: () => () => h(ActionBar, {}, {default: () => h('div', {style: {display: 'contents'}, ref: element => {
+        if (element) for (const child of children) if (child.parentNode !== element) element.append(child);
+      }})})});
+      app.mount(container); fieldApps.push(app);
+    },
+    grid(parent, before) {
+      const mount = container.ownerDocument.createElement('div');
+      parent.insertBefore(mount, before || null);
+      let target;
+      const app = createApp({setup: () => () => h(FormGrid, {}, {default: () => h('div', {style: {display: 'contents'}, ref: element => {target = element;}})})});
+      app.mount(mount); fieldApps.push(app);
+      return target;
+    },
+    field(parent, {control, reset, label, hint, error}) {
+      const mount = container.ownerDocument.createElement('div');
+      parent.append(mount);
+      const hintText = shallowRef(hint.textContent), errorText = shallowRef(error.textContent);
+      const app = createApp({setup: () => () => h(FormField, {
+        controlId: control.id, label: label.textContent, hint: hintText.value, error: errorText.value,
+        hintId: hint.id, errorId: error.id,
+      }, {default: ({controlAttrs}) => {
+        for (const [key, value] of Object.entries(controlAttrs)) {
+          if (value === undefined) control.removeAttribute(key);
+          else control.setAttribute(key, String(value));
+        }
+        return h('div', {ref: element => {if (element && control.parentNode !== element) element.append(control);}});
+      }, actions: () => reset ? h('div', {ref: element => {if (element && reset.parentNode !== element) element.append(reset);}}) : null})});
+      app.mount(mount); fieldApps.push(app);
+      // Text setters update presentation props; the controller never writes to
+      // Vue-owned label/hint/error children. Native control ownership stays here.
+      return {
+        hint: {get textContent() {return hintText.value;}, set textContent(value) {hintText.value = value;}},
+        error: {get textContent() {return errorText.value;}, set textContent(value) {errorText.value = value;}},
+      };
+    },
+  };
   // Vue owns the stable host, while the imperative controller owns its children.
   // A context update patches the provider and never remounts the form subtree.
   const app = createApp({setup: () => () => h(UiProvider, {
@@ -47,13 +87,14 @@ export function mount(container, options) {
     }),
   ])})});
   app.mount(container);
-  controller = mountController(host, {...options, scope: {
+  controller = mountController(host, {...options, presentation, scope: {
     signal: options.scope.signal, isCurrent: () => options.scope.isCurrent(), onDispose: () => () => {},
   }});
   const dispose = () => {
     if (disposed) return;
     disposed = true;
     controller.dispose();
+    fieldApps.splice(0).reverse().forEach(field => field.unmount());
     app.unmount();
     unregister();
   };

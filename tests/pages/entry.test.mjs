@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { mount, installDOM, runtime } from './source-build.mjs';
 
@@ -44,8 +43,8 @@ function snapshot(moduleId = 'dota2') {
   return value;
 }
 let fixtureSequence = 0;
-function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, service = {}, initialState = null, invoke = async () => cacheResponse(), preview = async () => cacheResponse(), credentials = {async status() { return {revision: 7, fields: {}}; }}, context: contextPatch = {} } = {}) {
-  const dom = new JSDOM('<!doctype html><div id="root"></div>');
+function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, service = {}, initialState = null, invoke = async () => cacheResponse(), preview = async () => cacheResponse(), jobs = undefined, credentials = {async status() { return {revision: 7, fields: {}}; }}, context: contextPatch = {} } = {}) {
+  const dom = new JSDOM('<!doctype html><div id="root"></div>', {url: 'http://localhost/'});
   installDOM(dom);
   const container = dom.window.document.querySelector('#root');
   const abort = new AbortController();
@@ -70,7 +69,7 @@ function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, s
   };
   const page = mount(container, {
     routeId, context,
-    services: { config, invoke(id, parameters) { calls.push(['invoke', id, clone(parameters)]); return invoke(id, parameters); }, preview(id, parameters) { calls.push(['preview', id, clone(parameters)]); return preview(id, parameters); }, credentials },
+    services: { config, invoke(id, parameters) { calls.push(['invoke', id, clone(parameters)]); return invoke(id, parameters); }, preview(id, parameters) { calls.push(['preview', id, clone(parameters)]); return preview(id, parameters); }, credentials, jobs },
     scope: { signal: abort.signal, isCurrent: () => scopeCurrent, onDispose(callback) { disposal.add(callback); return () => disposal.delete(callback); } },
     onNavigationStateChange() { notifications++; },
   });
@@ -861,61 +860,66 @@ test('public CS2 query uses the single page capability with explicit account and
   assert.doesNotMatch(f.text(), /留存政策限制/); f.close();
 });
 
-test('public Steam collage validates legacy limits and downloads exact returned PNG blobs with cleanup', async () => {
-  const f = fixture({moduleId: 'steam', routeId: 'collage', preview: async () => ({...cacheResponse(), image_state: 'ready', images: [{media_type: 'image/png', base64: PNG}]})});
+function jobFixture(options = {}) {
+  const submissions = [], changes = [];
+  const view = {job_id: 'job-1', revision: 1, status: 'succeeded', progress: {}, summary: {selected: 1500, generated: 1500, pending: 0, complete_source: false}, handler_id: 'steam_wall'};
+  const jobs = {
+    async submit(request) {submissions.push(clone(request)); return clone(view);},
+    async status() {return clone(view);},
+    async result() {return {job: clone(view), entries: [{resource: {asset_id: 'image-1', media_type: 'image/png'}, metadata: {batch_index: 0}}], next_cursor: null};},
+    async resource() {return new Blob([Buffer.from(PNG, 'base64')], {type: 'image/png'});},
+    async cancel(id, revision) {changes.push(['cancel', id, revision]); return {...view, status: 'cancelled', revision: revision + 1};},
+    async retry(id, revision) {changes.push(['retry', id, revision]); return {...view, status: 'queued', revision: revision + 1};},
+    ...options.jobs,
+  };
+  const f = fixture({moduleId: 'steam', routeId: 'collage', ...options, jobs});
   const created = [], revoked = [];
-  f.dom.window.URL.createObjectURL = blob => {created.push(blob); return `blob:synthetic-${created.length}`;};
-  f.dom.window.URL.revokeObjectURL = url => revoked.push(url);
-  f.input('account', '76561197960265851'); f.input('mode', 'legacy'); f.submit(); await settle();
-  assert.equal(f.calls.length, 0); assert.match(f.text(), /兼容旧布局最多 200/);
-  f.input('mode', 'dense'); f.submit(); await settle();
-  assert.equal(f.calls[0][0], 'preview'); assert.equal(f.calls[0][1], 'wall_preview');
-  assert.equal(f.calls[0][2].source, 'games'); assert.equal(f.calls[0][2].all_apps, true);
-  assert.equal(created[0].size, Buffer.from(PNG, 'base64').length);
-  const download = f.container.querySelector('a[download]'); assert.equal(download.download, 'steam-career-01.png');
-  assert.equal(download.getAttribute('href'), 'blob:synthetic-1'); f.close();
-  assert.deepEqual(revoked, ['blob:synthetic-1']);
+  f.dom.window.URL.createObjectURL = blob => {created.push(blob); return `blob:job-${created.length}`;};
+  f.dom.window.URL.revokeObjectURL = value => revoked.push(value);
+  return {...f, submissions, changes, created, revoked, jobs, view};
+}
+
+test('Steam durable job validates legacy then publishes exact PNG and revokes preview on close', async () => {
+  const f = jobFixture();
+  try {
+    f.input('account', '123'); f.input('mode', 'legacy'); f.submit(); await settle();
+    assert.equal(f.submissions.length, 0); assert.match(f.text(), /兼容旧布局最多200/);
+    f.input('mode', 'dense'); f.input('limit', '1500.9'); f.submit(); await settle(); await settle();
+    assert.equal(f.submissions.length, 1); assert.equal(f.submissions[0].parameters.limit, 1500);
+    assert.equal(f.submissions[0].parameters.account, '76561197960265851');
+    assert.equal(f.created[0].size, Buffer.from(PNG, 'base64').length);
+    assert.match(f.text(), /来源覆盖不完整/); assert.equal(f.container.querySelector('a[download]').getAttribute('href'), 'blob:job-1');
+    assert.equal(f.dom.window.sessionStorage.getItem('ygl:job:steam_dlc/steam:collage'), 'job-1');
+  } finally {f.close();}
+  assert.deepEqual(f.revoked, ['blob:job-1']); assert.equal(f.changes.length, 0, 'closing never cancels work');
 });
 
-test('every Steam collage form choice and dense limit fits the published page and tool contracts', async () => {
-  const manifest = JSON.parse(await readFile(new URL('../../packages/steam_dlc/yomihime.manifest.json', import.meta.url)));
-  const steam = manifest.modules.find(module => module.module_id === 'steam');
-  const descriptors = ['wall_preview', 'wall_explicit'].map(id => steam.capabilities.find(capability => capability.capability_id === id));
-  const mapping = steam.tools.find(tool => tool.capability_id === 'wall_explicit').parameter_mapping;
-  const f = fixture({moduleId: 'steam', routeId: 'collage', preview: async () => ({...cacheResponse(), image_state: 'none', images: []})});
+test('Steam shortcuts keep finite1000 distinct from all and reject malformed decimals', async () => {
+  const f = jobFixture({jobs: {async result() {return {entries: [], next_cursor: null};}}});
   try {
-    f.input('account', '76561197960265851');
-    const checkSubmission = async () => {
-      const before = f.calls.length;
-      f.submit(); await settle();
-      assert.equal(f.calls.length, before + 1, 'the form must submit the selected options');
-      const parameters = f.calls.at(-1)[2];
-      for (const {capability_id: id, input_schema: schema} of descriptors) {
-        for (const required of schema.required) assert.ok(required in parameters, `${id}: required ${required}`);
-        for (const [name, value] of Object.entries(parameters)) {
-          const rule = schema.properties[name];
-          assert.ok(rule, `${id} must declare the form field ${name}`);
-          assert.equal(mapping[name], name, `tool must expose ${name}`);
-          assert.equal(typeof value, rule.type === 'integer' ? 'number' : rule.type, `${id}.${name}: type`);
-          if (rule.type === 'integer') assert.ok(Number.isInteger(value));
-          if (rule.enum) assert.ok(rule.enum.includes(value), `${id}.${name}: choice`);
-          if (rule.minimum !== undefined) assert.ok(value >= rule.minimum, `${id}.${name}: minimum`);
-          if (rule.maximum !== undefined) assert.ok(value <= rule.maximum, `${id}.${name}: maximum`);
-        }
-      }
-    };
-    await checkSubmission(); // Actual default includes all five layout options and 500 items.
-    f.input('limit', '1000'); await checkSubmission();
-    f.input('limit', '1'); await checkSubmission();
-    f.input('limit', '200');
-    for (const select of f.container.querySelectorAll('select[name]')) {
-      const original = select.value;
-      for (const option of select.options) {
-        f.input(select.name, option.value); await checkSubmission();
-      }
-      f.input(select.name, original);
-    }
-  } finally { f.close(); }
+    f.input('account', '123');
+    for (const value of ['1001', '1500.9', '2.5e3']) {f.input('limit', value); f.submit(); await settle();}
+    assert.deepEqual(f.submissions.map(request => request.parameters.limit), [1001, 1500, 2500]);
+    for (const value of ['', '19.99', '20abc', 'NaN', 'Infinity', '9007199254740992']) {f.input('limit', value); f.submit(); await settle();}
+    assert.equal(f.submissions.length, 3);
+    f.click('limit-1000'); f.submit(); await settle(); assert.equal(f.submissions.at(-1).parameters.limit_mode, 'top');
+    f.click('limit-all'); f.submit(); await settle(); assert.equal(f.submissions.at(-1).parameters.limit_mode, 'all');
+    assert.equal(f.submissions.at(-1).parameters.limit, 500);
+    assert.ok(f.submissions.every(request => request.handler_id === 'steam_wall' && typeof request.idempotency_key === 'string'));
+  } finally {f.close();}
+});
+
+test('Steam job cursor paginates results and cancellation uses exact current revision', async () => {
+  let page = 0;
+  const f = jobFixture({jobs: {
+    async status() {return {job_id: 'job-1', revision: 7, status: 'running'};},
+    async result(id, options) {page++; assert.equal(options.page_size, 20); return {entries: [], next_cursor: page === 1 ? 'cursor-2' : null};},
+  }});
+  try {
+    f.input('account', '123'); f.submit(); await settle();
+    f.click('job-results'); await settle(); f.click('job-next'); await settle(); assert.equal(page, 2);
+    f.click('job-cancel'); await settle(); assert.deepEqual(f.changes[0], ['cancel', 'job-1', 7]);
+  } finally {f.close();}
 });
 
 function cs2Response(platform, data, {kind = 'match', detail = 'player_summary'} = {}) {
@@ -979,53 +983,106 @@ test('CS2 empty full roster and empty recent list remain explicit source states 
   }
 });
 
-function textPreview(status, message) {
-  return {...cacheResponse(), status, image_state: 'none', images: [], document: {blocks: [{kind: 'text', text: message}]}};
-}
-
-for (const [status, message] of [
-  ['needs_selection', '缺少 Steam Key。请在可信管理页配置，或改选 games/recent。'],
-  ['success', '完整库已确认为空，没有可生成的作品。'],
-  ['partial_success', '当前样本的作品均为 0 时长或不符合筛选，没有可生成的作品。'],
-]) {
-  test(`Steam ${status} with image_state=none preserves actionable no-card feedback`, async () => {
-    const f = fixture({moduleId: 'steam', routeId: 'collage', preview: async () => textPreview(status, message)});
-    f.input('account', '76561197960265851'); f.submit(); await settle();
-    assert.ok(f.container.querySelector('.steam-dlc-public-result').textContent.includes(message));
-    assert.match(f.text(), status === 'needs_selection' ? /需要补充选择/ : /本次没有生成图片/);
-    assert.doesNotMatch(f.text(), /未取得可确认结果|拼图已生成/);
-    assert.equal(f.container.querySelector('a[download]'), null); assert.equal(f.page.navigationImpact().pending, false); f.close();
-  });
-}
-
-test('Steam preview rejects missing image state, contradictory images and corrupt PNGs rather than reporting success', async () => {
-  const valid = {media_type: 'image/png', base64: PNG};
+test('Steam corrupt PNG resource cannot become a download or claimed success', async () => {
   const corrupt = Buffer.from(PNG, 'base64'); corrupt[45] ^= 1;
-  for (const wire of [
-    {image_state: 'ready', images: []}, {image_state: 'none', images: [valid]}, {images: []},
-    {image_state: 'ready', images: [{...valid, base64: 'not base64!'}]},
-    {image_state: 'ready', images: [{...valid, base64: Buffer.from('\x89PNG\r\n\x1a\n', 'binary').toString('base64')}]},
-    {image_state: 'ready', images: [{...valid, base64: corrupt.toString('base64')}]},
-    {image_state: 'ready', images: [{...valid, base64: Buffer.concat([Buffer.from(PNG, 'base64'), Buffer.from('trailing')]).toString('base64')}]},
-    {image_state: 'ready', images: Array(9).fill(valid)},
-    {image_state: 'ready', images: [{media_type: 'image/jpeg', base64: PNG}]},
-  ]) {
-    const f = fixture({moduleId: 'steam', routeId: 'collage', preview: async () => ({...cacheResponse(), ...wire})});
-    f.input('account', '76561197960265851'); f.submit(); await settle();
-    assert.match(f.text(), /未取得可确认结果/); assert.doesNotMatch(f.text(), /拼图已生成/);
-    assert.equal(f.container.querySelector('a[download]'), null); f.close();
-  }
+  const f = jobFixture({jobs: {async resource() {return new Blob([corrupt], {type: 'image/png'});}}});
+  try {f.input('account', '123'); f.submit(); await settle(); await settle(); assert.equal(f.container.querySelector('a[download]'), null); assert.equal(f.created.length, 0);}
+  finally {f.close();}
 });
 
-test('Steam error keeps its source message and a late no-card response cannot overwrite a revoked view', async () => {
-  const failure = fixture({moduleId: 'steam', routeId: 'collage', preview: async () => ({...cacheResponse(), status: 'error', image_state: 'none', images: [], error: {message: '上游当前不可用，请稍后重试。'}})});
-  failure.input('account', '76561197960265851'); failure.submit(); await settle();
-  assert.match(failure.text(), /上游当前不可用，请稍后重试/); assert.doesNotMatch(failure.text(), /未取得可确认结果|拼图已生成/); failure.close();
+test('Steam late job result is fenced after context revocation and never cancels work', async () => {
   const late = deferred();
-  const f = fixture({moduleId: 'steam', routeId: 'collage', preview: () => late.promise});
-  f.input('account', '76561197960265851'); f.submit();
-  f.page.update({...f.context, available: false});
-  const previous = f.container.innerHTML;
-  late.resolve(textPreview('success', 'LATE_EMPTY_LIBRARY')); await settle();
-  assert.equal(f.container.innerHTML, previous); assert.doesNotMatch(f.text(), /LATE_EMPTY_LIBRARY/); f.close();
+  const f = jobFixture({jobs: {status: () => late.promise}});
+  try {
+    f.input('account', '123'); f.submit(); await settle();
+    f.page.update({...f.context, available: false}); const before = f.container.innerHTML;
+    late.resolve({...f.view, summary: {generated: 9999}}); await settle();
+    assert.equal(f.container.innerHTML, before); assert.equal(f.created.length, 0); assert.equal(f.changes.length, 0);
+  } finally {f.close();}
+});
+
+test('Dota ordinary configuration remains editable when independent credential status fails', async () => {
+  const f = fixture({credentials: {async status() {throw Error('private upstream detail');}}});
+  try {await settle(); assert.match(f.text(), /普通配置已读取/); assert.doesNotMatch(f.text(), /配置读取未完成|private upstream detail/); f.input('timezone', 'UTC'); f.submit(); await settle(); assert.ok(f.calls.some(call => call[0] === 'save'));}
+  finally {f.close();}
+});
+
+test('actual Dota six-field snapshot with integer enum mounts a select and saves numeric CAS value', async () => {
+  const state = snapshot('dota2');
+  addSetting(state, 'subscription_enabled', true, {type: 'boolean'});
+  addSetting(state, 'commentary_enabled', false, {type: 'boolean'});
+  addSetting(state, 'poll_interval_seconds', 300, {type: 'integer', enum: [60, 300, 900, 3600, 21600, 43200, 86400]});
+  addSetting(state, 'opendota_rph', 100, {type: 'integer', minimum: 1, maximum: 1000000});
+  const f = fixture({initialState: state});
+  try {
+    await settle();
+    assert.doesNotMatch(f.text(), /配置读取未完成/);
+    const control = f.container.querySelector('[name=poll_interval_seconds]');
+    assert.equal(control.tagName, 'SELECT'); assert.equal(control.options.length, 7);
+    const label = f.container.querySelector(`label[for="${control.id}"]`); assert.ok(label);
+    assert.equal(control.getAttribute('aria-labelledby'), label.id);
+    f.input('poll_interval_seconds', '2'); f.submit(); await settle();
+    assert.deepEqual(f.calls.find(call => call[0] === 'save')[2], {poll_interval_seconds: 900});
+  } finally {f.close();}
+});
+
+test('wishlist page requests explicit account and twenty-item local pages without whole-list enrichment', async () => {
+  const f = fixture({moduleId: 'steam', routeId: 'wishlist', invoke: async (id, parameters) => {
+    assert.equal(id, 'wishlist_explicit');
+    return {...cacheResponse(), document: {blocks: [{kind: 'fields', fields: {wishlist: {
+      page: parameters.page, pages: 2, total: 21, region: 'CN', fetched_at: '2026-01-01T00:00:00Z', state: 'available',
+      items: [{app_id: parameters.page === 1 ? '123' : '456', name: 'Synthetic wishlist', date_added: 100, price_state: 'no_local_price', release_state: 'unreleased'}],
+    }}}]}};
+  }});
+  try {
+    f.submit(); await settle(); assert.equal(f.calls.length, 0);
+    f.input('account', '123'); f.submit(); await settle();
+    assert.equal(f.calls[0][2].page, 1); assert.match(f.text(), /第1\/2页|第1\/2/);
+    assert.match(f.text(), /未发售/); assert.match(f.text(), /本地区未提供价格/);
+    assert.equal(f.container.querySelector('a[target=_blank]').href, 'https://store.steampowered.com/app/123/');
+    f.click('wishlist-next'); await settle(); assert.equal(f.calls[1][2].page, 2);
+    f.page.update({...f.context, epoch: 4}); assert.doesNotMatch(f.text(), /Synthetic wishlist/);
+  } finally {f.close();}
+});
+
+test('job transport failures never render raw exception messages', async () => {
+  const f = jobFixture({jobs: {async submit() {throw Error('PRIVATE_BACKEND_DETAIL');}}});
+  try {f.input('account', '123'); f.submit(); await settle(); assert.doesNotMatch(f.text(), /PRIVATE_BACKEND_DETAIL/); assert.match(f.text(), /任务操作未完成/);}
+  finally {f.close();}
+});
+
+test('job previews are immediately revoked on owner boundary change', async () => {
+  const f = jobFixture();
+  try {
+    f.input('account', '123'); f.submit(); await settle(); await settle();
+    assert.equal(f.created.length, 1);
+    f.page.update({...f.context, boundary: 'new-owner-boundary'});
+    assert.deepEqual(f.revoked, ['blob:job-1']); assert.equal(f.container.querySelector('a[download]'), null);
+    assert.equal(f.changes.length, 0);
+  } finally {f.close();}
+});
+
+test('Dota analysis page shows focus, settlement-only completeness and missing sections without inventing values', async () => {
+  const f = fixture({moduleId: 'dota2', routeId: 'analysis', invoke: async (id, parameters) => {
+    assert.equal(id, 'analyze_explicit'); assert.deepEqual(parameters, {match_id: '12345', account: 'Focus', refresh: false});
+    return {...cacheResponse(), status: 'partial_success', document: {blocks: [
+      {kind: 'fields', fields: {'比赛ID': '12345', '焦点账号': '456', '焦点名称': 'Focus', '英雄ID': 1, '焦点胜负': 'win', '时长（秒）': 1000}},
+      {kind: 'text', text: '团战与目标：来源未提供团战数据。'},
+    ]}, model_facts: {data_completeness: 'settlement_only', focus: {account_id32: '456', name: 'Focus', hero_id: 1, kills: 0, deaths: 4, assists: null}, missing_sections: ['teamfights', 'purchases'], missing_fields: ['hero_damage'], truncated_sections: [], source: 'opendota', fetched_at: '2026-01-01T00:00:00Z'}};
+  }});
+  try {
+    f.input('match_id', '12345'); f.input('account', 'Focus'); f.submit(); await settle();
+    assert.match(f.text(), /仅基础结算/); assert.match(f.text(), /ID32 456/); assert.match(f.text(), /K\/D\/A 0\/4\/未知/);
+    assert.match(f.text(), /teamfights、purchases/); assert.match(f.text(), /来源未提供团战数据/);
+    assert.doesNotMatch(f.text(), /AI短评已生成|K\/D\/A 0\/4\/0/);
+    f.page.update({...f.context, runtimeId: 'new-analysis-runtime'}); assert.doesNotMatch(f.text(), /ID32 456/);
+  } finally {f.close();}
+});
+
+test('wishlist privacy, rate limit and failure remain distinct after Core sanitizes the message', async () => {
+  for (const [code, expected] of [['not_public', /愿望单未公开或来源受限/], ['rate_limited', /愿望单来源限流/], ['upstream_error', /愿望单来源请求失败/]]) {
+    const f = fixture({moduleId: 'steam', routeId: 'wishlist', invoke: async () => ({...cacheResponse(), status: 'error', error: {code, message: '查询未完成，请检查输入或稍后重试。'}})});
+    try {f.input('account', '123'); f.submit(); await settle(); assert.match(f.text(), expected); assert.doesNotMatch(f.text(), /本次公开愿望单为空|共0项/);}
+    finally {f.close();}
+  }
 });

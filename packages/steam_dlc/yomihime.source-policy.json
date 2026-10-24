@@ -267,5 +267,14 @@
     "steam_dlc/steam": {
       "wall_preview": 90
     }
-  }
+  },
+  "config_migrations": [
+    {
+      "owner": "steam_dlc/steam",
+      "field": "poster_limit",
+      "kind": "integer_floor",
+      "from_minimum": 1,
+      "to_minimum": 20
+    }
+  ]
 }

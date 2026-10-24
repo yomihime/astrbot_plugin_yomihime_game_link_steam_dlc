@@ -47,6 +47,7 @@ class Resources:
     def __init__(self):
         self.values = {}
         self.denied = False
+        self.classes = []
 
     async def metadata(self, asset_id, *, visibility=None):
         if self.denied:
@@ -54,10 +55,13 @@ class Resources:
         assert visibility is CacheVisibility.PUBLIC
         return SimpleNamespace(asset_id=asset_id) if asset_id in self.values else None
 
-    async def store(self, media, content, *, visibility=None, ttl_seconds=None):
+    async def store(
+        self, media, content, *, visibility=None, ttl_seconds=None, cache_class=None
+    ):
         assert visibility is CacheVisibility.PUBLIC
         asset_id = "opaque-" + hashlib.sha256(content).hexdigest()
         self.values[asset_id] = content
+        self.classes.append(cache_class)
         return SimpleNamespace(asset_id=asset_id)
 
     async def stats(self, *, visibility=None):
@@ -119,9 +123,15 @@ class Http:
         if request.headers.get("If-None-Match") == tag:
             return ygl.HttpResponse(304, {}, b"")
         # Header-only fixture deliberately tests DLC preflight, not Core decoder verification.
-        body = self.body_override or b"\x89PNG\r\n\x1a\n" + struct.pack(
-            ">I", 13
-        ) + b"IHDR" + struct.pack(">II", 300, 450) + bytes([self.version])
+        body = (
+            self.body_override
+            or b"\x89PNG\r\n\x1a\n"
+            + struct.pack(">I", 13)
+            + b"IHDR"
+            + struct.pack(">II", 300, 450)
+            + bytes([self.version])
+            + request.path.encode()
+        )
         return ygl.HttpResponse(200, {"Content-Type": "image/png", "ETag": tag}, body)
 
 
@@ -130,6 +140,129 @@ def scope():
 
 
 class MaterialTests(unittest.IsolatedAsyncioTestCase):
+    async def test_split_metadata_preserves_per_batch_etags_and_one_request_on_rate_limit(
+        self,
+    ):
+        appids = [str(value) for value in range(4294967000, 4294967200)]
+        target, service = scope(), MaterialPreparer()
+        cold = await service.prepare(
+            target, appids, language="a" * 24, phase="metadata"
+        )
+        request_count = cold["counters"]["metadata_requests"]
+        target.http.requests.clear()
+        refreshed = await service.prepare(
+            target, appids, language="a" * 24, phase="metadata", refresh=True
+        )
+        self.assertEqual(refreshed["counters"]["metadata_requests"], request_count)
+        self.assertEqual(len(target.http.requests), request_count)
+        self.assertTrue(
+            all(
+                request.headers.get("If-None-Match") == '"metadata-1"'
+                for request in target.http.requests
+            )
+        )
+        self.assertTrue(all(item["app_type"] == "game" for item in refreshed["items"]))
+        limited = scope()
+
+        async def rate_limit(request):
+            limited.http.requests.append(request)
+            return ygl.HttpResponse(429, {"Retry-After": "7"}, b"")
+
+        limited.http.fetch = rate_limit
+        result = await MaterialPreparer().prepare(
+            limited, appids, language="a" * 24, phase="metadata"
+        )
+        self.assertEqual(len(limited.http.requests), 1)
+        self.assertEqual(result["counters"]["metadata_requests"], 1)
+        self.assertEqual(result["counters"]["rate_limited"], 1)
+
+    async def test_browse_full_json_query_limit_covers_100_128_and_200_large_appids(
+        self,
+    ):
+        for count, phase in ((100, "metadata"), (128, "images"), (200, "metadata")):
+            with self.subTest(count=count, phase=phase):
+                target, service = scope(), MaterialPreparer()
+                appids = [str(value) for value in range(4294967000, 4294967000 + count)]
+                original = target.http.fetch
+                observed = []
+
+                async def bounded(request):
+                    if request.source_id == "steam_browse":
+                        value = dict(request.query)["input_json"]
+                        observed.append(value)
+                        if len(value) > 512:
+                            raise ygl.SourceHttpError("request_too_large")
+                    return await original(request)
+
+                target.http.fetch = bounded
+                result = await service.prepare(
+                    target, appids, language="a" * 24, phase=phase
+                )
+                self.assertEqual([item["app_id"] for item in result["items"]], appids)
+                self.assertTrue(
+                    all(item["app_type"] == "game" for item in result["items"])
+                )
+                self.assertEqual(result["counters"]["metadata_failed"], 0)
+                self.assertGreater(len(observed), 1)
+                self.assertTrue(all(len(value) <= 512 for value in observed))
+                self.assertEqual(
+                    [
+                        str(item["appid"])
+                        for value in observed
+                        for item in json.loads(value)["ids"]
+                    ],
+                    appids,
+                )
+                self.assertEqual(result["counters"]["metadata_requests"], len(observed))
+                hot = await MaterialPreparer().prepare(
+                    target, appids, language="a" * 24, phase=phase
+                )
+                self.assertEqual(hot["counters"]["metadata_requests"], 0)
+
+    async def test_cold_hot_new_instance_offline_and_one_bad_resource_counts(self):
+        from yomihime_game_link_sdk.services import ResourceCacheClass
+
+        target, service = scope(), MaterialPreparer()
+        cold = await service.prepare(target, ["1", "3", "4"])
+        self.assertEqual(cold["counters"]["image_requests"], 3)
+        self.assertEqual(cold["counters"]["image_cache_writes"], 3)
+        self.assertGreater(cold["counters"]["download_bytes"], 0)
+        self.assertTrue(
+            all(value is ResourceCacheClass.RAW for value in target.resources.classes)
+        )
+        hot = await service.prepare(target, ["1", "3", "4"])
+        self.assertEqual(hot["counters"]["image_requests"], 0)
+        self.assertEqual(hot["counters"]["image_hits"], 3)
+        restarted = MaterialPreparer()
+        repeat = await restarted.prepare(target, ["1", "3", "4"])
+        self.assertEqual(repeat["counters"]["image_requests"], 0)
+        del target.resources.values[cold["items"][0]["asset_id"]]
+        repair = await restarted.prepare(target, ["1", "3", "4"])
+        self.assertEqual(repair["counters"]["image_requests"], 1)
+        self.assertEqual(repair["counters"]["image_hits"], 2)
+        self.assertEqual(repair["counters"]["image_cache_writes"], 1)
+        target.http.offline = True
+        offline = await MaterialPreparer().prepare(target, ["1", "3", "4"])
+        self.assertEqual(offline["counters"]["image_requests"], 0)
+        self.assertEqual(offline["counters"]["image_hits"], 3)
+
+    async def test_previous_image_cache_identity_adopted_without_download(self):
+        target = scope()
+        cold = await MaterialPreparer().prepare(target, ["1"])
+        for (visibility, key), value in list(target.cache.values.items()):
+            if key.startswith("steam-public-original:"):
+                del target.cache.values[visibility, key]
+                target.cache.values[
+                    visibility,
+                    key.replace(
+                        "steam-public-original:", "steam-wall-materials-v1:image:"
+                    ),
+                ] = value
+        target.http.offline = True
+        adopted = await MaterialPreparer().prepare(target, ["1"])
+        self.assertEqual(adopted["items"][0]["asset_id"], cold["items"][0]["asset_id"])
+        self.assertEqual(adopted["counters"]["image_requests"], 0)
+
     async def test_core_decoder_rejection_is_per_image_and_preserves_wall_labels(self):
         from test_steam_wall import projection, row
 

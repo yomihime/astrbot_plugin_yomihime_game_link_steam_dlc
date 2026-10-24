@@ -27,7 +27,7 @@ export async function buildPage({coreRoot = defaultCore, moduleId = 'steam', run
   const {build} = await import(pathToFileURL(resolve(frontend, 'node_modules/vite/dist/node/index.js')).href);
   const result = await build({
     configFile: false, root: frontend, logLevel: 'silent',
-    resolve: {alias: {'@game-link/ui': resolve(coreRoot, 'pages/public-ui.ts')}},
+    resolve: {alias: {'@game-link/ui': resolve(coreRoot, 'pages/public-ui.ts'), '@game-link/page-contract': resolve(coreRoot, 'pages/public-contract.ts')}},
     define: {'process.env.NODE_ENV': JSON.stringify('production'), __VUE_OPTIONS_API__: false, __VUE_PROD_DEVTOOLS__: false, __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: false},
     build: {write: false, sourcemap: false, minify: true,
       lib: {entry: resolve(root, 'packages/steam_dlc/pages/src/entry.js'), formats: ['es'], fileName: () => 'entry.js'},

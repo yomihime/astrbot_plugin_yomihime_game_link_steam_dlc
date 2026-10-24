@@ -1,7 +1,387 @@
 import { createApp as e, h as t, shallowRef as n } from "../../../../../../../runtime.js";
-import { PageHeader as r, SettingsGroup as i, SettingsLayout as a, StatusHint as o, Surface as s, UiProvider as c } from "../../../../../../../runtime.js";
+import { ActionBar as r, FormField as i, FormGrid as a, PageHeader as o, SettingsGroup as s, SettingsLayout as c, StatusHint as l, Surface as u, UiProvider as d } from "../../../../../../../runtime.js";
+//#region packages/steam_dlc/pages/src/job-controller.js
+function f(e, { options: t, active: n, field: r, parseLimit: i, validatePNG: a, say: o }) {
+	let s = e.ownerDocument, c = [], l = [], u = !1, d = null, f = 0, p = 0, m = null, h = null, g = !1, _ = (e) => !u && n() && e === f, v = (e) => Object.assign(Error(e), { publicMessage: e }), y = (e) => e?.publicMessage || "任务操作未完成，请刷新任务并核对。", b = (e, t) => {
+		let n = s.createElement(e);
+		return t !== void 0 && (n.textContent = t), n;
+	}, x = (e, t, n) => {
+		e.addEventListener(t, n), l.push(() => e.removeEventListener(t, n));
+	}, S = () => {
+		d !== null && (clearTimeout(d), d = null);
+	}, C = () => {
+		for (let e of c.splice(0)) s.defaultView.URL.revokeObjectURL(e);
+	}, w = () => {
+		if (!t.services.jobs) throw v("任务服务暂不可用，请刷新模块。");
+		return t.services.jobs;
+	}, T = b("form");
+	T.className = "steam-dlc-public-form";
+	let ee = t.presentation?.grid(T) || T, E = r(ee, "account", "SteamID64 / Dota ID32（明确账号）"), D = {};
+	for (let [e, t, n, i] of [
+		[
+			"source",
+			"来源",
+			[
+				"games",
+				"recent",
+				"full"
+			],
+			"games"
+		],
+		[
+			"mode",
+			"布局",
+			["dense", "legacy"],
+			"dense"
+		],
+		[
+			"preset",
+			"时长预设",
+			[
+				"single",
+				"standard",
+				"long"
+			],
+			"standard"
+		],
+		[
+			"aspect",
+			"比例",
+			[
+				"2:3",
+				"9:16",
+				"1:2"
+			],
+			"2:3"
+		],
+		[
+			"quality",
+			"清晰度",
+			["normal", "hd"],
+			"normal"
+		],
+		[
+			"fit",
+			"封面适配",
+			["cover", "contain"],
+			"cover"
+		],
+		[
+			"limit_mode",
+			"数量模式",
+			["top", "all"],
+			"top"
+		],
+		[
+			"all_apps",
+			"应用筛选",
+			["true", "false"],
+			"true"
+		]
+	]) D[e] = r(ee, e, t, n, i);
+	D.all_apps.options[0].textContent = "全部应用", D.all_apps.options[1].textContent = "仅游戏";
+	let O = r(ee, "limit", "数量（至少20，可手填超过1000）", null, "500");
+	O.inputMode = "decimal";
+	let k = b("div");
+	k.className = "steam-dlc-actions";
+	let te = (e, t, r) => {
+		let i = b("button", t);
+		return i.type = "button", i.className = "ui-button", i.dataset.action = e, x(i, "click", () => {
+			if (!n() || u) return;
+			let e = (e) => {
+				!u && n() && o(y(e), "error");
+			};
+			try {
+				Promise.resolve(r()).catch(e);
+			} catch (t) {
+				e(t);
+			}
+		}), k.append(i), i;
+	};
+	for (let e of [
+		20,
+		50,
+		100,
+		200,
+		500,
+		1e3,
+		"all"
+	]) te(`limit-${e}`, e === "all" ? "不限" : String(e), () => {
+		D.limit_mode.value = e === "all" ? "all" : "top", O.disabled = e === "all", e !== "all" && (O.value = String(e));
+	});
+	x(D.limit_mode, "change", () => {
+		O.disabled = D.limit_mode.value === "all";
+	});
+	let A = b("button", "提交拼图任务");
+	A.type = "submit", A.className = "ui-button", A.dataset.action = "generate", A.dataset.variant = "primary", k.append(A);
+	let j = r(ee, "job_id", "任务ID（刷新后自动恢复）"), M = b("p", "尚未提交任务。");
+	M.setAttribute("role", "status");
+	let N = b("section");
+	N.className = "steam-dlc-public-result";
+	let ne = `ygl:job:${t.context.owner}:${t.routeId}`, P = (e) => {
+		if (!e || typeof e.job_id != "string" || !Number.isSafeInteger(e.revision) || ![
+			"queued",
+			"running",
+			"succeeded",
+			"failed",
+			"cancelled",
+			"interrupted"
+		].includes(e.status)) throw v("任务状态无法验证。");
+		m = e, j.value = m.job_id;
+		try {
+			s.defaultView.sessionStorage.setItem(ne, m.job_id);
+		} catch {}
+		let t = m.progress || {}, n = m.summary || {}, r = {
+			steam_key_required: "完整库需要在可信管理页配置Steam Key，可改选公开样本。",
+			steam_source_unavailable: "Steam来源暂不可用，未用其他来源替代。",
+			steam_source_not_public: "Steam库未公开或当前来源授权受限，未视为空库。",
+			rate_limited: "来源限流，已停止后续批次；已完成页保留。",
+			resource_budget: "资源预算不足，已停止后续批次；已完成页保留。"
+		};
+		M.textContent = `任务 ${m.job_id} · ${m.status} · 来源${n.source_returned ?? t.source_returned ?? "待确认"} · 符合${n.eligible ?? "待确认"} · 已选${n.selected ?? t.selected ?? "待确认"} · 已生成${n.generated ?? t.generated ?? 0} · 待处理${n.pending ?? t.pending ?? "待确认"} · 缺图${n.missing_images ?? t.missing_images ?? 0}${m.error_code ? ` · 失败原因 ${m.error_code}` : ""}${r[t.reason] ? ` · ${r[t.reason]}` : ""}${n.complete_source === !1 ? " · 来源覆盖不完整" : ""}`, L.disabled = !["queued", "running"].includes(m.status), re.disabled = ![
+			"failed",
+			"cancelled",
+			"interrupted"
+		].includes(m.status);
+	}, F = async (e) => {
+		if (!m || !n()) return;
+		let t = f, r = ++p, i = m.job_id, o = await w().result(i, {
+			cursor: e,
+			page_size: 20
+		});
+		if (_(t) && r === p && m?.job_id === i) {
+			if (!Array.isArray(o.entries) || o.entries.length > 20) throw v("任务结果范围无法验证。");
+			C(), N.replaceChildren(), h = o.next_cursor || null;
+			for (let [e, n] of o.entries.entries()) {
+				if (n?.resource?.media_type !== "image/png" || typeof n.resource.asset_id != "string") throw v("任务资源无法验证。");
+				let o = await w().resource(i, n.resource.asset_id);
+				if (!_(t) || r !== p || m?.job_id !== i) return;
+				if (o?.type !== "image/png" || typeof o.arrayBuffer != "function" || o.size > 16777216) throw v("图片资源无法验证。");
+				if (a(new Uint8Array(await o.arrayBuffer())), !_(t) || r !== p || m?.job_id !== i) return;
+				let l = s.defaultView.URL.createObjectURL(o);
+				c.push(l);
+				let u = b("figure"), d = b("img"), f = b("a", "下载原始 PNG");
+				u.className = "steam-dlc-preview", d.src = l, d.alt = `批次${Number(n.metadata?.batch_index ?? 0) + 1} · 图片${e + 1}`, f.href = l, f.className = "ui-button", f.download = `steam-career-${n.metadata?.batch_index ?? 0}-${e + 1}.png`, u.append(d, f), N.append(u);
+			}
+			o.entries.length || N.append(b("p", "当前没有已完成结果页。")), ie.disabled = !h;
+		}
+	}, I = async () => {
+		if (S(), !m || !n() || u) return;
+		let e = f, t = m.job_id;
+		try {
+			let n = await w().status(t);
+			if (!_(e) || m?.job_id !== t) return;
+			P(n), ["queued", "running"].includes(m.status) ? d = setTimeout(() => {
+				I();
+			}, 1500) : await F(null);
+		} catch (t) {
+			_(e) && o(y(t), "error");
+		}
+	}, L = te("job-cancel", "取消任务", async () => {
+		if (!m) return;
+		S();
+		let e = ++f, t = await w().cancel(m.job_id, m.revision);
+		_(e) && (P(t), await I());
+	}), re = te("job-retry", "重试任务", async () => {
+		if (!m) return;
+		S();
+		let e = ++f, t = await w().retry(m.job_id, m.revision);
+		_(e) && (P(t), await I());
+	}), ie = te("job-next", "下一页结果", async () => {
+		h && await F(h);
+	});
+	ie.disabled = !0, te("job-results", "查看已完成页", async () => {
+		await F(null);
+	}), te("job-refresh", "恢复 / 刷新任务", async () => {
+		j.value.trim() && (S(), f += 1, m = { job_id: j.value.trim() }, await I());
+	}), L.disabled = !0, re.disabled = !0, x(T, "submit", (e) => {
+		e.preventDefault(), !(!n() || u || g) && (async () => {
+			let e = ++f;
+			S();
+			try {
+				let t = Object.fromEntries(Object.entries(D).map(([e, t]) => [e, e === "all_apps" ? t.value === "true" : t.value]));
+				if (t.account = E.value.trim(), !t.account) throw v("请提供明确账号。");
+				if (/^[0-9]+$/u.test(t.account)) {
+					let e = BigInt(t.account);
+					t.account = String(e < 4294967296n ? e + 76561197960265728n : e);
+				}
+				try {
+					t.limit = t.limit_mode === "all" ? 500 : i(O.value);
+				} catch (e) {
+					throw v(e.message);
+				}
+				if (t.mode === "legacy" && (t.limit > 200 || t.limit_mode === "all")) throw v("兼容旧布局最多200项。");
+				g = !0, A.disabled = !0;
+				let n = JSON.stringify([
+					t.account,
+					...Object.keys(D).sort().map((e) => t[e]),
+					t.limit
+				]);
+				if (n.length > 256) throw v("账号或参数过长，无法生成任务标识。");
+				let r = await w().submit({
+					handler_id: "steam_wall",
+					parameters: t,
+					idempotency_key: n
+				});
+				if (!_(e)) return;
+				P(r), o("任务已提交，关闭页面只停止轮询。", "success"), await I();
+			} catch (t) {
+				_(e) && o(y(t), "error");
+			} finally {
+				g = !1, _(e) && (A.disabled = !1);
+			}
+		})();
+	}), T.append(k), e.append(b("p", "不限覆盖来源实际返回范围。每批有资源预算，已完成页保留；关闭页面只停止轮询，取消需明确点击。"), T, M, N), t.presentation?.actions(k);
+	try {
+		let e = s.defaultView.sessionStorage.getItem(ne);
+		e && (j.value = e, m = { job_id: e }, I());
+	} catch {}
+	return { dispose() {
+		u || (u = !0, f += 1, S(), C(), N.replaceChildren(), M.textContent = "任务页面上下文已变化，请重新进入。", l.splice(0).forEach((e) => e()));
+	} };
+}
+//#endregion
+//#region packages/steam_dlc/pages/src/wishlist-controller.js
+function p(e, { options: t, active: n, field: r, say: i }) {
+	let a = e.ownerDocument, o = [], s = 0, c = !1, l = !1, u = 1, d = 1, f = (e) => Object.assign(Error(e), { publicMessage: e }), p = (e, t) => {
+		let n = a.createElement(e);
+		return t !== void 0 && (n.textContent = t), n;
+	}, m = (e, t, n) => {
+		e.addEventListener(t, n), o.push(() => e.removeEventListener(t, n));
+	}, h = p("form"), g = t.presentation?.grid(h) || h, _ = r(g, "account", "SteamID64 / Dota ID32（明确账号）"), v = r(g, "country", "地区", null, "CN"), y = r(g, "language", "Steam语言", null, "schinese"), b = p("div");
+	b.className = "steam-dlc-actions";
+	let x = p("button", "读取愿望单");
+	x.type = "submit", x.className = "ui-button", x.dataset.action = "wishlist-query";
+	let S = p("button", "上一页"), C = p("button", "下一页");
+	for (let [e, t] of [[S, "wishlist-previous"], [C, "wishlist-next"]]) e.type = "button", e.className = "ui-button", e.dataset.action = t, e.disabled = !0;
+	b.append(x, S, C), h.append(b);
+	let w = p("section");
+	w.className = "steam-dlc-public-result", w.setAttribute("aria-live", "polite");
+	let T = async (e) => {
+		if (!n() || c || l) return;
+		let r = {
+			account: _.value.trim(),
+			country: v.value.trim().toUpperCase(),
+			language: y.value.trim(),
+			page: e
+		};
+		if (!r.account) {
+			i("请提供明确账号。", "error");
+			return;
+		}
+		let a = ++s;
+		l = !0, x.disabled = !0;
+		try {
+			let i = await t.services.invoke("wishlist_explicit", r);
+			if (c || !n() || a !== s) return;
+			if (i?.status === "error") throw f({
+				not_public: "愿望单未公开或来源受限，未视为空单。",
+				rate_limited: "愿望单来源限流，请稍后重试。",
+				upstream_error: "愿望单来源请求失败，未视为空单。",
+				unparsed: "愿望单来源结构无法验证，未视为空单。",
+				parameter_error: "请检查账号、地区、语言或页码。",
+				module_unavailable: "愿望单服务或本次授权暂不可用。"
+			}[i.error?.code] || "愿望单来源暂不可用，未视为空单。");
+			let o = i?.document?.blocks?.find((e) => e?.kind === "fields" && e.fields?.wishlist)?.fields.wishlist;
+			if (!o || !Array.isArray(o.items) || o.items.length > 20 || !Number.isSafeInteger(o.pages) || o.page !== e) throw Error("愿望单结果无法验证。");
+			u = o.page, d = o.pages, w.replaceChildren(p("p", `共${o.total}项 · 第${u}/${d}页 · 地区${o.region} · 愿望单来源时间${o.fetched_at} · 商店补全时间${o.store_fetched_at || "未取得"}`));
+			for (let e of o.items) {
+				let t = p("article"), n = p("a", `${e.name || "名称未提供"} · AppID ${e.app_id}`);
+				if (!/^[1-9][0-9]*$/u.test(e.app_id)) throw Error("愿望单AppID无法验证。");
+				n.href = `https://store.steampowered.com/app/${e.app_id}/`, n.target = "_blank", n.rel = "noopener noreferrer", t.append(n, p("p", `添加：${(/* @__PURE__ */ new Date(e.date_added * 1e3)).toISOString()} · ${e.price || {
+					free: "免费",
+					unreleased: "未发售",
+					no_local_price: "本地区未提供价格",
+					region_locked: "来源明确标记地区受限",
+					region_or_store_unavailable: "商店或地区不可用",
+					fetch_failed: "商店补全失败"
+				}[e.price_state] || "价格未知"} · 币种${e.currency || "未提供"} · 折扣${e.discount_percent ?? "未知"}% · ${{
+					unreleased: "未发售",
+					released: "已发售",
+					unknown: "发售状态未知"
+				}[e.release_state] || "发售状态未知"}`)), w.append(t);
+			}
+			o.state === "empty" && w.append(p("p", "来源明确返回空items，本次公开愿望单为空。")), o.enrichment_failed && w.append(p("p", "愿望单已读取；当前页商店补全失败，未将缺失价格视为免费。")), S.disabled = u <= 1, C.disabled = u >= d;
+		} catch (e) {
+			!c && n() && a === s && (w.replaceChildren(p("p", e.publicMessage || "愿望单请求未完成，请稍后重试。")), i("愿望单查询未完成。", "error"));
+		} finally {
+			l = !1, !c && n() && a === s && (x.disabled = !1);
+		}
+	};
+	return m(h, "submit", (e) => {
+		e.preventDefault(), T(1);
+	}), m(S, "click", () => {
+		u > 1 && T(u - 1);
+	}), m(C, "click", () => {
+		u < d && T(u + 1);
+	}), e.append(p("p", "匿名读取第一方公开愿望单，每页20项，仅补全当前页商店资料。私有、空单、限流与请求失败分别报告。"), h, w), t.presentation?.actions(b), { dispose() {
+		c || (c = !0, s += 1, w.replaceChildren(), o.splice(0).forEach((e) => e()));
+	} };
+}
+//#endregion
+//#region packages/steam_dlc/pages/src/analysis-controller.js
+function m(e, { options: t, active: n, field: r, renderResult: i, say: a }) {
+	let o = e.ownerDocument, s = [], c = !1, l = 0, u = !1, d = (e, t) => {
+		let n = o.createElement(e);
+		return t !== void 0 && (n.textContent = t), n;
+	}, f = d("form"), p = t.presentation?.grid(f) || f, m = r(p, "match_id", "比赛ID");
+	m.maxLength = 20, m.inputMode = "numeric";
+	let h = r(p, "account", "焦点玩家（Dota ID32 / SteamID64 / 本场唯一昵称）"), g = r(p, "refresh", "来源缓存", ["false", "true"], "false");
+	g.options[0].textContent = "优先有效缓存", g.options[1].textContent = "刷新公开来源";
+	let _ = d("button", "查看指定玩家分析");
+	_.type = "submit", _.className = "ui-button", _.dataset.variant = "primary", _.dataset.action = "analysis-query";
+	let v = d("div");
+	v.className = "steam-dlc-actions", v.append(_), f.append(v);
+	let y = d("section");
+	y.className = "steam-dlc-public-result", y.setAttribute("aria-live", "polite");
+	let b = async (e) => {
+		if (e.preventDefault(), !n() || c || u) return;
+		let r = {
+			match_id: m.value.trim(),
+			account: h.value.trim(),
+			refresh: g.value === "true"
+		};
+		if (!/^[1-9][0-9]{0,19}$/u.test(r.match_id) || !r.account) {
+			a("请提供有效比赛ID和明确焦点玩家。", "error");
+			return;
+		}
+		let o = ++l;
+		u = !0, _.disabled = !0, y.replaceChildren(d("p", "正在读取公开结算与可用时间线。"));
+		try {
+			let e = await t.services.invoke("analyze_explicit", r);
+			if (c || !n() || o !== l) return;
+			i(e, y);
+			let a = e.model_facts;
+			if (!a || typeof a != "object") return;
+			y.prepend(d("p", `数据覆盖：${{
+				settlement_only: "仅基础结算",
+				partial: "部分分析段可用",
+				supported_sections_complete: "支持的分析段已提供"
+			}[a.data_completeness] || "待确认"}。本页展示确定性分析与公开事实；不会调用Host模型。`));
+			let s = (e) => typeof e == "number" && Number.isFinite(e) ? String(e) : "未知", u = a.focus || {}, f = typeof u.account_id32 == "string" && /^[0-9]+$/u.test(u.account_id32) ? u.account_id32 : s(u.account_id32);
+			y.append(d("p", `焦点：${typeof u.name == "string" ? u.name : "名称未提供"} · ID32 ${f} · 英雄${s(u.hero_id)} · K/D/A ${s(u.kills)}/${s(u.deaths)}/${s(u.assists)}`));
+			for (let [e, t] of [
+				["missing_sections", "缺失分析段"],
+				["missing_fields", "缺失字段"],
+				["truncated_sections", "来源截断段"]
+			]) {
+				let n = a[e];
+				Array.isArray(n) && y.append(d("p", `${t}：${n.filter((e) => typeof e == "string").slice(0, 32).join("、") || "未列出"}。`));
+			}
+			y.append(d("p", `来源：${typeof a.source == "string" ? a.source : "未提供"} · 获取时间：${typeof a.fetched_at == "string" ? a.fetched_at : "未提供"}。缺失段保持未知，不补成0或完整时间线。`));
+		} catch {
+			!c && n() && o === l && (y.replaceChildren(d("p", "分析请求未完成，请核对比赛与焦点后重试。")), a("未取得可确认的分析结果。", "error"));
+		} finally {
+			u = !1, !c && n() && o === l && (_.disabled = !1);
+		}
+	};
+	return f.addEventListener("submit", b), s.push(() => f.removeEventListener("submit", b)), e.append(d("p", "按明确比赛与玩家读取OpenDota公开事实。未收录的时间线、装备、团战或目标保持未知，不提交录像解析。"), f, y), t.presentation?.actions(v), { dispose() {
+		c || (c = !0, l += 1, y.replaceChildren(), s.splice(0).forEach((e) => e()));
+	} };
+}
+//#endregion
 //#region packages/steam_dlc/pages/src/controller.js
-var l = Object.freeze({
+var h = Object.freeze({
 	steam: {
 		title: "Steam",
 		summary: "商店搜索、游戏详情与公开账号资料。共享关联由用户声明，不代表账号所有权验证。",
@@ -16,7 +396,9 @@ var l = Object.freeze({
 			["/ygl steam recent [账号]", "查看主页最近展示的公开样本，不代表完整两周游戏列表。"],
 			["/ygl steam games [账号]", "查看来源可用的公开样本；完整游戏库增强需要可选 Steam Key。"],
 			["/ygl steam wall [账号] [--source games|recent|full] [--all-apps] [--limit N] [--refresh]", "生成游戏生涯拼图。来源、时间预设、比例与数量受已保存设置及输出预算约束；完整库需要可选 Key。"],
-			["/ygl steam status", "查看使用说明。"]
+			["/ygl steam wall status|result|cancel|retry <任务ID>", "查看本人任务状态、逐图结果、取消或重试。result支持 --page N --image N，每次只返回选中一张，不自动刷屏。"],
+			["/ygl steam status", "查看使用说明。"],
+			["/ygl steam wishlist [账号] [--page N] [--country CN]", "匿名查看公开愿望单，每页20项；模型与页面必须提供明确账号。"]
 		]
 	},
 	dota2: {
@@ -30,6 +412,7 @@ var l = Object.freeze({
 			["/ygl dota2 last [账号]", "查询该玩家上一场基础结算；省略账号时使用当前用户关联。"],
 			["/ygl dota2 match <match_id> [--account <账号>]", "指定账号查看个人焦点，无账号保持全场概览；不读取默认关联，不提交解析。"],
 			["/ygl dota2 status", "查看功能说明。"],
+			["/ygl dota2 analyze <比赛ID> --account <玩家账号或本场唯一昵称>", "查看指定玩家的对线、装备、团战和证据边界；网页与Tool仅提供确定性事实，Host模型仅在真实命令路径可选生成。"],
 			["/ygl dota2 watch [账号]", "在当前群或私聊创建自己的比赛订阅；省略账号使用当前 Steam 绑定。"],
 			["/ygl dota2 watchlist", "在当前会话查看自己的订阅；首次建立基线，不补发旧比赛。"],
 			["/ygl dota2 unwatch <订阅ID>", "取消当前会话中自己的订阅。"]
@@ -61,17 +444,17 @@ var l = Object.freeze({
 			["/ygl deadlock status", "查看功能与来源范围。"]
 		]
 	}
-}), u = (e, t) => JSON.stringify(e) === JSON.stringify(t), d = (e) => JSON.stringify([
+}), g = (e, t) => JSON.stringify(e) === JSON.stringify(t), _ = (e) => JSON.stringify([
 	e.owner,
 	e.runtimeId,
 	e.epoch,
 	e.boundary
-]), f = (e) => typeof e?.message == "string" ? e.message : "", p = /* @__PURE__ */ new Set([
+]), v = (e) => typeof e?.message == "string" ? e.message : "", y = /* @__PURE__ */ new Set([
 	"admin_authorization_denied",
 	"page_revoked",
 	"page_unavailable",
 	"stale_context"
-]), m = Object.freeze({
+]), b = Object.freeze({
 	steam: [
 		"reply_theme",
 		"poster_source",
@@ -81,6 +464,7 @@ var l = Object.freeze({
 		"poster_quality",
 		"poster_fit",
 		"poster_include_apps",
+		"poster_limit_mode",
 		"poster_limit"
 	],
 	dota2: [
@@ -93,7 +477,7 @@ var l = Object.freeze({
 	],
 	cs2: ["reply_theme", "default_platform"],
 	deadlock: ["reply_theme"]
-}), h = {
+}), x = {
 	timezone: "输出时区",
 	reply_theme: "回复主题",
 	poster_source: "游戏库来源",
@@ -109,7 +493,7 @@ var l = Object.freeze({
 	opendota_rph: "每小时请求上限",
 	commentary_enabled: "启用模型短评",
 	default_platform: "默认 CS2 来源"
-}, g = {
+}, S = {
 	games: "公开主页样本",
 	recent: "近期公开样本",
 	full: "完整游戏库（需要 Key）",
@@ -125,31 +509,45 @@ var l = Object.freeze({
 	perfect: "完美平台",
 	official: "完美收录官匹",
 	"5e": "5E"
-}, ee = {
+}, C = {
 	steam: [["credential_steam_key", "Steam Web API Key"]],
 	dota2: [["credential_opendota_key", "OpenDota Key（可选）"]],
 	cs2: [["credential_perfect", "完美扫码授权"], ["credential_fivee", "5E 会话 Token"]]
-}, _ = Uint32Array.from({ length: 256 }, (e, t) => {
+};
+x.poster_limit_mode = "作品数量模式", S.top = "按时长取前 N 项", S.all = "不限（来源实际返回范围）";
+function w(e) {
+	if (typeof e != "string" || e.length > 128) throw Error("数量必须是完整有限数值。");
+	let t = e.trim(), n = /^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:[eE]([+-]?\d+))?$/u.exec(t);
+	if (!n) throw Error("数量必须是完整有限数值，不能包含其他文字。");
+	let r = n[3] ?? n[4] ?? "", i = (n[2] || "0") + r, a = Number(n[5] || 0) - r.length;
+	if (!Number.isSafeInteger(a) || a > 128) throw Error("数量超过安全数值范围，请选择不限。");
+	let o = BigInt(i);
+	if (o = a < -256 ? 0n : a >= 0 ? o * 10n ** BigInt(a) : o / 10n ** BigInt(-a), n[1] === "-" && (o = -o), o > BigInt(2 ** 53 - 1)) throw Error("数量超过安全数值范围，请选择不限。");
+	if (o < 20n) throw Error("数量向零截断后至少为20。");
+	return Number(o);
+}
+var T = Uint32Array.from({ length: 256 }, (e, t) => {
 	let n = t;
 	for (let e = 0; e < 8; e++) n = n & 1 ? 3988292384 ^ n >>> 1 : n >>> 1;
 	return n >>> 0;
 });
-function te(e, t) {
-	if (typeof e != "string" || !e.length || e.length > 24e6 || e.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(e)) throw Error("invalid_images");
-	let n = t.atob(e);
-	if (!n.startsWith("PNG\r\n\n")) throw Error("invalid_images");
-	let r = Uint8Array.from(n, (e) => e.charCodeAt(0)), i = (e) => (r[e] << 24 | r[e + 1] << 16 | r[e + 2] << 8 | r[e + 3]) >>> 0, a = 8, o = !1, s = !1, c = !1, l = !1, u = 0, d = !1;
-	for (; a + 12 <= r.length;) {
-		let e = i(a), t = a + e + 12;
-		if (t > r.length) throw Error("invalid_images");
-		let f = n.slice(a + 4, a + 8);
-		if (!/^[A-Za-z]{4}$/u.test(f) || !o && f !== "IHDR") throw Error("invalid_images");
+function ee(e, t) {
+	let n = e instanceof Uint8Array;
+	if (!n && (typeof e != "string" || !e.length || e.length > 24e6 || e.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(e))) throw Error("图片内容无法验证。");
+	let r = n ? Array.from({ length: Math.ceil(e.length / 32768) }, (t, n) => String.fromCharCode(...e.subarray(n * 32768, (n + 1) * 32768))).join("") : t.atob(e);
+	if (!r.startsWith("PNG\r\n\n")) throw Error("invalid_images");
+	let i = n ? e : Uint8Array.from(r, (e) => e.charCodeAt(0)), a = (e) => (i[e] << 24 | i[e + 1] << 16 | i[e + 2] << 8 | i[e + 3]) >>> 0, o = 8, s = !1, c = !1, l = !1, u = !1, d = 0, f = !1;
+	for (; o + 12 <= i.length;) {
+		let e = a(o), t = o + e + 12;
+		if (t > i.length) throw Error("invalid_images");
+		let n = r.slice(o + 4, o + 8);
+		if (!/^[A-Za-z]{4}$/u.test(n) || !s && n !== "IHDR") throw Error("invalid_images");
 		let p = 4294967295;
-		for (let e = a + 4; e < t - 4; e++) p = _[(p ^ r[e]) & 255] ^ p >>> 8;
-		if ((p ^ 4294967295) >>> 0 !== i(t - 4)) throw Error("invalid_images");
-		if (f === "IHDR") {
-			let t = r[a + 16], n = r[a + 17];
-			if (o || e !== 13 || !i(a + 8) || !i(a + 12) || !{
+		for (let e = o + 4; e < t - 4; e++) p = T[(p ^ i[e]) & 255] ^ p >>> 8;
+		if ((p ^ 4294967295) >>> 0 !== a(t - 4)) throw Error("invalid_images");
+		if (n === "IHDR") {
+			let t = i[o + 16], n = i[o + 17];
+			if (s || e !== 13 || !a(o + 8) || !a(o + 12) || !{
 				0: [
 					1,
 					2,
@@ -166,205 +564,267 @@ function te(e, t) {
 				],
 				4: [8, 16],
 				6: [8, 16]
-			}[n]?.includes(t) || r[a + 18] !== 0 || r[a + 19] !== 0 || r[a + 20] > 1) throw Error("invalid_images");
-			o = !0, d = n === 3;
-		} else if (f === "PLTE") {
-			if (s || c || !e || e > 768 || e % 3) throw Error("invalid_images");
-			s = !0;
-		} else if (f === "IDAT") {
-			if (l || d && !s) throw Error("invalid_images");
-			c = !0, u += e;
-		} else if (f === "IEND") {
-			if (e || !u || t !== r.length) throw Error("invalid_images");
-			return r;
+			}[n]?.includes(t) || i[o + 18] !== 0 || i[o + 19] !== 0 || i[o + 20] > 1) throw Error("invalid_images");
+			s = !0, f = n === 3;
+		} else if (n === "PLTE") {
+			if (c || l || !e || e > 768 || e % 3) throw Error("invalid_images");
+			c = !0;
+		} else if (n === "IDAT") {
+			if (u || f && !c) throw Error("invalid_images");
+			l = !0, d += e;
+		} else if (n === "IEND") {
+			if (e || !d || t !== i.length) throw Error("invalid_images");
+			return i;
 		} else {
-			if (f[0] === f[0].toUpperCase()) throw Error("invalid_images");
-			c && (l = !0);
+			if (n[0] === n[0].toUpperCase()) throw Error("invalid_images");
+			l && (u = !0);
 		}
-		a = t;
+		o = t;
 	}
 	throw Error("invalid_images");
 }
-var v = /* @__PURE__ */ new Map(), y = 4, b = 4096, ne = 256;
-function re(e, t, n) {
-	for (let [n, r] of v) r.owner === e.owner && n !== t && v.delete(n);
-	if (!n || t.length > b) return null;
-	let r = v.get(t) || {
+var E = /* @__PURE__ */ new Map(), D = 4, O = 4096, k = 256;
+function te(e, t, n) {
+	for (let [n, r] of E) r.owner === e.owner && n !== t && E.delete(n);
+	if (!n || t.length > O) return null;
+	let r = E.get(t) || {
 		owner: e.owner,
 		drafts: /* @__PURE__ */ new Map(),
 		token: null
 	};
-	for (r.token = Symbol("ordinary-draft-mount"), v.delete(t), v.set(t, r); v.size > y;) v.delete(v.keys().next().value);
+	for (r.token = Symbol("ordinary-draft-mount"), E.delete(t), E.set(t, r); E.size > D;) E.delete(E.keys().next().value);
 	return r;
 }
-function x(e, t) {
-	let n = e.ownerDocument, r = d(t.context), i = t.context.owner.startsWith("steam_dlc/") ? t.context.owner.slice(10) : "", a = l[i], o = a ? re(t.context, r, t.routeId === "settings") : null, s = o?.token, c = { ...t.context }, _ = !1, y = !1, b = 0, x = !1, S = !1, C = null, w = !1, T = !1, E = null, D = 0, ie, O = null, k = null, A = !1, j = 0, ae = [], oe = [], M = /* @__PURE__ */ new Map(), se = () => {}, ce = 0, le = "", ue = 0, N = null, de = () => {}, P = new Map(o?.drafts), F = /* @__PURE__ */ new Map(), fe = [], I = (e, t, r) => {
+function A(e, t) {
+	let n = e.ownerDocument, r = _(t.context), i = t.context.owner.startsWith("steam_dlc/") ? t.context.owner.slice(10) : "", a = h[i], o = a ? te(t.context, r, t.routeId === "settings") : null, s = o?.token, c = { ...t.context }, l = !1, u = !1, d = 0, T = !1, D = !1, O = null, A = !1, j = !1, M = null, N = 0, ne, P = null, F = null, I = !1, L = 0, re = () => {}, ie = [], ae = [], R = /* @__PURE__ */ new Map(), oe = () => {}, se = 0, ce = "", le = 0, z = null, ue = () => {}, B = new Map(o?.drafts), V = /* @__PURE__ */ new Map(), de = [], H = (e, t, r) => {
 		let i = n.createElement(e);
 		return t !== void 0 && (i.textContent = t), r && (i.className = r), i;
-	}, L = (e, t, n) => {
-		e.addEventListener(t, n), fe.push(() => e.removeEventListener(t, n));
-	}, R = I("section", void 0, "steam-dlc-page"), pe = I("p", "", "steam-dlc-hint");
-	pe.setAttribute("role", "status");
-	let z = I("p", "", "steam-dlc-message");
-	z.setAttribute("role", "status"), z.setAttribute("aria-live", "polite"), R.append(pe), e.replaceChildren(R);
-	let B = () => !_ && !y && !t.scope.signal.aborted && t.scope.isCurrent() && d(c) === r && (!o || v.get(r) === o && o.token === s), V = () => B() && c.available, me = () => Object.freeze({
-		ordinary: P.size > 0,
-		credentials: B() && ([...M.values()].some((e) => !!e.input?.value) || O?.state === "waiting"),
-		pending: x || w,
-		version: ce
+	}, U = (e, t, n) => {
+		e.addEventListener(t, n), de.push(() => e.removeEventListener(t, n));
+	}, W = H("section", void 0, "steam-dlc-page"), fe = H("p", "", "steam-dlc-hint");
+	fe.setAttribute("role", "status");
+	let pe = H("p", "", "steam-dlc-message");
+	pe.setAttribute("role", "status"), pe.setAttribute("aria-live", "polite"), W.append(fe), e.replaceChildren(W);
+	let G = () => !l && !u && !t.scope.signal.aborted && t.scope.isCurrent() && _(c) === r && (!o || E.get(r) === o && o.token === s), K = () => G() && c.available, me = () => Object.freeze({
+		ordinary: B.size > 0,
+		credentials: G() && ([...R.values()].some((e) => !!e.input?.value) || P?.state === "waiting"),
+		pending: T || A,
+		version: se
 	}), he = () => {
 		let e = JSON.stringify([
-			P.size > 0,
-			x,
-			ue,
+			B.size > 0,
+			T,
+			le,
 			me().credentials,
-			w
+			A
 		]);
-		e !== le && (le = e, ce += 1, t.onNavigationStateChange?.());
-	}, H = (e, t = "warning") => {
-		N !== null && (clearTimeout(N), N = null), z.textContent = e, z.dataset.tone = t, e && t === "success" && (N = setTimeout(() => {
-			N = null, B() && (z.textContent = "");
+		e !== ce && (ce = e, se += 1, t.onNavigationStateChange?.());
+	}, q = (e, t = "warning") => {
+		z !== null && (clearTimeout(z), z = null), pe.textContent = e, pe.dataset.tone = t, e && t === "success" && (z = setTimeout(() => {
+			z = null, G() && (pe.textContent = "");
 		}, 3500));
 	}, ge = () => {
-		R.dataset.theme = c.theme, pe.textContent = B() ? c.available ? "当前页面入口可用。运行健康请在模块管理中查看；此处不检测上游服务。" : "当前页面入口不可用，请在模块管理中刷新状态后重新进入。" : "页面上下文已失效，请重新进入本模块。";
-	}, U, W, G, K, _e = () => {
-		o && B() && (o.drafts = new Map([...P].filter(([e, t]) => {
-			let n = m[i]?.includes(e), r = t.rawValue ?? t.value;
+		W.dataset.theme = c.theme, fe.textContent = G() ? c.available ? "当前页面入口可用。运行健康请在模块管理中查看；此处不检测上游服务。" : "当前页面入口不可用，请在模块管理中刷新状态后重新进入。" : "页面上下文已失效，请重新进入本模块。";
+	}, J, Y, _e, ve, ye = () => {
+		o && G() && (o.drafts = new Map([...B].filter(([e, t]) => {
+			let n = b[i]?.includes(e), r = t.rawValue ?? t.value;
 			return n && (t.kind === "clear" || t.kind === "set" && [
 				"string",
 				"boolean",
 				"number"
-			].includes(typeof r) && !(typeof r == "number" && !Number.isFinite(r)) && !(typeof r == "string" && r.length > ne));
+			].includes(typeof r) && !(typeof r == "number" && !Number.isFinite(r)) && !(typeof r == "string" && r.length > k));
 		})));
-	}, ve = () => {
-		(o ? v.get(r) === o && o.token === s : t.routeId === "home") && v.delete(r), y = !0, b += 1, x = !1, S = !1, P.size && (ue += 1), P.clear(), C = null;
-		for (let { control: e } of F.values()) e.value = "";
-		D += 1, Z(), X(), E = null, O = null, w = !1, T = !1;
-	}, q = () => {
-		if (_e(), ge(), R.setAttribute("aria-busy", String(x || w)), W) {
-			W.setAttribute("aria-disabled", String(!V() || x || w || O?.state === "waiting" || !S || !P.size)), G.setAttribute("aria-disabled", String(!V() || x || w)), K.setAttribute("aria-disabled", String(!V() || x || w || !P.size));
-			for (let { control: e, reset: t } of F.values()) e.disabled = !V() || !C, t.setAttribute("aria-disabled", String(!V() || !C));
+	}, be = () => {
+		(o ? E.get(r) === o && o.token === s : t.routeId === "home") && E.delete(r), u = !0, d += 1, T = !1, D = !1, B.size && (le += 1), B.clear(), O = null;
+		for (let { control: e } of V.values()) e.value = "";
+		N += 1, Le(), Ie(), M = null, P = null, A = !1, j = !1;
+	}, X = () => {
+		if (ye(), ge(), W.setAttribute("aria-busy", String(T || A)), Y) {
+			Y.setAttribute("aria-disabled", String(!K() || T || A || P?.state === "waiting" || !D || !B.size)), _e.setAttribute("aria-disabled", String(!K() || T || A)), ve.setAttribute("aria-disabled", String(!K() || T || A || !B.size));
+			for (let { control: e, reset: t } of V.values()) e.disabled = !K() || !O, t.setAttribute("aria-disabled", String(!K() || !O));
 		}
-		J && J.setAttribute("aria-disabled", String(!V() || x)), se(), he();
-	}, ye = [], be = (e) => {
-		if (!e || !Number.isSafeInteger(e.revision) || e.revision < 1 || !e.fields || !e.descriptors || (ye = (m[i] || []).filter((t) => e.fields[t] && e.descriptors[t]), !ye.includes("reply_theme") || i === "dota2" && !ye.includes("timezone"))) throw Error("invalid_snapshot");
-		for (let t of ye) {
+		Q && Q.setAttribute("aria-disabled", String(!K() || T)), oe(), he();
+	}, xe = [], Se = (e) => {
+		if (!e || !Number.isSafeInteger(e.revision) || e.revision < 1 || !e.fields || !e.descriptors || (xe = (b[i] || []).filter((t) => e.fields[t] && e.descriptors[t]), !xe.includes("reply_theme") || i === "dota2" && !xe.includes("timezone"))) throw Error("invalid_snapshot");
+		for (let t of xe) {
 			let n = e.fields[t], r = e.descriptors[t];
-			if (!n || !r || typeof r.description != "string" || t === "reply_theme" && (!Array.isArray(r.choices) || !r.choices.length || !r.choices.some((e) => e.value === null) || r.choices.some((e) => typeof e.label != "string" || e.value !== null && typeof e.value != "string")) || t === "timezone" && r.value_schema?.type !== "string" || t === "poster_include_apps" && (r.value_schema?.type !== "boolean" || typeof r.default != "boolean" || typeof n.value != "boolean") || t === "poster_limit" && (r.value_schema?.type !== "integer" || r.value_schema.minimum !== 1 || ![200, 1e3].includes(r.value_schema.maximum) || !Number.isInteger(r.default) || !Number.isInteger(n.value))) throw Error("invalid_snapshot");
+			if (!n || !r || typeof r.description != "string" || t === "reply_theme" && (!Array.isArray(r.choices) || !r.choices.length || !r.choices.some((e) => e.value === null) || r.choices.some((e) => typeof e.label != "string" || e.value !== null && typeof e.value != "string")) || t === "timezone" && r.value_schema?.type !== "string" || t === "poster_include_apps" && (r.value_schema?.type !== "boolean" || typeof r.default != "boolean" || typeof n.value != "boolean") || t === "poster_limit" && (r.value_schema?.type !== "integer" || ![1, 20].includes(r.value_schema.minimum) || !Number.isInteger(r.default) || !Number.isInteger(n.value))) throw Error("invalid_snapshot");
 		}
 		return e;
-	}, xe = (e) => {
-		let t = P.get(e);
-		return t ? t.kind === "clear" ? C.descriptors[e].default : t.value : C.fields[e].value;
-	}, Se = (e) => e === "poster_include_apps" ? [{
+	}, Ce = (e) => {
+		let t = B.get(e);
+		return t ? t.kind === "clear" ? O.descriptors[e].default : t.value : O.fields[e].value;
+	}, we = (e) => e === "poster_include_apps" ? [{
 		value: !1,
 		label: "仅游戏"
 	}, {
 		value: !0,
 		label: "全部应用"
-	}] : C.descriptors[e].value_schema?.type === "boolean" ? [{
+	}] : O.descriptors[e].value_schema?.type === "boolean" ? [{
 		value: !1,
 		label: "关闭"
 	}, {
 		value: !0,
 		label: "开启"
-	}] : C.descriptors[e].choices || C.descriptors[e].value_schema?.enum?.map((e) => ({
+	}] : O.descriptors[e].choices || O.descriptors[e].value_schema?.enum?.map((e) => ({
 		value: e,
-		label: g[e] || String(e)
-	})), Ce = (e) => !!Se(e), we = (e, t) => {
-		if (!V() || !C) return;
-		let n = C.fields[e], r = !x && (t.kind === "clear" ? !n.present : n.state === "valid" && u(n.value, t.value)) ? void 0 : t;
-		if (u(P.get(e), r)) return;
-		r === void 0 ? P.delete(e) : P.set(e, r), ue += 1, F.get(e).error.textContent = "", F.get(e).control.setAttribute("aria-invalid", "false");
-		let i = P.size && (!o || [...P.values()].some((e) => e.kind === "set" && typeof (e.rawValue ?? e.value) == "string" && (e.rawValue ?? e.value).length > ne));
-		H(i ? "输入超过草稿保留上限，请先修正再切页。" : P.size ? "有未保存的修改。" : "", "warning"), q();
-	}, Te = () => {
-		for (let [e, { control: t, error: n, hint: r }] of F) {
-			r.textContent = C.descriptors[e].description;
-			let i = xe(e);
-			if (Ce(e)) {
-				let n = Se(e);
-				t.replaceChildren(...n.map((e, t) => {
-					let n = I("option", e.label);
-					return n.value = String(t), n;
-				})), t.value = String(n.findIndex((e) => u(e.value, i)));
-			} else t.value = P.get(e)?.rawValue === void 0 ? typeof i == "string" || typeof i == "number" ? String(i) : "" : P.get(e).rawValue;
-			n.textContent = C.fields[e].state !== "valid" && !P.has(e) ? "当前配置无效，请修改或恢复默认后保存。" : "", t.setAttribute("aria-invalid", String(!!n.textContent));
-		}
+		label: S[e] || String(e)
+	})), Te = (e) => !!we(e), Z = (e, t) => {
+		if (!K() || !O) return;
+		let n = O.fields[e], r = !T && (t.kind === "clear" ? !n.present : n.state === "valid" && g(n.value, t.value)) ? void 0 : t;
+		if (g(B.get(e), r)) return;
+		r === void 0 ? B.delete(e) : B.set(e, r), le += 1, V.get(e).error.textContent = "", V.get(e).control.setAttribute("aria-invalid", "false");
+		let i = B.size && (!o || [...B.values()].some((e) => e.kind === "set" && typeof (e.rawValue ?? e.value) == "string" && (e.rawValue ?? e.value).length > k));
+		q(i ? "输入超过草稿保留上限，请先修正再切页。" : B.size ? "有未保存的修改。" : "", "warning"), X();
 	}, Ee = () => {
-		for (let e of ye) {
-			let t = C.descriptors[e], n = I("div", void 0, "steam-dlc-field"), r = I("label", h[e] || e), a = I(Ce(e) ? "select" : "input");
-			a.className = "ui-control", a.id = `steam-dlc-${i}-${e}`, r.htmlFor = a.id, a.name = e;
-			let o = I("p", t.description, "steam-dlc-hint");
-			o.id = `${a.id}-hint`;
-			let s = I("p", "", "steam-dlc-field-error");
-			s.id = `${a.id}-error`, a.setAttribute("aria-describedby", `${o.id} ${s.id}`), e === "timezone" && (a.type = "text", a.autocomplete = "off", a.maxLength = Math.min(t.value_schema.maxLength ?? ne, ne)), t.value_schema?.type === "integer" && (a.type = "number", a.min = String(t.value_schema.minimum), a.max = String(t.value_schema.maximum), a.step = "1");
-			let c = I("button", "恢复默认");
-			c.className = "ui-button", c.type = "button", c.dataset.action = `reset-${e}`, L(c, "click", () => {
-				V() && C && (we(e, { kind: "clear" }), Te());
-			}), L(a, Ce(e) ? "change" : "input", () => {
-				if (V() && C) {
-					if (Ce(e)) {
-						let t = Se(e)[Number(a.value)];
-						if (!t) return;
-						we(e, t.value === null ? { kind: "clear" } : {
+		for (let [e, { control: t, error: n, hint: r }] of V) {
+			r.textContent = O.descriptors[e].description;
+			let i = Ce(e);
+			if (Te(e)) {
+				let n = we(e);
+				t.replaceChildren(...n.map((e, t) => {
+					let n = H("option", e.label);
+					return n.value = String(t), n;
+				})), t.value = String(n.findIndex((e) => g(e.value, i)));
+			} else t.value = B.get(e)?.rawValue === void 0 ? typeof i == "string" || typeof i == "number" ? String(i) : "" : B.get(e).rawValue;
+			n.textContent = O.fields[e].state !== "valid" && !B.has(e) ? "当前配置无效，请修改或恢复默认后保存。" : "", t.setAttribute("aria-invalid", String(!!n.textContent));
+		}
+	}, De = () => {
+		let e = t.presentation?.grid(J, J.querySelector(".steam-dlc-actions"));
+		for (let n of xe) {
+			let r = O.descriptors[n], a = H("div", void 0, "steam-dlc-field"), o = H("label", x[n] || n), s = H(Te(n) ? "select" : "input");
+			s.className = "ui-control", s.id = `steam-dlc-${i}-${n}`, o.htmlFor = s.id, s.name = n;
+			let c = H("p", r.description, "steam-dlc-hint");
+			c.id = `${s.id}-hint`;
+			let l = H("p", "", "steam-dlc-field-error");
+			l.id = `${s.id}-error`, s.setAttribute("aria-describedby", `${c.id} ${l.id}`), n === "timezone" && (s.type = "text", s.autocomplete = "off", s.maxLength = Math.min(r.value_schema.maxLength ?? k, k)), !Te(n) && r.value_schema?.type === "integer" && (s.type = "number", s.min = String(r.value_schema.minimum), r.value_schema.maximum !== void 0 && (s.max = String(r.value_schema.maximum)), s.step = "1", n === "poster_limit" && (s.type = "text", s.inputMode = "decimal", s.removeAttribute("min"), s.removeAttribute("max")));
+			let u = H("button", "恢复默认");
+			u.className = "ui-button", u.type = "button", u.dataset.action = `reset-${n}`, U(u, "click", () => {
+				K() && O && (Z(n, { kind: "clear" }), Ee());
+			});
+			let d = H("div", void 0, "steam-dlc-actions");
+			if (d.append(u), n === "poster_limit") for (let e of [
+				20,
+				50,
+				100,
+				200,
+				500,
+				1e3,
+				"all"
+			]) {
+				let t = H("button", e === "all" ? "不限" : String(e), "ui-button");
+				t.type = "button", U(t, "click", () => {
+					if (K() && O) {
+						if (V.has("poster_limit_mode") && Z("poster_limit_mode", {
 							kind: "set",
-							value: t.value
+							value: e === "all" ? "all" : "top"
+						}), e !== "all") Z(n, {
+							kind: "set",
+							value: e
 						});
-					} else if (t.value_schema?.type === "integer") {
-						let t = a.value;
-						we(e, e === "opendota_rph" && t === "" ? { kind: "clear" } : a.validity.valid && t !== "" ? {
+						else if (!V.has("poster_limit_mode")) {
+							q("当前配置尚未提供不限模式，请刷新模块版本。", "warning");
+							return;
+						}
+						Ee();
+					}
+				}), d.append(t);
+			}
+			U(s, Te(n) ? "change" : "input", () => {
+				if (K() && O) {
+					if (Te(n)) {
+						let e = we(n)[Number(s.value)];
+						if (!e) return;
+						Z(n, e.value === null ? { kind: "clear" } : {
 							kind: "set",
-							value: Number(t)
+							value: e.value
+						});
+					} else if (r.value_schema?.type === "integer") {
+						let e = s.value;
+						if (n === "poster_limit") {
+							try {
+								Z(n, {
+									kind: "set",
+									value: w(e)
+								});
+							} catch {
+								Z(n, {
+									kind: "set",
+									value: null,
+									rawValue: e
+								});
+							}
+							return;
+						}
+						Z(n, n === "opendota_rph" && e === "" ? { kind: "clear" } : s.validity.valid && e !== "" ? {
+							kind: "set",
+							value: Number(e)
 						} : {
 							kind: "set",
 							value: null,
-							rawValue: t
+							rawValue: e
 						});
-					} else we(e, {
+					} else Z(n, {
 						kind: "set",
-						value: a.value
+						value: s.value
 					});
 				}
-			}), F.set(e, {
-				control: a,
-				reset: c,
-				error: s,
-				hint: o
-			}), n.append(r, a, c, o, s), U.insertBefore(n, U.querySelector(".steam-dlc-actions"));
+			});
+			let f = e && t.presentation.field(e, {
+				control: s,
+				reset: d,
+				label: o,
+				hint: c,
+				error: l
+			});
+			V.set(n, {
+				control: s,
+				reset: u,
+				error: f?.error || l,
+				hint: f?.hint || c
+			}), f || (a.append(o, s, d, c, l), J.insertBefore(a, J.querySelector(".steam-dlc-actions")));
 		}
-	}, De = (e) => {
-		C = be(e);
-		for (let [e, t] of P) {
-			let n = C.fields[e];
-			(t.kind === "clear" ? !n.present : n.state === "valid" && u(n.value, t.value)) && (P.delete(e), ue += 1);
+	}, Oe = (e) => {
+		O = Se(e);
+		for (let [e, t] of B) {
+			let n = O.fields[e];
+			(t.kind === "clear" ? !n.present : n.state === "valid" && g(n.value, t.value)) && (B.delete(e), le += 1);
 		}
-		F.size || Ee(), Te(), S = !0;
-	}, Oe = async (e = !1) => {
-		if (!V() || x || w) return;
-		e && X();
-		let n = ++b;
-		x = !0, q();
+		V.size || De(), Ee(), D = !0;
+	}, ke = async (e = !1) => {
+		if (!K() || T || A) return;
+		e && Ie();
+		let n = ++d;
+		T = !0, X();
 		try {
-			if (!V() || n !== b) return;
+			if (!K() || n !== d) return;
 			let r = await t.services.config.current();
-			if (!V() || n !== b || (De(r), await Fe(), !V() || n !== b)) return;
-			H(P.size ? "已刷新；草稿已保留，请核对后保存。" : e ? "已刷新。" : "", P.size ? "warning" : "success");
-		} catch (e) {
-			if (!V() || n !== b) return;
-			if (p.has(f(e))) {
-				ve(), H("管理授权或模块上下文已失效，请重新进入页面。", "error"), q();
+			if (!K() || n !== d) return;
+			Oe(r);
+			try {
+				await ze();
+			} catch (e) {
+				if (!K() || n !== d) return;
+				Re(e), K() && q("普通配置已读取；来源凭据状态未确认，请单独刷新凭据。", "warning");
 				return;
 			}
-			S = !1, H("配置读取未完成。请检查 Dashboard 授权与模块状态，再手动刷新。", "error");
+			if (!K() || n !== d) return;
+			q(B.size ? "已刷新；草稿已保留，请核对后保存。" : e ? "已刷新。" : "", B.size ? "warning" : "success");
+		} catch (e) {
+			if (!K() || n !== d) return;
+			if (y.has(v(e))) {
+				be(), q("管理授权或模块上下文已失效，请重新进入页面。", "error"), X();
+				return;
+			}
+			D = !1, q("配置读取未完成。请检查 Dashboard 授权与模块状态，再手动刷新。", "error");
 		} finally {
-			B() && n === b && (x = !1, q());
+			G() && n === d && (T = !1, X());
 		}
-	}, ke = () => {
+	}, Ae = () => {
 		let e = !0;
-		for (let [t, n] of P) {
+		for (let [t, n] of B) {
 			if (n.kind === "clear") continue;
-			let r = C.descriptors[t], i = "";
+			let r = O.descriptors[t], i = "";
 			if (t === "timezone") {
 				let e = r.value_schema;
 				if (typeof n.value != "string" || n.value.length < (e.minLength ?? 0) || n.value.length > (e.maxLength ?? Infinity)) i = "请输入符合长度要求的 IANA 时区。";
@@ -375,55 +835,67 @@ function x(e, t) {
 				}
 			} else if (r.value_schema?.type === "integer") {
 				let e = r.value_schema;
-				(n.rawValue !== void 0 || !Number.isInteger(n.value) || n.value < e.minimum || n.value > e.maximum) && (i = `请输入 ${e.minimum} 到 ${e.maximum} 之间的整数。`);
-			} else Ce(t) && !Se(t).some((e) => u(e.value, n.value)) && (i = "请选择当前可用的选项。");
-			F.get(t).error.textContent = i, F.get(t).control.setAttribute("aria-invalid", String(!!i)), i && (e = !1);
+				if ((n.rawValue !== void 0 || !Number.isSafeInteger(n.value) || n.value < e.minimum || n.value > e.maximum) && (i = `请输入 ${e.minimum} 到 ${e.maximum} 之间的整数。`), t === "poster_limit") try {
+					w(n.rawValue ?? String(n.value));
+				} catch (e) {
+					i = e.message;
+				}
+			} else Te(t) && !we(t).some((e) => g(e.value, n.value)) && (i = "请选择当前可用的选项。");
+			V.get(t).error.textContent = i, V.get(t).control.setAttribute("aria-invalid", String(!!i)), i && (e = !1);
 		}
-		return F.has("poster_mode") && xe("poster_mode") === "legacy" && xe("poster_limit") > 200 && (F.get("poster_limit").error.textContent = "兼容旧布局最多支持 200 项，请调整数量或选择游戏生涯拼图。", F.get("poster_limit").control.setAttribute("aria-invalid", "true"), e = !1), e;
-	}, Ae = async () => {
-		if (!V() || x || w || O?.state === "waiting" || !S || !P.size || !ke()) return;
-		let e = new Map(P), n = {}, r = [];
+		return V.has("poster_mode") && Ce("poster_mode") === "legacy" && Ce("poster_limit") > 200 && (V.get("poster_limit").error.textContent = "兼容旧布局最多支持 200 项，请调整数量或选择游戏生涯拼图。", V.get("poster_limit").control.setAttribute("aria-invalid", "true"), e = !1), e;
+	}, je = async () => {
+		if (!K() || T || A || P?.state === "waiting" || !D || !B.size || !Ae()) return;
+		let e = new Map(B), n = {}, r = [];
 		for (let [t, i] of e) i.kind === "clear" ? r.push(t) : n[t] = i.value;
-		let i = C.revision, a = !1, o = ++b;
-		x = !0, S = !1, H("正在保存，请等待确认。"), q();
+		let i = O.revision, a = !1, o = ++d;
+		T = !0, D = !1, q("正在保存，请等待确认。"), X();
 		let s = (e) => {
 			if (!e || !Number.isSafeInteger(e.revision) || e.revision <= i) throw Error("invalid_receipt");
 			i = e.revision, a = !0;
 		};
 		try {
-			if (!V() || o !== b) return;
+			if (!K() || o !== d) return;
 			if (Object.keys(n).length) {
 				let e = await t.services.config.save(i, n);
-				if (!V() || o !== b) return;
+				if (!K() || o !== d) return;
 				s(e);
 			}
 			if (r.length) {
 				let e = await t.services.config.clear(i, r);
-				if (!V() || o !== b) return;
+				if (!K() || o !== d) return;
 				s(e);
 			}
 			let a = await t.services.config.current();
-			if (!V() || o !== b) return;
-			if (be(a), a.revision < i) throw Error("unverified_snapshot");
+			if (!K() || o !== d) return;
+			if (Se(a), a.revision < i) throw Error("unverified_snapshot");
 			for (let [t, n] of e) {
 				let e = a.fields[t];
-				if (n.kind === "clear" ? e.present : e.state !== "valid" || !u(e.value, n.value)) throw Error("unverified_snapshot");
+				if (n.kind === "clear" ? e.present : e.state !== "valid" || !g(e.value, n.value)) throw Error("unverified_snapshot");
 			}
-			for (let [t, n] of e) P.get(t) === n && (P.delete(t), ue += 1);
-			if (De(a), await Fe(), !V() || o !== b) return;
-			H(P.size ? "已保存本次提交；仍有新的未保存修改。" : "已保存。", P.size ? "warning" : "success");
-		} catch (e) {
-			if (!V() || o !== b) return;
-			if (p.has(f(e))) {
-				ve(), H("管理授权或模块上下文已失效，请重新进入页面。", "error"), q();
+			for (let [t, n] of e) B.get(t) === n && (B.delete(t), le += 1);
+			Oe(a);
+			try {
+				await ze();
+			} catch (e) {
+				if (!K() || o !== d) return;
+				Re(e), K() && q("普通配置已保存并核对；来源凭据状态未确认，请单独刷新凭据。", "warning");
 				return;
 			}
-			let t = f(e) === "revision_conflict";
-			H(a ? "部分或全部修改已提交，状态暂未核实。请手动刷新并核对，不要重复提交。" : t ? "配置已被其他操作修改。草稿已保留，请手动刷新、核对后再保存。" : f(e) === "invalid_config" ? "配置未被接受。请检查字段，手动刷新并核对后再保存。" : "保存结果尚未确认。草稿已保留，请手动刷新并核对，不要重复提交。", "error");
+			if (!K() || o !== d) return;
+			q(B.size ? "已保存本次提交；仍有新的未保存修改。" : "已保存。", B.size ? "warning" : "success");
+		} catch (e) {
+			if (!K() || o !== d) return;
+			if (y.has(v(e))) {
+				be(), q("管理授权或模块上下文已失效，请重新进入页面。", "error"), X();
+				return;
+			}
+			let t = v(e) === "revision_conflict";
+			q(a ? "部分或全部修改已提交，状态暂未核实。请手动刷新并核对，不要重复提交。" : t ? "配置已被其他操作修改。草稿已保留，请手动刷新、核对后再保存。" : v(e) === "invalid_config" ? "配置未被接受。请检查字段，手动刷新并核对后再保存。" : "保存结果尚未确认。草稿已保留，请手动刷新并核对，不要重复提交。", "error");
 		} finally {
-			B() && o === b && (x = !1, q());
+			G() && o === d && (T = !1, X());
 		}
-	}, J, je, Y = 0, Me = (e) => {
+	}, Q, Me, Ne = 0, Pe = (e) => {
 		let t = e;
 		if (!t || t.schema_version !== 1 || !["success", "partial_success"].includes(t.status) || t.privacy !== "public" || !t.document || !Array.isArray(t.document.blocks)) throw Error("invalid_cache_status");
 		for (let e of t.document.blocks) {
@@ -432,67 +904,67 @@ function x(e, t) {
 			if (t && Object.keys(t).sort().join(",") === "bytes,evictions,items,max_bytes,max_items" && !Object.values(t).some((e) => !Number.isSafeInteger(e) || e < 0)) return t;
 		}
 		throw Error("invalid_cache_status");
-	}, Ne = async () => {
-		if (!V() || x || !J) return;
-		let e = ++Y;
-		x = !0, q();
+	}, Fe = async () => {
+		if (!K() || T || !Q) return;
+		let e = ++Ne;
+		T = !0, X();
 		try {
 			let n = await t.services.invoke("wall_cache_status", {});
-			if (!V() || e !== Y) return;
-			let r = Me(n);
-			je.textContent = `缓存：${r.items} 项 / ${r.bytes} 字节；上限 ${r.max_items} 项 / ${r.max_bytes} 字节；已淘汰 ${r.evictions} 项。`, H("缓存状态已刷新。此操作只读取统计；重新验证封面请使用 --refresh。", "success");
+			if (!K() || e !== Ne) return;
+			let r = Pe(n);
+			Me.textContent = `缓存：${r.items} 项 / ${r.bytes} 字节；上限 ${r.max_items} 项 / ${r.max_bytes} 字节；已淘汰 ${r.evictions} 项。`, q("缓存状态已刷新。此操作只读取统计；普通刷新游戏库会继续复用有效原图。", "success");
 		} catch {
-			if (!V() || e !== Y) return;
-			je.textContent = "缓存状态暂不可用。", H("读取缓存状态失败，请稍后重试。", "error");
+			if (!K() || e !== Ne) return;
+			Me.textContent = "缓存状态暂不可用。", q("读取缓存状态失败，请稍后重试。", "error");
 		} finally {
-			B() && e === Y && (x = !1, q());
+			G() && e === Ne && (T = !1, X());
 		}
-	}, X = () => {
-		for (let e of M.values()) e.input && (e.input.value = "");
-	}, Z = () => {
-		k !== null && (clearTimeout(k), k = null), M.get("credential_perfect")?.qr?.removeAttribute("src");
-	}, Pe = (e) => {
-		p.has(f(e)) ? (ve(), H("管理授权或页面上下文已失效，请重新进入。", "error")) : f(e) === "operation_cancelled" ? H("已取消操作。") : (E = null, H(f(e) === "revision_conflict" ? "设置已被其他操作修改。凭据输入已清除，请刷新状态后重新操作。" : "操作未完成或结果未确认。凭据输入已清除，请刷新并核对状态。", "error"));
-	}, Fe = async () => {
-		if (!V() || !ee[i] || !t.services.credentials?.status) return;
-		let e = D, n = b, r = await t.services.credentials.status();
-		if (V() && e === D && n === b) {
+	}, Ie = () => {
+		for (let e of R.values()) e.input && (e.input.value = "");
+	}, Le = () => {
+		F !== null && (clearTimeout(F), F = null), R.get("credential_perfect")?.qr?.removeAttribute("src");
+	}, Re = (e) => {
+		y.has(v(e)) ? (be(), q("管理授权或页面上下文已失效，请重新进入。", "error")) : v(e) === "operation_cancelled" ? q("已取消操作。") : (M = null, q(v(e) === "revision_conflict" ? "设置已被其他操作修改。凭据输入已清除，请刷新状态后重新操作。" : "操作未完成或结果未确认。凭据输入已清除，请刷新并核对状态。", "error"));
+	}, ze = async () => {
+		if (!K() || !C[i] || !t.services.credentials?.status) return;
+		let e = N, n = d, r = await t.services.credentials.status();
+		if (K() && e === N && n === d) {
 			if (!r || !Number.isSafeInteger(r.revision) || r.revision < 1 || !r.fields) throw Error("invalid_credential_status");
-			for (let [e] of ee[i]) {
+			for (let [e] of C[i]) {
 				let t = r.fields[e];
 				if (t && (typeof t.configured != "boolean" || typeof t.decryptable != "boolean" || t.upstream !== "unverified")) throw Error("invalid_credential_status");
 			}
-			E = r, Be(), se();
+			M = r, Ge(), oe();
 		}
-	}, Ie = async (e) => {
-		let n = D;
-		if (!e || !Number.isSafeInteger(e.revision) || e.revision <= E.revision) throw Error("invalid_receipt");
+	}, Be = async (e) => {
+		let n = N;
+		if (!e || !Number.isSafeInteger(e.revision) || e.revision <= M.revision) throw Error("invalid_receipt");
 		let r = await t.services.config.current();
-		if (V() && n === D) {
+		if (K() && n === N) {
 			if (r.revision < e.revision) throw Error("unverified_snapshot");
-			De(r), await Fe();
+			Oe(r), await ze();
 		}
-	}, Le = async (e, n) => {
-		if (!V() || x || w || !E || O?.state === "waiting") return;
-		let r = M.get(e).input?.value.trim();
+	}, Ve = async (e, n) => {
+		if (!K() || T || A || !M || P?.state === "waiting") return;
+		let r = R.get(e).input?.value.trim();
 		if (!n && (!r || r.length > 4096 || /[\x00-\x1f\x7f-\x9f]/u.test(r))) {
-			H("请输入 1 到 4096 字符的有效 Key 或 Token。", "error");
+			q("请输入 1 到 4096 字符的有效 Key 或 Token。", "error");
 			return;
 		}
-		let i = ++D;
-		X(), w = !0, q();
+		let i = ++N;
+		Ie(), A = !0, X();
 		try {
-			let a = n ? await t.services.credentials.clear(E.revision, e) : await t.services.credentials.replace(E.revision, e, { token: r });
-			if (!V() || i !== D || (await Ie(a), !V() || i !== D)) return;
-			let o = E.fields[e];
+			let a = n ? await t.services.credentials.clear(M.revision, e) : await t.services.credentials.replace(M.revision, e, { token: r });
+			if (!K() || i !== N || (await Be(a), !K() || i !== N)) return;
+			let o = M.fields[e];
 			if (!o || o.configured === n) throw Error("unverified_snapshot");
-			H(n ? "凭据已清除。" : "凭据已保存；有效性会在来源请求时验证。", "success");
+			q(n ? "凭据已清除。" : "凭据已保存；有效性会在来源请求时验证。", "success");
 		} catch (e) {
-			V() && i === D && Pe(e);
+			K() && i === N && Re(e);
 		} finally {
-			B() && i === D && (w = !1, q());
+			G() && i === N && (A = !1, X());
 		}
-	}, Re = (e) => {
+	}, He = (e) => {
 		if (!e || typeof e.session_id != "string" || !e.session_id || e.session_id.length > 256 || ![
 			"waiting",
 			"authorized",
@@ -503,118 +975,134 @@ function x(e, t) {
 			"closed"
 		].includes(e.state) || !Number.isFinite(e.expires_at) || !(e.next_poll_at === null || Number.isFinite(e.next_poll_at)) || !Number.isSafeInteger(e.polls) || e.polls < 0 || e.authorized_subject !== null && typeof e.authorized_subject != "string") throw Error("invalid_authorization_session");
 		return e;
-	}, ze = () => {
-		if (!V() || O?.state !== "waiting" || A) return;
-		k !== null && clearTimeout(k);
-		let e = O.expires_at * 1e3 - Date.now();
+	}, Ue = () => {
+		if (!K() || P?.state !== "waiting" || I) return;
+		F !== null && clearTimeout(F);
+		let e = P.expires_at * 1e3 - Date.now();
 		if (e <= 0) {
-			Z(), O = {
-				...O,
+			Le(), P = {
+				...P,
 				state: "expired"
-			}, H("二维码已超时，请重新登录。"), q();
+			}, q("二维码已超时，请重新登录。"), X();
 			return;
 		}
-		let t = Math.min(e, Math.max(250, O.next_poll_at * 1e3 - Date.now()));
-		k = setTimeout(() => {
-			k = null, Q("poll");
+		let t = Math.min(e, Math.max(250, P.next_poll_at * 1e3 - Date.now()));
+		F = setTimeout(() => {
+			F = null, We("poll");
 		}, t);
-	}, Q = async (e) => {
-		if (!V() || !E || e === "cancel" && (A = !0, Z(), q(), w) || x || w) return;
-		e === "begin" && (Z(), O = null, A = !1);
-		let n = ++D, r = O?.session_id || "", i = null;
-		w = !0, T = !0, X(), q();
+	}, We = async (e) => {
+		if (!K() || !M || e === "cancel" && (I = !0, Le(), X(), A) || T || A) return;
+		e === "begin" && (Le(), P = null, I = !1);
+		let n = ++N, r = P?.session_id || "", i = null;
+		A = !0, j = !0, Ie(), X();
 		try {
-			let a = await t.services.credentials.authorize(E.revision, "perfect_qr", e, r);
-			if (!V() || n !== D) return;
+			let a = await t.services.credentials.authorize(M.revision, "perfect_qr", e, r);
+			if (!K() || n !== N) return;
 			if (e === "qr") {
 				if (typeof a.qr_png != "string" || a.qr_png.length > 5e5 || !/^iVBORw0KGgo[A-Za-z0-9+/=]*$/u.test(a.qr_png)) throw Error("invalid_qr_png");
-				A || (M.get("credential_perfect").qr.src = `data:image/png;base64,${a.qr_png}`);
+				I || (R.get("credential_perfect").qr.src = `data:image/png;base64,${a.qr_png}`);
 			} else {
 				if (e === "revoke") {
 					if (!a || Object.keys(a).sort().join(",") !== "receipt,revoked" || a.revoked !== !0 || !a.receipt) throw Error("invalid_revocation_receipt");
-					O = null;
-				} else O = Re(a.session);
-				if (a.receipt && await Ie(a.receipt), !V() || n !== D) return;
-				if (e === "revoke" && E?.fields.credential_perfect?.configured !== !1) throw Error("unverified_revocation");
-				if (O?.state === "waiting") H(A ? "正在取消扫码。" : "请使用完美 App 扫码并亲自确认授权；留在本页等待结果。"), e === "begin" && (i = "qr");
+					P = null;
+				} else P = He(a.session);
+				if (a.receipt && await Be(a.receipt), !K() || n !== N) return;
+				if (e === "revoke" && M?.fields.credential_perfect?.configured !== !1) throw Error("unverified_revocation");
+				if (P?.state === "waiting") q(I ? "正在取消扫码。" : "请使用完美 App 扫码并亲自确认授权；留在本页等待结果。"), e === "begin" && (i = "qr");
 				else {
-					Z();
-					let t = O?.state;
-					H(t === "authorized" ? "完美授权已保存，玩家 Steam 绑定保持独立。" : e === "revoke" ? "完美授权已撤销。" : t === "expired" ? "二维码已过期，请重新登录。" : t === "cancelled" ? "扫码已取消。" : "授权会话已结束，请刷新状态。", t === "authorized" || e === "revoke" ? "success" : "warning"), A = !1;
+					Le();
+					let t = P?.state;
+					q(t === "authorized" ? "完美授权已保存，玩家 Steam 绑定保持独立。" : e === "revoke" ? "完美授权已撤销。" : t === "expired" ? "二维码已过期，请重新登录。" : t === "cancelled" ? "扫码已取消。" : "授权会话已结束，请刷新状态。", t === "authorized" || e === "revoke" ? "success" : "warning"), I = !1;
 				}
 			}
 		} catch (e) {
-			V() && n === D && (Z(), O = null, A = !1, Pe(e));
+			K() && n === N && (Le(), P = null, I = !1, Re(e));
 		} finally {
-			B() && n === D && (w = !1, T = !1, q(), A && O?.state === "waiting" ? Q("cancel") : i ? Q(i) : O?.state === "waiting" && ze());
+			G() && n === N && (A = !1, j = !1, X(), I && P?.state === "waiting" ? We("cancel") : i ? We(i) : P?.state === "waiting" && Ue());
 		}
-	}, Be = () => {
-		let e = (ee[i] || []).filter(([e]) => E.fields[e]);
+	}, Ge = () => {
+		let e = (C[i] || []).filter(([e]) => M.fields[e]);
 		if (e.length) {
-			ie || (ie = I("section", void 0, "steam-dlc-credentials"), ie.append(I("h3", "来源凭据与授权"), I("p", "凭据只在可信管理入口提交。输入不保留为跨页草稿；已配置不代表上游已验证有效。", "steam-dlc-hint")), R.insertBefore(ie, z));
-			for (let [t, n] of e) {
-				if (M.has(t)) continue;
-				let e = I("section", void 0, "steam-dlc-credential"), r = I("p", "", "steam-dlc-credential-status");
-				r.setAttribute("role", "status");
-				let i = I("div", void 0, "steam-dlc-actions"), a = {
-					status: r,
-					actions: i,
+			ne || (ne = H("section", void 0, "steam-dlc-credentials"), ne.append(H("h3", "来源凭据与授权"), H("p", "凭据只在可信管理入口提交。输入不保留为跨页草稿；已配置不代表上游已验证有效。", "steam-dlc-hint")), W.insertBefore(ne, pe));
+			for (let [n, r] of e) {
+				if (R.has(n)) continue;
+				let e = H("section", void 0, "steam-dlc-credential"), i = H("p", "", "steam-dlc-credential-status");
+				i.setAttribute("role", "status");
+				let a = H("div", void 0, "steam-dlc-actions"), o = {
+					status: i,
+					actions: a,
 					buttons: []
 				};
-				e.append(I("h4", n), r);
-				let o = (e, t, n) => {
-					let r = I("button", t, "ui-button");
-					return r.type = "button", r.dataset.action = e, L(r, "click", () => {
+				e.append(H("h4", r), i);
+				let s = (e, t, n) => {
+					let r = H("button", t, "ui-button");
+					return r.type = "button", r.dataset.action = e, U(r, "click", () => {
 						r.getAttribute("aria-disabled") !== "true" && n();
-					}), i.append(r), a.buttons.push(r), r;
+					}), a.append(r), o.buttons.push(r), r;
 				};
-				if (t === "credential_perfect") a.qr = I("img", void 0, "steam-dlc-qr"), a.qr.alt = "完美登录二维码，仅供本次管理员授权", a.qr.setAttribute("referrerpolicy", "no-referrer"), e.append(a.qr), o("perfect-begin", "扫码登录 / 重新登录", () => {
-					Q("begin");
-				}), o("perfect-cancel", "取消扫码", () => {
-					Q("cancel");
-				}), o("perfect-poll", "检查扫码状态", () => {
-					Q("poll");
-				}), o("perfect-revoke", "撤销完美授权", () => {
-					Q("revoke");
+				if (n === "credential_perfect") o.qr = H("img", void 0, "steam-dlc-qr"), o.qr.alt = "完美登录二维码，仅供本次管理员授权", o.qr.setAttribute("referrerpolicy", "no-referrer"), e.append(o.qr), s("perfect-begin", "扫码登录 / 重新登录", () => {
+					We("begin");
+				}), s("perfect-cancel", "取消扫码", () => {
+					We("cancel");
+				}), s("perfect-poll", "检查扫码状态", () => {
+					We("poll");
+				}), s("perfect-revoke", "撤销完美授权", () => {
+					We("revoke");
 				});
 				else {
-					let r = I("input");
-					r.type = "password", r.className = "ui-control", r.id = `steam-dlc-${t}`, r.name = t, r.maxLength = 4096, r.autocomplete = "new-password", r.spellcheck = !1, r.setAttribute("aria-label", n), a.input = r, e.append(r), L(r, "input", q), o(`replace-${t}`, "保存凭据", () => {
-						Le(t, !1);
-					}), o(`clear-${t}`, "清除凭据", () => {
-						Le(t, !0);
+					let i = H("input");
+					if (i.type = "password", i.className = "ui-control", i.id = `steam-dlc-${n}`, i.name = n, i.maxLength = 4096, i.autocomplete = "new-password", i.spellcheck = !1, i.setAttribute("aria-label", r), o.input = i, t.presentation) {
+						let n = H("label", r), a = H("p", "来源凭据不会作为普通草稿保留。"), o = H("p");
+						a.id = `${i.id}-hint`, o.id = `${i.id}-error`, t.presentation.field(e, {
+							control: i,
+							label: n,
+							hint: a,
+							error: o
+						});
+					} else e.append(i);
+					U(i, "input", X), s(`replace-${n}`, "保存凭据", () => {
+						Ve(n, !1);
+					}), s(`clear-${n}`, "清除凭据", () => {
+						Ve(n, !0);
 					});
 				}
-				e.append(i), M.set(t, a), ie.append(e);
+				e.append(a), R.set(n, o), ne.append(e);
 			}
-			se = () => {
-				for (let [e, t] of M) {
-					let n = E?.fields[e];
-					t.status.textContent = n ? n.configured ? n.decryptable ? "已配置；上游有效性尚未验证。" : "已配置，但当前无法解密，请检查服务密钥后重新设置。" : "未配置。" : "状态待刷新。", e === "credential_perfect" && O && (t.status.textContent += ` 当前扫码：${O.state}。`), t.input && (t.input.disabled = !V() || x || w || O?.state === "waiting");
+			oe = () => {
+				for (let [e, t] of R) {
+					let n = M?.fields[e];
+					t.status.textContent = n ? n.configured ? n.decryptable ? "已配置；上游有效性尚未验证。" : "已配置，但当前无法解密，请检查服务密钥后重新设置。" : "未配置。" : "状态待刷新。", e === "credential_perfect" && P && (t.status.textContent += ` 当前扫码：${P.state}。`), t.input && (t.input.disabled = !K() || T || A || P?.state === "waiting");
 					for (let e of t.buttons) {
-						let t = e.dataset.action, n = t === "perfect-cancel", r = !V() || !E || (n ? O?.state !== "waiting" && !T : x || w || t === "perfect-poll" && O?.state !== "waiting" || O?.state === "waiting" && !t.startsWith("perfect-"));
+						let t = e.dataset.action, n = t === "perfect-cancel", r = !K() || !M || (n ? P?.state !== "waiting" && !j : T || A || t === "perfect-poll" && P?.state !== "waiting" || P?.state === "waiting" && !t.startsWith("perfect-"));
 						e.setAttribute("aria-disabled", String(r));
 					}
 				}
 			};
 		}
-	}, Ve = () => {
+	}, Ke = () => {
 		let e = n.defaultView?.URL || URL;
-		for (let t of ae.splice(0)) e.revokeObjectURL(t);
+		for (let t of ie.splice(0)) e.revokeObjectURL(t);
 	}, $ = (e, n, r, a, o = "") => {
-		let s = I("div", void 0, "steam-dlc-public-field"), c = I("label", r), l = I(a ? "select" : "input");
-		return l.id = `steam-dlc-${i}-${t.routeId}-${n}`, l.name = n, l.className = "ui-control", c.htmlFor = l.id, a ? l.append(...a.map((e) => {
-			let t = I("option", g[e] || e);
+		let s = H("div", void 0, "steam-dlc-public-field"), c = H("label", r), l = H(a ? "select" : "input");
+		l.id = `steam-dlc-${i}-${t.routeId}-${n}`, l.name = n, l.className = "ui-control", c.htmlFor = l.id, a ? l.append(...a.map((e) => {
+			let t = H("option", S[e] || e);
 			return t.value = e, t;
-		})) : (l.type = "text", l.maxLength = 128, l.autocomplete = "off"), l.value = o, s.append(c, l), e.append(s), oe.push(l), l;
-	}, He = (e, t) => {
+		})) : (l.type = "text", l.maxLength = 128, l.autocomplete = "off"), l.value = o;
+		let u = H("p", "", "steam-dlc-hint"), d = H("p", "", "steam-dlc-field-error");
+		return u.id = `${l.id}-hint`, d.id = `${l.id}-error`, t.presentation ? t.presentation.field(e, {
+			control: l,
+			label: c,
+			hint: u,
+			error: d
+		}) : (s.append(c, l), e.append(s)), ae.push(l), l;
+	}, qe = (e, t) => {
 		if (!["match", "recent"].includes(e.kind)) return;
 		let n = e.data, r = (e) => typeof e == "number" && Number.isFinite(e) ? String(e) : "未知", i = (e) => typeof e == "string" && e ? e : "未知", a = (e) => `${r(e?.scores?.[0])} : ${r(e?.scores?.[1])}`, o = (e) => `${r(e?.kills)}/${r(e?.deaths)}/${r(e?.assists)}`, s = (e, n) => {
-			let r = I("div", void 0, "steam-dlc-table"), i = I("table"), a = I("tr");
-			a.append(...e.map((e) => I("th", e))), i.append(a);
+			let r = H("div", void 0, "steam-dlc-table"), i = H("table"), a = H("tr");
+			a.append(...e.map((e) => H("th", e))), i.append(a);
 			for (let e of n) {
-				let t = I("tr");
-				t.append(...e.map((e) => I("td", e))), i.append(t);
+				let t = H("tr");
+				t.append(...e.map((e) => H("td", e))), i.append(t);
 			}
 			r.append(i), t.append(r);
 		}, c = {
@@ -623,9 +1111,9 @@ function x(e, t) {
 			recent_first_page: "近期首批样本",
 			recent_player_summary: "有界近期玩家摘要"
 		}[e.coverage] || i(e.coverage), l = e.detail_level === "full_match";
-		if (t.append(I("p", `来源：${g[e.platform] || i(e.platform)} · 范围：${c} · 详情：${l ? "完整比赛" : "玩家摘要"}`, "steam-dlc-hint")), l || t.append(I("p", "该来源仅提供该玩家的有界近期摘要，不含完整比赛名单与详情。", "steam-dlc-hint")), e.unavailable_reason && e.unavailable_reason !== "full_match_detail_unavailable" && t.append(I("p", `缺项说明：${i(e.unavailable_reason)}`, "steam-dlc-hint")), t.append(I("p", "未知表示来源未提供，不按 0 计算。", "steam-dlc-hint")), e.kind === "recent") {
+		if (t.append(H("p", `来源：${S[e.platform] || i(e.platform)} · 范围：${c} · 详情：${l ? "完整比赛" : "玩家摘要"}`, "steam-dlc-hint")), l || t.append(H("p", "该来源仅提供该玩家的有界近期摘要，不含完整比赛名单与详情。", "steam-dlc-hint")), e.unavailable_reason && e.unavailable_reason !== "full_match_detail_unavailable" && t.append(H("p", `缺项说明：${i(e.unavailable_reason)}`, "steam-dlc-hint")), t.append(H("p", "未知表示来源未提供，不按 0 计算。", "steam-dlc-hint")), e.kind === "recent") {
 			if (!Array.isArray(n.matches) || !n.matches.length) {
-				t.append(I("p", "来源当前样本没有可展示的比赛。"));
+				t.append(H("p", "来源当前样本没有可展示的比赛。"));
 				return;
 			}
 			s([
@@ -643,12 +1131,12 @@ function x(e, t) {
 			]));
 			return;
 		}
-		if (t.append(I("p", `比赛：${i(n.match_id)} · 地图：${i(n.map)} · 比分：${a(n)}`)), !l) {
-			t.append(I("p", `玩家：${i(n.focus?.id || e.target?.id)} · K/D/A：${o(n)} · rating：${r(n.rating)}`));
+		if (t.append(H("p", `比赛：${i(n.match_id)} · 地图：${i(n.map)} · 比分：${a(n)}`)), !l) {
+			t.append(H("p", `玩家：${i(n.focus?.id || e.target?.id)} · K/D/A：${o(n)} · rating：${r(n.rating)}`));
 			return;
 		}
-		if (n.focus && typeof n.focus == "object" && t.append(I("p", `焦点：${i(n.focus.nickname)} · ${i(n.focus.account_id)} · K/D/A：${o(n.focus)} · rating：${r(n.focus.rating)}`)), !Array.isArray(n.players) || !n.players.length) {
-			t.append(I("p", "来源未提供可用玩家名单。"));
+		if (n.focus && typeof n.focus == "object" && t.append(H("p", `焦点：${i(n.focus.nickname)} · ${i(n.focus.account_id)} · K/D/A：${o(n.focus)} · rating：${r(n.focus.rating)}`)), !Array.isArray(n.players) || !n.players.length) {
+			t.append(H("p", "来源未提供可用玩家名单。"));
 			return;
 		}
 		s([
@@ -668,270 +1156,300 @@ function x(e, t) {
 			r(e?.pw_rating),
 			r(e?.adr)
 		]));
-	}, Ue = (e, t) => {
+	}, Je = (e, t) => {
 		if (!e || e.schema_version !== 1 || ![
 			"success",
 			"partial_success",
 			"needs_selection",
 			"error"
 		].includes(e.status)) throw Error("invalid_result");
-		if (t.replaceChildren(), e.status === "error") return t.append(I("p", typeof e.error?.message == "string" ? e.error.message : "来源未返回可用结果。", "steam-dlc-field-error")), !1;
+		if (t.replaceChildren(), e.status === "error") return t.append(H("p", typeof e.error?.message == "string" ? e.error.message : "来源未返回可用结果。", "steam-dlc-field-error")), !1;
 		if (!e.document || !Array.isArray(e.document.blocks)) throw Error("invalid_result");
 		for (let n of e.document.blocks) {
-			if (n?.kind === "text" && typeof n.text == "string" && t.append(I("p", n.text)), n?.kind === "table" && Array.isArray(n.columns) && Array.isArray(n.rows)) {
-				let e = I("div", void 0, "steam-dlc-table"), r = I("table"), i = I("tr");
-				i.append(...n.columns.map((e) => I("th", String(e)))), r.append(i);
+			if (n?.kind === "text" && typeof n.text == "string" && t.append(H("p", n.text)), n?.kind === "table" && Array.isArray(n.columns) && Array.isArray(n.rows)) {
+				let e = H("div", void 0, "steam-dlc-table"), r = H("table"), i = H("tr");
+				i.append(...n.columns.map((e) => H("th", String(e)))), r.append(i);
 				for (let e of n.rows) {
 					if (!Array.isArray(e)) continue;
-					let t = I("tr");
-					t.append(...e.map((e) => I("td", e === null ? "未知" : String(typeof e == "object" ? e.value ?? "" : e)))), r.append(t);
+					let t = H("tr");
+					t.append(...e.map((e) => H("td", e === null ? "未知" : String(typeof e == "object" ? e.value ?? "" : e)))), r.append(t);
 				}
 				e.append(r), t.append(e);
 			}
 			let e = n?.kind === "fields" ? n.fields?.cs2 : null;
+			if (n?.kind === "fields" && !e) {
+				let e = H("dl");
+				for (let t of [
+					"比赛ID",
+					"焦点账号",
+					"焦点名称",
+					"英雄ID",
+					"焦点胜负",
+					"时长（秒）"
+				]) {
+					if (!(t in (n.fields || {}))) continue;
+					let r = n.fields[t];
+					e.append(H("dt", t), H("dd", r === null ? "未知" : typeof r == "string" || typeof r == "number" || typeof r == "boolean" ? String(r) : "未提供"));
+				}
+				e.childNodes.length && t.append(e);
+			}
 			if (Array.isArray(e?.sources)) {
-				let n = I("dl", void 0, "steam-dlc-source-status");
-				for (let t of e.sources) n.append(I("dt", g[t.platform] || t.platform), I("dd", t.credential_state === "configured" ? "凭据已配置；查询时验证上游有效性。" : "需要在可信设置页授权。"));
+				let n = H("dl", void 0, "steam-dlc-source-status");
+				for (let t of e.sources) n.append(H("dt", S[t.platform] || t.platform), H("dd", t.credential_state === "configured" ? "凭据已配置；查询时验证上游有效性。" : "需要在可信设置页授权。"));
 				t.append(n);
-			} else e?.data && (typeof e.fetched_at == "string" && t.append(I("p", `采样：${e.fetched_at}${e.season ? ` · 赛季 ${e.season}` : ""}`, "steam-dlc-hint")), He(e, t));
+			} else e?.data && (typeof e.fetched_at == "string" && t.append(H("p", `采样：${e.fetched_at}${e.season ? ` · 赛季 ${e.season}` : ""}`, "steam-dlc-hint")), qe(e, t));
 		}
-		for (let n of e.warnings || []) typeof n == "string" && t.append(I("p", n, "steam-dlc-hint"));
+		for (let n of e.warnings || []) typeof n == "string" && t.append(H("p", n, "steam-dlc-hint"));
 		return e.status !== "needs_selection";
-	}, We = (e) => {
-		let r = I("form", void 0, "steam-dlc-public-form"), i = I("section", void 0, "steam-dlc-public-result");
-		i.setAttribute("aria-live", "polite");
-		let a = $(r, "account", e ? "SteamID64（明确账号）" : "玩家账号（SteamID64 / 5E domain）");
-		a.required = !0;
-		let o, s, c, l, u, d, f = {};
-		if (e) {
-			for (let [e, t, n, i] of [
-				[
-					"source",
-					"来源",
-					[
-						"games",
-						"recent",
-						"full"
-					],
-					"games"
-				],
-				[
-					"mode",
-					"布局",
-					["dense", "legacy"],
-					"dense"
-				],
-				[
-					"preset",
-					"时长预设",
-					[
-						"single",
-						"standard",
-						"long"
-					],
-					"standard"
-				],
-				[
-					"aspect",
-					"比例",
-					[
-						"2:3",
-						"9:16",
-						"1:2"
-					],
-					"2:3"
-				],
-				[
-					"quality",
-					"清晰度",
-					["normal", "hd"],
-					"normal"
-				],
-				[
-					"fit",
-					"封面适配",
-					["cover", "contain"],
-					"cover"
-				]
-			]) f[e] = $(r, e, t, n, i);
-			f.all_apps = $(r, "all_apps", "包含软件等全部应用", ["true", "false"], "true"), f.all_apps.options[0].textContent = "包含", f.all_apps.options[1].textContent = "仅游戏", c = $(r, "limit", "作品数量上限", null, "500"), c.type = "number", c.min = "1", c.max = "1000", c.step = "1", R.append(I("p", "公开样本不代表完整库。full 需要已配置的 Steam Key；过大输出会受预算限制。生成后可逐页下载原始 PNG。", "steam-dlc-hint"));
-		} else {
-			o = $(r, "action", "查询类型", [
-				"profile",
-				"recent",
-				"stats",
-				"last",
-				"match"
-			], "profile"), s = $(r, "platform", "来源", [
-				"perfect",
-				"official",
-				"5e"
-			], "perfect"), l = $(r, "season", "赛季（可选）"), c = $(r, "limit", "近期展示数量", null, "5"), c.type = "number", c.min = "1", c.max = "20", c.step = "1", u = $(r, "match_id", "来源比赛 ID"), d = $(r, "focus", "单场焦点账号（可选）");
-			let e = () => {
-				l.disabled = !["profile", "stats"].includes(o.value), c.disabled = o.value !== "recent", u.disabled = o.value !== "match", d.disabled = o.value !== "match", u.required = o.value === "match";
-			};
-			L(o, "change", e), e(), R.append(I("p", "页面查询始终需要明确账号，不读取本人默认绑定。5E 使用 domain；官匹与 5E 单场仅限来源近期玩家摘要。", "steam-dlc-hint"));
-		}
-		let p = I("button", e ? "生成拼图" : "查询", "ui-button");
-		p.type = "submit", p.dataset.variant = "primary", p.dataset.action = e ? "generate" : "query";
-		let m = I("div", void 0, "steam-dlc-actions");
-		m.append(p), r.append(m);
-		let h = async (m) => {
-			if (!V() || x) return;
-			let h = m ? {} : { account: a.value.trim() };
-			if (!m && (!h.account || !r.checkValidity())) {
-				H("请填写明确账号并检查输入范围。", "error");
+	}, Ye = () => {
+		let e = H("form", void 0, "steam-dlc-public-form"), n = H("section", void 0, "steam-dlc-public-result");
+		n.setAttribute("aria-live", "polite");
+		let r = t.presentation?.grid(e) || e, i = $(r, "account", "玩家账号（SteamID64 / 5E domain）");
+		i.required = !0;
+		let a, o, s, c, l, u;
+		a = $(r, "action", "查询类型", [
+			"profile",
+			"recent",
+			"stats",
+			"last",
+			"match"
+		], "profile"), o = $(r, "platform", "来源", [
+			"perfect",
+			"official",
+			"5e"
+		], "perfect"), c = $(r, "season", "赛季（可选）"), s = $(r, "limit", "近期展示数量", null, "5"), s.type = "number", s.min = "1", s.max = "20", s.step = "1", l = $(r, "match_id", "来源比赛 ID"), u = $(r, "focus", "单场焦点账号（可选）");
+		let d = () => {
+			c.disabled = !["profile", "stats"].includes(a.value), s.disabled = a.value !== "recent", l.disabled = a.value !== "match", u.disabled = a.value !== "match", l.required = a.value === "match";
+		};
+		U(a, "change", d), d(), W.append(H("p", "页面查询始终需要明确账号，不读取本人默认绑定。5E 使用 domain；官匹与 5E 单场仅限来源近期玩家摘要。", "steam-dlc-hint"));
+		let f = H("button", "查询", "ui-button");
+		f.type = "submit", f.dataset.variant = "primary", f.dataset.action = "query";
+		let p = H("div", void 0, "steam-dlc-actions");
+		p.append(f), e.append(p);
+		let m = async (r) => {
+			if (!K() || T) return;
+			let d = r ? {} : { account: i.value.trim() };
+			if (!r && (!d.account || !e.checkValidity())) {
+				q("请填写明确账号并检查输入范围。", "error");
 				return;
 			}
-			if (!m && e) {
-				if (Object.assign(h, Object.fromEntries(Object.entries(f).map(([e, t]) => [e, e === "all_apps" ? t.value === "true" : t.value]))), h.limit = Number(c.value), h.mode === "legacy" && h.limit > 200) {
-					H("兼容旧布局最多 200 项，请调整数量或选择游戏生涯拼图。", "error");
-					return;
-				}
-			} else m || (Object.assign(h, {
-				action: o.value,
-				platform: s.value
-			}), !l.disabled && l.value.trim() && (h.season = l.value.trim()), c.disabled || (h.limit = Number(c.value)), u.disabled || (h.match_id = u.value.trim()), !d.disabled && d.value.trim() && (h.focus = d.value.trim()));
-			let g = ++j;
-			x = !0, Ve(), i.replaceChildren(I("p", e ? "正在生成拼图，请等待。" : "正在查询来源。")), q(), p.setAttribute("aria-disabled", "true");
+			r || (Object.assign(d, {
+				action: a.value,
+				platform: o.value
+			}), !c.disabled && c.value.trim() && (d.season = c.value.trim()), s.disabled || (d.limit = Number(s.value)), l.disabled || (d.match_id = l.value.trim()), !u.disabled && u.value.trim() && (d.focus = u.value.trim()));
+			let p = ++L;
+			T = !0, Ke(), n.replaceChildren(H("p", "正在查询来源。")), X(), f.setAttribute("aria-disabled", "true");
 			try {
-				let r = e ? await t.services.preview("wall_preview", h) : await t.services.invoke("query", h);
-				if (!V() || g !== j) return;
-				let a = Ue(r, i);
-				if (e && r.status !== "error") {
-					if (!["none", "ready"].includes(r.image_state) || !Array.isArray(r.images) || r.images.length > 8 || (r.image_state === "none" ? r.images.length !== 0 : !a || r.images.length === 0)) throw Error("invalid_images");
-					let e = 0;
-					for (let [t, a] of r.images.entries()) {
-						if (a?.media_type !== "image/png") throw Error("invalid_images");
-						let o = te(a.base64, n.defaultView);
-						if (e += o.length, e > 16777216) throw Error("invalid_images");
-						let s = new n.defaultView.Blob([o], { type: "image/png" }), c = n.defaultView.URL.createObjectURL(s);
-						ae.push(c);
-						let l = I("figure", void 0, "steam-dlc-preview"), u = I("img");
-						u.src = c, u.alt = `游戏生涯拼图第 ${t + 1} / ${r.images.length} 页`;
-						let d = I("a", `下载第 ${t + 1} 页 PNG`, "ui-button");
-						d.href = c, d.download = `steam-career-${String(t + 1).padStart(2, "0")}.png`, l.append(u, d), i.append(l);
-					}
-				}
-				r.status === "needs_selection" ? H("需要补充选择，请按来源提示配置或改选。", "warning") : a && e && r.image_state === "none" ? H("来源结果已返回，本次没有生成图片。", "warning") : H(a ? e ? "拼图已生成，可逐页下载。" : "来源结果已更新。" : "查询未完成，请查看来源反馈。", a ? "success" : "warning");
+				let e = await t.services.invoke("query", d);
+				if (!K() || p !== L) return;
+				let r = Je(e, n);
+				e.status === "needs_selection" ? q("需要补充选择，请按来源提示配置或改选。", "warning") : q(r ? "来源结果已更新。" : "查询未完成，请查看来源反馈。", r ? "success" : "warning");
 			} catch {
-				if (!V() || g !== j) return;
-				Ve(), i.replaceChildren(I("p", "请求未完成，或返回内容不完整。请核对来源设置后重试。", "steam-dlc-field-error")), H("未取得可确认结果。", "error");
+				if (!K() || p !== L) return;
+				Ke(), n.replaceChildren(H("p", "请求未完成，或返回内容不完整。请核对来源设置后重试。", "steam-dlc-field-error")), q("未取得可确认结果。", "error");
 			} finally {
-				B() && g === j && (x = !1, p.setAttribute("aria-disabled", String(!V())), q());
+				G() && p === L && (T = !1, f.setAttribute("aria-disabled", String(!K())), X());
 			}
 		};
-		if (L(r, "submit", (e) => {
-			e.preventDefault(), h(!1);
-		}), !e) {
-			let e = I("button", "刷新来源状态", "ui-button");
-			e.type = "button", e.dataset.action = "query-status", L(e, "click", () => {
-				h(!0);
-			}), m.append(e);
-		}
-		R.append(r, i), e || h(!0);
+		U(e, "submit", (e) => {
+			e.preventDefault(), m(!1);
+		});
+		let h = H("button", "刷新来源状态", "ui-button");
+		h.type = "button", h.dataset.action = "query-status", U(h, "click", () => {
+			m(!0);
+		}), p.append(h), W.append(e, n), t.presentation?.actions(p), m(!0);
 	};
 	if (a && t.routeId === "home") {
-		if (R.append(I("p", a.summary)), i !== "steam") {
-			let e = I("section", void 0, "steam-dlc-source-panel"), n = I("button", "刷新来源状态", "ui-button");
+		if (W.append(H("p", a.summary)), i !== "steam") {
+			let e = H("section", void 0, "steam-dlc-source-panel"), n = H("button", "刷新来源状态", "ui-button");
 			n.type = "button", n.dataset.action = "refresh-status";
 			let r = async () => {
-				if (!V() || x) return;
-				let r = ++j;
-				x = !0, q(), n.setAttribute("aria-disabled", "true");
+				if (!K() || T) return;
+				let r = ++L;
+				T = !0, X(), n.setAttribute("aria-disabled", "true");
 				try {
 					let n = await t.services.invoke("status", {});
-					if (!V() || r !== j) return;
-					Ue(n, e);
+					if (!K() || r !== L) return;
+					Je(n, e);
 				} catch {
-					V() && r === j && e.replaceChildren(I("p", "来源状态读取失败，请稍后刷新。", "steam-dlc-field-error"));
+					K() && r === L && e.replaceChildren(H("p", "来源状态读取失败，请稍后刷新。", "steam-dlc-field-error"));
 				} finally {
-					B() && r === j && (x = !1, n.setAttribute("aria-disabled", String(!V())), q());
+					G() && r === L && (T = !1, n.setAttribute("aria-disabled", String(!K())), X());
 				}
 			};
-			L(n, "click", () => {
+			U(n, "click", () => {
 				r();
-			}), R.append(e, n), r();
+			}), W.append(e, n), r();
 		}
-		R.append(I("h3", "命令帮助"));
-		let e = I("dl", void 0, "steam-dlc-help");
+		W.append(H("h3", "命令帮助"));
+		let e = H("dl", void 0, "steam-dlc-help");
 		for (let [t, n] of a.commands) {
-			let r = I("dt");
-			r.append(I("code", t)), e.append(r, I("dd", n));
+			let r = H("dt");
+			r.append(H("code", t)), e.append(r, H("dd", n));
 		}
-		R.append(e), i === "steam" && (R.append(I("h3", "时长海报墙")), R.append(I("p", "游戏生涯拼图用累计小时映射每张作品的目标面积，提供单机、标准和长玩预设。大图跨行、小图填空，封面保持纵向比例；旧布局可以显式选择。未知时长不补零。", "steam-dlc-hint")), R.append(I("p", "games 与 recent 是不同公开样本；full 需要可选 Steam Key。选择来源不会自动把样本当成完整库。默认纵向 2:3，可切换 9:16 或 1:2；作品数量和输出预算共同约束分页，兼容旧布局最多 200 项。包含全部应用会纳入软件，旧设置中的关闭值继续保留。", "steam-dlc-hint")), je = I("p", "尚未读取缓存状态。", "steam-dlc-cache-value"), J = I("button", "刷新缓存状态"), J.className = "ui-button", J.type = "button", J.dataset.action = "refresh-cache", L(J, "click", () => {
-			Ne();
-		}), R.append(je, J)), i === "dota2" && R.append(I("p", "账号可用 Dota ID32 或 SteamID64。订阅创建、查看和取消使用当前群或私聊中的命令；页面不伪造聊天身份。OpenDota Key 可选，匿名与有 Key 都遵守同一每小时预算；模型短评失败不会阻止基础通知。", "steam-dlc-hint"));
+		W.append(e), i === "steam" && (W.append(H("h3", "时长海报墙")), W.append(H("p", "游戏生涯拼图用累计小时映射每张作品的目标面积，提供单机、标准和长玩预设。大图跨行、小图填空，封面保持纵向比例；旧布局可以显式选择。未知时长不补零。", "steam-dlc-hint")), W.append(H("p", "games 与 recent 是不同公开样本；full 需要可选 Steam Key。选择来源不会自动把样本当成完整库。默认纵向 2:3，可切换 9:16 或 1:2；作品数量和输出预算共同约束分页，兼容旧布局最多 200 项。包含全部应用会纳入软件，旧设置中的关闭值继续保留。", "steam-dlc-hint")), Me = H("p", "尚未读取缓存状态。", "steam-dlc-cache-value"), Q = H("button", "刷新缓存状态"), Q.className = "ui-button", Q.type = "button", Q.dataset.action = "refresh-cache", U(Q, "click", () => {
+			Fe();
+		}), W.append(Me, Q)), i === "dota2" && W.append(H("p", "账号可用 Dota ID32 或 SteamID64。订阅创建、查看和取消使用当前群或私聊中的命令；页面不伪造聊天身份。OpenDota Key 可选，匿名与有 Key 都遵守同一每小时预算；模型短评失败不会阻止基础通知。", "steam-dlc-hint"));
 	} else if (a && t.routeId === "settings") {
-		U = I("form"), L(U, "submit", (e) => {
-			e.preventDefault(), Ae();
+		J = H("form"), U(J, "submit", (e) => {
+			e.preventDefault(), je();
 		});
-		let e = I("div", void 0, "steam-dlc-actions");
-		W = I("button", "保存修改"), W.className = "ui-button", W.dataset.variant = "primary", W.type = "submit", W.dataset.action = "save", G = I("button", "刷新配置"), G.className = "ui-button", G.type = "button", G.dataset.action = "refresh", K = I("button", "放弃本模块修改"), K.className = "ui-button", K.type = "button", K.dataset.action = "discard", L(G, "click", () => {
-			Oe(!0);
-		}), L(K, "click", () => {
-			V() && !x && C && (P.size && (ue += 1), P.clear(), Te(), H("已放弃本模块修改。", "success"), q());
-		}), e.append(W, G, K), R.append(U), U.append(e), R.append(I("p", "回复主题中的“跟随核心”清除模块覆盖值。恢复默认先形成草稿，保存后生效。", "steam-dlc-hint"));
-	} else i === "cs2" && t.routeId === "query" ? We(!1) : i === "steam" && t.routeId === "collage" ? We(!0) : R.append(I("p", "该页面入口未声明，请返回模块列表重新进入。"));
-	R.append(z);
-	let Ge = () => {
-		_ || (_ = !0, b += 1, Y += 1, D += 1, j += 1, x = !1, Ve(), oe.forEach((e) => {
+		let e = H("div", void 0, "steam-dlc-actions");
+		Y = H("button", "保存修改"), Y.className = "ui-button", Y.dataset.variant = "primary", Y.type = "submit", Y.dataset.action = "save", _e = H("button", "刷新配置"), _e.className = "ui-button", _e.type = "button", _e.dataset.action = "refresh", ve = H("button", "放弃本模块修改"), ve.className = "ui-button", ve.type = "button", ve.dataset.action = "discard", U(_e, "click", () => {
+			ke(!0);
+		}), U(ve, "click", () => {
+			K() && !T && O && (B.size && (le += 1), B.clear(), Ee(), q("已放弃本模块修改。", "success"), X());
+		}), e.append(Y, _e, ve), t.presentation?.actions(e), W.append(J), J.append(e), W.append(H("p", "回复主题中的“跟随核心”清除模块覆盖值。恢复默认先形成草稿，保存后生效。", "steam-dlc-hint"));
+	} else if (i === "cs2" && t.routeId === "query") Ye(!1);
+	else if (i === "steam" && t.routeId === "collage") {
+		let e = f(W, {
+			options: t,
+			active: K,
+			field: $,
+			parseLimit: w,
+			validatePNG: (e) => ee(e, n.defaultView),
+			say: q
+		});
+		re = e.dispose, de.push(e.dispose);
+	} else if (i === "steam" && t.routeId === "wishlist") {
+		let e = p(W, {
+			options: t,
+			active: K,
+			field: $,
+			say: q
+		});
+		re = e.dispose, de.push(e.dispose);
+	} else if (i === "dota2" && t.routeId === "analysis") {
+		let e = m(W, {
+			options: t,
+			active: K,
+			field: $,
+			renderResult: Je,
+			say: q
+		});
+		re = e.dispose, de.push(e.dispose);
+	} else W.append(H("p", "该页面入口未声明，请返回模块列表重新进入。"));
+	W.append(pe);
+	let Xe = () => {
+		l || (l = !0, d += 1, Ne += 1, N += 1, L += 1, T = !1, Ke(), ae.forEach((e) => {
 			e.value = "";
-		}), Z(), X(), O = null, E = null, w = !1, T = !1, N !== null && (clearTimeout(N), N = null), P.clear(), C = null, fe.splice(0).forEach((e) => e()), de(), R.remove());
+		}), Le(), Ie(), P = null, M = null, A = !1, j = !1, z !== null && (clearTimeout(z), z = null), B.clear(), O = null, de.splice(0).forEach((e) => e()), ue(), W.remove());
 	};
-	return t.scope.signal.addEventListener("abort", Ge, { once: !0 }), fe.push(() => t.scope.signal.removeEventListener("abort", Ge)), de = t.scope.onDispose(Ge), q(), U && Oe(), J && Ne(), {
+	return t.scope.signal.addEventListener("abort", Xe, { once: !0 }), de.push(() => t.scope.signal.removeEventListener("abort", Xe)), ue = t.scope.onDispose(Xe), X(), J && ke(), Q && Fe(), {
 		update(e) {
-			if (_ || y) return;
+			if (l || u) return;
 			let t = c.available;
-			c = { ...e }, d(c) === r ? t !== c.available && (j += 1, Ve(), D += 1, Z(), X(), O = null, w = !1, T = !1, Y += 1, b += 1, x = !1, S = !1, H("页面可用状态已变化，请核对刷新后的配置。")) : (j += 1, Ve(), oe.forEach((e) => {
+			c = { ...e }, _(c) === r ? t !== c.available && (re(), L += 1, Ke(), N += 1, Le(), Ie(), P = null, A = !1, j = !1, Ne += 1, d += 1, T = !1, D = !1, q("页面可用状态已变化，请核对刷新后的配置。")) : (re(), L += 1, Ke(), ae.forEach((e) => {
 				e.value = "";
-			}), ve(), H("模块运行上下文已变化，请重新进入页面。", "error")), q();
+			}), be(), q("模块运行上下文已变化，请重新进入页面。", "error")), X();
 		},
-		dispose: Ge,
+		dispose: Xe,
 		navigationImpact: me
 	};
 }
 //#endregion
 //#region packages/steam_dlc/pages/src/entry.js
-function S(u, d) {
-	let f = n({ ...d.context }), p = d.context.owner.startsWith("steam_dlc/") ? d.context.owner.slice(10) : "", m = l[p], h = d.routeId === "settings", g = d.routeId === "collage" ? "游戏生涯拼图" : d.routeId === "query" ? "平台查询" : "", ee, _, te = !1, v = () => {}, y = e({ setup: () => () => t(c, {
-		theme: f.value.theme,
-		locale: f.value.locale,
-		styleMountTarget: u
+function j(f, p) {
+	let m = n({ ...p.context }), g = p.context.owner.startsWith("steam_dlc/") ? p.context.owner.slice(10) : "", _ = h[g], v = p.routeId === "settings", y = p.routeId === "collage" ? "游戏生涯拼图" : p.routeId === "wishlist" ? "公开愿望单" : p.routeId === "analysis" ? "指定玩家分析" : p.routeId === "query" ? "平台查询" : "", b, x, S = !1, C = () => {}, w = [], T = {
+		actions(n) {
+			let i = [...n.childNodes], a = e({ setup: () => () => t(r, {}, { default: () => t("div", {
+				style: { display: "contents" },
+				ref: (e) => {
+					if (e) for (let t of i) t.parentNode !== e && e.append(t);
+				}
+			}) }) });
+			a.mount(n), w.push(a);
+		},
+		grid(n, r) {
+			let i = f.ownerDocument.createElement("div");
+			n.insertBefore(i, r || null);
+			let o, s = e({ setup: () => () => t(a, {}, { default: () => t("div", {
+				style: { display: "contents" },
+				ref: (e) => {
+					o = e;
+				}
+			}) }) });
+			return s.mount(i), w.push(s), o;
+		},
+		field(r, { control: a, reset: o, label: s, hint: c, error: l }) {
+			let u = f.ownerDocument.createElement("div");
+			r.append(u);
+			let d = n(c.textContent), p = n(l.textContent), m = e({ setup: () => () => t(i, {
+				controlId: a.id,
+				label: s.textContent,
+				hint: d.value,
+				error: p.value,
+				hintId: c.id,
+				errorId: l.id
+			}, {
+				default: ({ controlAttrs: e }) => {
+					for (let [t, n] of Object.entries(e)) n === void 0 ? a.removeAttribute(t) : a.setAttribute(t, String(n));
+					return t("div", { ref: (e) => {
+						e && a.parentNode !== e && e.append(a);
+					} });
+				},
+				actions: () => o ? t("div", { ref: (e) => {
+					e && o.parentNode !== e && e.append(o);
+				} }) : null
+			}) });
+			return m.mount(u), w.push(m), {
+				hint: {
+					get textContent() {
+						return d.value;
+					},
+					set textContent(e) {
+						d.value = e;
+					}
+				},
+				error: {
+					get textContent() {
+						return p.value;
+					},
+					set textContent(e) {
+						p.value = e;
+					}
+				}
+			};
+		}
+	}, ee = e({ setup: () => () => t(d, {
+		theme: m.value.theme,
+		locale: m.value.locale,
+		styleMountTarget: f
 	}, { default: () => t("section", {
 		class: "steam-dlc-view",
-		lang: f.value.locale
-	}, [t(r, {
-		title: m ? `${m.title}${h ? " 设置" : g ? ` ${g}` : ""}` : "模块页面不可用",
+		lang: m.value.locale
+	}, [t(o, {
+		title: _ ? `${_.title}${v ? " 设置" : y ? ` ${y}` : ""}` : "模块页面不可用",
 		eyebrow: "YOMIHIME GAME LINK / STEAM DLC",
-		subtitle: h ? "维护查询、输出设置与来源授权。" : m?.summary
-	}), t(a, {}, {
-		default: () => t(i, {
-			title: h ? "模块设置与来源" : g || "命令与可用状态",
+		subtitle: v ? "维护查询、输出设置与来源授权。" : _?.summary
+	}), t(c, {}, {
+		default: () => t(s, {
+			title: v ? "模块设置与来源" : y || "命令与可用状态",
 			number: "01"
 		}, { default: () => t("div", { ref: (e) => {
-			ee = e;
+			b = e;
 		} }) }),
-		aside: () => t(s, { title: h ? "设置说明" : "数据与账号" }, { default: () => [t(o, {}, { default: () => h ? p === "steam" ? "选择公开样本或完整库、布局、时长预设、比例和输出预算。完整库需要可选 Steam Key；是否完整以来源实际返回为准。" : p === "cs2" ? "完美授权与 5E Token 仅用于来源请求，玩家查询目标保持独立。二维码需由账号本人亲自确认；离页将停止轮询。" : p === "dota2" ? "订阅设置控制当前服务的采集与预算；具体群或私聊订阅通过本人命令管理。OpenDota Key 可选，不会自动扩大请求额度。" : "网页浅深主题与命令图片回复主题分别设置。回复主题选项由当前授权配置提供。" : m?.source || "当前页面没有可用的模块声明。" }), t("p", { class: "steam-dlc-hint" }, h ? "保存后会重新读取并核对结果；冲突或未确认结果需要手动刷新。" : "默认账号只在已授权的命令路径使用。自然语言工具必须提供明确账号或比赛编号。")] })
+		aside: () => t(u, { title: v ? "设置说明" : "数据与账号" }, { default: () => [t(l, {}, { default: () => v ? g === "steam" ? "选择公开样本或完整库、布局、时长预设、比例和输出预算。完整库需要可选 Steam Key；是否完整以来源实际返回为准。" : g === "cs2" ? "完美授权与 5E Token 仅用于来源请求，玩家查询目标保持独立。二维码需由账号本人亲自确认；离页将停止轮询。" : g === "dota2" ? "订阅设置控制当前服务的采集与预算；具体群或私聊订阅通过本人命令管理。OpenDota Key 可选，不会自动扩大请求额度。" : "网页浅深主题与命令图片回复主题分别设置。回复主题选项由当前授权配置提供。" : _?.source || "当前页面没有可用的模块声明。" }), t("p", { class: "steam-dlc-hint" }, v ? "保存后会重新读取并核对结果；冲突或未确认结果需要手动刷新。" : "默认账号只在已授权的命令路径使用。自然语言工具必须提供明确账号或比赛编号。")] })
 	})]) }) });
-	y.mount(u), _ = x(ee, {
-		...d,
+	ee.mount(f), x = A(b, {
+		...p,
+		presentation: T,
 		scope: {
-			signal: d.scope.signal,
-			isCurrent: () => d.scope.isCurrent(),
+			signal: p.scope.signal,
+			isCurrent: () => p.scope.isCurrent(),
 			onDispose: () => () => {}
 		}
 	});
-	let b = () => {
-		te || (te = !0, _.dispose(), y.unmount(), v());
+	let E = () => {
+		S || (S = !0, x.dispose(), w.splice(0).reverse().forEach((e) => e.unmount()), ee.unmount(), C());
 	};
-	return v = d.scope.onDispose(b), {
+	return C = p.scope.onDispose(E), {
 		update(e) {
-			te || (_.update(e), f.value = { ...e });
+			S || (x.update(e), m.value = { ...e });
 		},
-		dispose: b,
-		navigationImpact: _.navigationImpact
+		dispose: E,
+		navigationImpact: x.navigationImpact
 	};
 }
 //#endregion
-export { S as mount };
+export { j as mount };

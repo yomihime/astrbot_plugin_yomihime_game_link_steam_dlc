@@ -9,8 +9,13 @@ from packages.steam_dlc.steam.career import (
     preflight,
     span_for_minutes,
 )
-from packages.steam_dlc.steam.queries import QueryFailure
-from packages.steam_dlc.steam.wall import cumulative, options, select, source_rows
+from packages.steam_dlc.steam.wall import (
+    cumulative,
+    options,
+    parse_limit,
+    select,
+    source_rows,
+)
 from packages.steam_dlc.steam.wall_materials import material_request, normalize_items
 from packages.steam_dlc.steam.wall_presentation import result as wall_result
 
@@ -34,7 +39,7 @@ def row(appid, hours, **updates):
 
 
 class WallBusinessTests(unittest.TestCase):
-    def test_dense_preflight_rejects_fragmentation_at_exact_nominal_area(self):
+    def test_dense_preflight_continues_pages_beyond_old_total_limit(self):
         def selection(count, aspect="2:3", quality="normal"):
             return {
                 "mode": "dense",
@@ -47,11 +52,11 @@ class WallBusinessTests(unittest.TestCase):
         pages = preflight(selection(64))
         self.assertEqual([len(page) for page in pages], [8] * 8)
         for count in (65, 80):
-            with self.subTest(count=count), self.assertRaises(QueryFailure):
-                preflight(selection(count))
+            pages = preflight(selection(count))
+            self.assertEqual(sum(map(len, pages)), count)
+            self.assertGreater(len(pages), 8)
         # HD's public pixel envelope has fewer rows even without page chrome.
-        with self.assertRaises(QueryFailure):
-            preflight(selection(40, quality="hd"))
+        self.assertEqual(sum(map(len, preflight(selection(40, quality="hd")))), 40)
         self.assertIsNone(preflight({"mode": "legacy", "rows": [{"span": 8}] * 80}))
 
     def test_dense_preflight_backfills_stably_and_respects_page_item_bound(self):
@@ -261,7 +266,6 @@ class WallBusinessTests(unittest.TestCase):
         self.assertEqual(value["limit"], 200)
         for command in (
             "--limit 0",
-            "--limit 1001",
             "--limit true",
             "--source bad",
             "1 2",
@@ -269,6 +273,46 @@ class WallBusinessTests(unittest.TestCase):
         ):
             with self.assertRaises(ValueError):
                 options(None, {"command": command})
+
+    def test_decimal_cli_and_safe_integer_tool_contract(self):
+        for raw, expected in (
+            ("120.9", 120),
+            ("2000.8", 2000),
+            ("1001", 1001),
+            ("1.5e3", 1500),
+            ("9007199254740991.9", 9007199254740991),
+        ):
+            self.assertEqual(parse_limit(raw), expected)
+            self.assertEqual(
+                options(None, {"command": "--limit " + raw})["limit"], expected
+            )
+        for invalid in (
+            True,
+            False,
+            "",
+            " ",
+            "20abc",
+            "NaN",
+            "Infinity",
+            "19.99",
+            "9007199254740992",
+            "9e999",
+            "1e999999999",
+            -20,
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                parse_limit(invalid)
+        self.assertEqual(options(None, {"command": "--limit all"})["limit_mode"], "all")
+        self.assertEqual(options(None, {"limit": 1000})["limit_mode"], "top")
+        for invalid in ("1500", 120.9, True):
+            with self.assertRaises(ValueError):
+                options(None, {"limit": invalid})
+
+    def test_large_source_rows_are_not_silently_truncated(self):
+        data = projection([row(index, "1") for index in range(1, 20002)])
+        selected = select(data, {}, mode="dense", all_apps=True, limit_mode="all")
+        self.assertEqual(selected["counts"]["included"], 20001)
+        self.assertEqual(selected["counts"]["requested"], "all")
 
     def test_metadata_identity_numeric_type_and_hashed_asset_version(self):
         assets = {

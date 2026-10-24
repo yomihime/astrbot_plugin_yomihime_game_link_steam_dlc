@@ -10,11 +10,17 @@ import time
 from collections.abc import Mapping
 
 import yomihime_game_link_sdk as ygl
-from yomihime_game_link_sdk.storage import CacheQuery, CacheVisibility
+from yomihime_game_link_sdk.services import ResourceCacheClass
+from yomihime_game_link_sdk.storage import (
+    CacheLookupStatus,
+    CacheQuery,
+    CacheVisibility,
+)
 
 from .cache_validation import mutable_json
 from .normalization import app_id, literal
 from .queries import QueryFailure, _dimensions
+from .store_browse import batches as browse_batches
 
 PUBLIC = CacheVisibility.PUBLIC
 VERSION = "steam-wall-materials-v1"
@@ -201,7 +207,7 @@ class MaterialPreparer:
     async def _cached(self, scope, key):
         try:
             lookup = await scope.cache.lookup(CacheQuery(key, PUBLIC))
-            if lookup.entry is not None:
+            if lookup.status is CacheLookupStatus.HIT and lookup.entry is not None:
                 return mutable_json(lookup.entry.payload)
         except (ygl.CacheUnavailable, ValueError):
             pass
@@ -244,9 +250,25 @@ class MaterialPreparer:
                 "Steam 素材请求限流。",
                 counters["retry_after"] or None,
             )
+        if kind == "image" and isinstance(response.body, bytes):
+            counters["download_bytes"] += len(response.body)
         return response
 
     async def _metadata(self, scope, appids, country, language, refresh, counters):
+        result = {}
+        for group, encoded in browse_batches(
+            appids, country, language, {"include_assets": True}
+        ):
+            result.update(
+                await self._metadata_batch(
+                    scope, group, country, language, refresh, counters, encoded
+                )
+            )
+        return result
+
+    async def _metadata_batch(
+        self, scope, appids, country, language, refresh, counters, encoded
+    ):
         identity = json.dumps([list(appids), country, language], separators=(",", ":"))
         key = VERSION + ":metadata:" + hashlib.sha256(identity.encode()).hexdigest()
         cached = await self._cached(scope, key)
@@ -284,11 +306,6 @@ class MaterialPreparer:
         if len(individual) == len(appids) and not refresh:
             counters["metadata_hits"] += 1
             return individual
-        payload = {
-            "ids": [{"appid": int(v)} for v in appids],
-            "context": {"language": language, "country_code": country},
-            "data_request": {"include_assets": True},
-        }
         headers = {}
         if cached and _etag(cached.get("etag")):
             headers["If-None-Match"] = _etag(cached["etag"])
@@ -298,7 +315,7 @@ class MaterialPreparer:
                 ygl.HttpRequest(
                     "steam_browse",
                     "/IStoreBrowseService/GetItems/v1/",
-                    query=(("input_json", json.dumps(payload, separators=(",", ":"))),),
+                    query=(("input_json", encoded),),
                     headers=headers,
                 ),
                 counters,
@@ -366,10 +383,15 @@ class MaterialPreparer:
     async def _image(self, scope, target, request, counters, refresh):
         # Include region/language-selected source path, exact variant and version.
         identity = json.dumps(request, sort_keys=True, separators=(",", ":"))
-        key = VERSION + ":image:" + hashlib.sha256(identity.encode()).hexdigest()
+        # Raw identity survives DLC revisions, layout and selection changes.
+        key = "steam-public-original:" + hashlib.sha256(identity.encode()).hexdigest()
+        legacy_key = VERSION + ":image:" + hashlib.sha256(identity.encode()).hexdigest()
 
         async def work():
             cached = await self._cached(scope, key)
+            if cached is None:
+                # Adopt a verified pre-job resource without downloading it again.
+                cached = await self._cached(scope, legacy_key)
             if not (
                 cached
                 and cached.get("schema") == VERSION
@@ -467,7 +489,11 @@ class MaterialPreparer:
                     return usable
                 try:
                     reference = await scope.resources.store(
-                        media, body, visibility=PUBLIC, ttl_seconds=TTL
+                        media,
+                        body,
+                        visibility=PUBLIC,
+                        ttl_seconds=TTL,
+                        cache_class=ResourceCacheClass.RAW,
                     )
                 except ygl.ParameterError:
                     # Core performs the full decoder validation after this
@@ -480,6 +506,7 @@ class MaterialPreparer:
                 except ygl.ServiceUnavailable:
                     counters["budget_skipped"] += 1
                     return usable
+                counters["image_cache_writes"] += 1
                 await self._put(
                     scope,
                     key,
@@ -534,6 +561,8 @@ class MaterialPreparer:
                 "metadata_failed",
                 "stale_images",
                 "image_bytes",
+                "download_bytes",
+                "image_cache_writes",
                 "budget_skipped",
                 "image_rejected",
                 "rate_limited",

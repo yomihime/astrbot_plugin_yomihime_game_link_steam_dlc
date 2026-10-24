@@ -27,7 +27,6 @@ ANCHORS = {
 ASPECT_HEIGHT = {"2:3": 81, "9:16": 96, "1:2": 108}
 _DENSE_COLUMNS = 20
 _DENSE_PAGE_ITEMS = 512
-_DENSE_MAX_PAGES = 8
 
 
 class _GridTile(NamedTuple):
@@ -69,9 +68,9 @@ def preflight(selection):
     """Reject impossible complete outputs before any cover image requests.
 
     Plan the public body-grid envelope with stable largest-first, row-major
-    first-fit backfill, including per-page item/page limits. Area alone cannot
-    prove packing: e.g. eighty 8x8 tiles cannot fit twenty columns across eight
-    32-row pages even though their total area equals that nominal capacity.
+    first-fit backfill and bounded per-page items. Return every planned page;
+    the durable job splits that plan into bounded renderer documents. Area
+    alone cannot prove packing, so the job also checks this concrete plan.
 
     The pixel ceiling here deliberately assumes zero header/footer height.
     Passing proves placement only in that upper body envelope. Core measures
@@ -84,15 +83,13 @@ def preflight(selection):
     width = _DENSE_COLUMNS * cell_width
     rows = min(32, max(0, ((128 * 1024 * 1024) // 36 // width) // cell_height))
     spans = [row["span"] for row in selection["rows"]]
-    if len(spans) > 1000 or any(
-        type(span) is not int or not 1 <= span <= 8 for span in spans
-    ):
+    if any(type(span) is not int or not 1 <= span <= 8 for span in spans):
         raise ValueError("Invalid dense selection spans")
 
     def overflow() -> NoReturn:
         raise QueryFailure(
             ygl.ErrorCode.PARAMETER_ERROR,
-            "拼图超过整数格/像素预算（每页最多512项、共8页）；请减小数量、选择较小倍率预设或普通清晰度。",
+            "单批拼图超过整数格/像素预算；任务已保留完成页，可调整比例或清晰度后重试。",
         )
 
     occupied: list[list[int]] = []
@@ -105,8 +102,6 @@ def preflight(selection):
         placement = None
         for page_index in range(len(pages) + 1):
             if page_index == len(pages):
-                if len(pages) == _DENSE_MAX_PAGES:
-                    break
                 occupied.append([0] * rows)
                 pages.append([])
             if len(pages[page_index]) == _DENSE_PAGE_ITEMS:
@@ -147,7 +142,6 @@ async def load_full(scope, target, *, credential_revision=0, cache=True, refresh
                     payload.get("schema_version") == "steam-full-v1"
                     and payload.get("target") == target
                     and type(rows) is list
-                    and len(rows) <= 20000
                 ):
                     # Rebuild the same closed adapter shape; do not trust a
                     # mutable cache's claimed count, completeness or precision.
@@ -296,6 +290,8 @@ async def load_full(scope, target, *, credential_revision=0, cache=True, refresh
                 ttl_seconds=300,
                 visibility=CacheVisibility.USER,
             )
-        except ygl.CacheUnavailable:
+        except (ygl.CacheUnavailable, ygl.ParameterError, ValueError):
+            # A verified source result remains usable when a bounded optional
+            # JSON cache cannot hold a large library. Authority still propagates.
             pass
     return projection

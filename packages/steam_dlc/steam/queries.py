@@ -56,6 +56,8 @@ def validate_final_url(response, source, path):
         "steam_avatar_fastly": "avatars.fastly.steamstatic.com",
         "steam_store_image": "shared.akamai.steamstatic.com",
         "steam_api": "api.steampowered.com",
+        "steam_wishlist": "api.steampowered.com",
+        "steam_browse": "api.steampowered.com",
     }
     try:
         parsed = urlsplit(value)

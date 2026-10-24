@@ -42,6 +42,15 @@ from ..shared.contracts import MatchSummary, PlayerProfile, RecentMatch
 from ..shared.hero_names import HERO_NAMES
 from ..shared.output import failure, success
 from ..shared.steam_ids import account_id32, parse_dota_account, parse_steam_id
+from .analysis import MAX_RESPONSE_BYTES as ANALYSIS_MAX_BYTES
+from .analysis import (
+    FocusError,
+    analysis_result,
+    normalize_analysis,
+    plain,
+    select_focus,
+    valid_cached_analysis,
+)
 from .cache_validation import VERSION, decode_window, valid_projection
 from .normalization import normalize_match, normalize_profile, normalize_recent
 from .presentation import report_result
@@ -53,6 +62,7 @@ from .subscriptions import (
     DotaMatchCollector,
     DotaMatchComposer,
     DotaMatchEvaluator,
+    DotaMatchProjector,
 )
 
 _SOURCE = "opendota"
@@ -86,6 +96,8 @@ class Dota2Module:
                 "stats_explicit": _Query(self, "stats"),
                 "last": _Query(self, "last"),
                 "last_explicit": _Query(self, "last"),
+                "analyze": _Query(self, "analyze"),
+                "analyze_explicit": _Query(self, "analyze"),
                 "status": _Status(self),
                 "watch": _Manage(self, "watch"),
                 "watchlist": _Manage(self, "list"),
@@ -94,6 +106,7 @@ class Dota2Module:
             collectors={COLLECTOR_ID: DotaMatchCollector(self._services)},
             evaluators={TYPE_ID: DotaMatchEvaluator()},
             event_composers={COMPOSER_ID: DotaMatchComposer()},
+            event_projectors={COMPOSER_ID: DotaMatchProjector()},
         )
 
     async def start(self) -> None:
@@ -119,6 +132,8 @@ class Dota2Module:
                     "stats_explicit",
                     "last",
                     "last_explicit",
+                    "analyze",
+                    "analyze_explicit",
                     "status",
                     "watch",
                     "watchlist",
@@ -236,6 +251,8 @@ class _Query:
             return failure(ErrorCode.MODULE_UNAVAILABLE, "Dota 2 模块当前未运行。")
         selected_last = False
         try:
+            if self.operation == "analyze":
+                return await _invoke_analysis(self.owner._services, context, parameters)
             target, limit, match_id, default_target = await _resolve_input(
                 self.owner._services, context, parameters, self.operation
             )
@@ -431,6 +448,114 @@ def _source_failure(exc: SourceHttpError):
             ErrorCode.RATE_LIMITED, "OpenDota 请求额度暂不可用，请稍后重试。"
         )
     return failure(ErrorCode.MODULE_UNAVAILABLE, "OpenDota 数据源暂时不可用。")
+
+
+async def _invoke_analysis(services, context, parameters):
+    command = (
+        context.origin is InvocationOrigin.COMMAND
+        and not context.capability_id.endswith("_explicit")
+    )
+    refresh = parameters.get("refresh", False)
+    if type(refresh) is not bool:
+        raise _QueryFailure(ErrorCode.PARAMETER_ERROR, "refresh必须是布尔值。")
+    if command:
+        args = _command_tokens(parameters.get("command", ""))
+        if not args or not _MATCH_ID.fullmatch(args[0]):
+            raise _QueryFailure(
+                ErrorCode.PARAMETER_ERROR,
+                "用法：/ygl dota2 analyze <比赛ID> [--account <账号或唯一昵称>] [--refresh]",
+            )
+        match_id, target, index = args[0], None, 1
+        while index < len(args):
+            if args[index] == "--account" and target is None and index + 1 < len(args):
+                target, index = args[index + 1], index + 2
+            elif args[index] == "--refresh" and not refresh:
+                refresh, index = True, index + 1
+            else:
+                raise _QueryFailure(ErrorCode.PARAMETER_ERROR, "分析命令参数无效。")
+        if target is None or target in ("我", "self", "me"):
+            target = str((await _default_identity(services, context))["account_id32"])
+    else:
+        match_id, target = parameters.get("match_id"), parameters.get("account")
+        if (
+            not isinstance(match_id, str)
+            or not _MATCH_ID.fullmatch(match_id)
+            or not isinstance(target, str)
+            or not 1 <= len(target) <= 80
+            or target in ("我", "self", "me")
+        ):
+            raise _QueryFailure(
+                ErrorCode.PARAMETER_ERROR,
+                "详细分析工具需要明确比赛ID和参赛账号或本局唯一昵称。",
+            )
+    scope = await services.scopes.bind(context)
+    key = f"opendota:match_analysis:v1:{match_id}"
+    projection = None
+    if not refresh:
+        try:
+            saved = await scope.cache.lookup(CacheQuery(key, CacheVisibility.PUBLIC))
+            if saved.status is CacheLookupStatus.HIT and saved.entry is not None:
+                candidate = plain(saved.entry.payload)
+                if (
+                    valid_cached_analysis(candidate, match_id)
+                    and len(json.dumps(candidate, allow_nan=False).encode()) <= 512_000
+                ):
+                    projection = candidate
+        except (CacheUnavailable, TypeError, ValueError):
+            pass
+    if projection is None:
+        response = await scope.http.fetch(
+            HttpRequest(_SOURCE, f"/api/matches/{match_id}")
+        )
+        if response.status_code == 404:
+            raise _QueryFailure(ErrorCode.NOT_FOUND, "OpenDota尚未收录这场比赛。")
+        if response.status_code == 429:
+            raise _QueryFailure(
+                ErrorCode.RATE_LIMITED, "OpenDota请求额度暂不可用，请稍后重试。"
+            )
+        if not 200 <= response.status_code < 300:
+            raise _QueryFailure(
+                ErrorCode.UPSTREAM_ERROR, "OpenDota暂时无法提供该比赛。"
+            )
+        if type(response.body) is not bytes or len(response.body) > ANALYSIS_MAX_BYTES:
+            raise _QueryFailure(
+                ErrorCode.UPSTREAM_ERROR,
+                "详细比赛响应超过4MB有界读取上限，未伪造部分完成。",
+            )
+        projection = normalize_analysis(
+            json.loads(response.body.decode("utf-8")), match_id
+        )
+        projection["fetched_at"] = datetime.now(UTC).isoformat()
+        projection["cached_at"] = projection["fetched_at"]
+        try:
+            await scope.cache.put(
+                key,
+                projection,
+                ttl_seconds=_CACHE_TTL,
+                visibility=CacheVisibility.PUBLIC,
+            )
+        except CacheUnavailable:
+            pass
+    try:
+        focus = select_focus(projection, target)
+    except FocusError as exc:
+        if exc.status == "ambiguous":
+            return ygl.CapabilityResult(
+                "steam-dlc-dota2-focus",
+                ResultStatus.NEEDS_SELECTION,
+                document=ygl.DisplayDocument(
+                    "请选择明确参赛账号",
+                    "本局有同名玩家",
+                    (ygl.TextBlock("候选ID32：" + ", ".join(exc.candidates)),),
+                ),
+            )
+        message = (
+            "该玩家在本局匿名或缺少可验证阵营，不能猜测视角。"
+            if exc.status == "anonymous"
+            else "该账号/昵称未在本局可验证参赛玩家中找到。"
+        )
+        raise _QueryFailure(ErrorCode.NOT_FOUND, message) from None
+    return analysis_result(projection, focus, command=command)
 
 
 async def _resolve_input(services, context, parameters, operation):

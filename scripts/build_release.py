@@ -12,7 +12,7 @@ from io import BytesIO
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SDK_VERSION = "0.1.0a16"
+SDK_VERSION = "0.1.0a22"
 QUERY_TOOLS = {
     "steam": {
         "search": ("search", "query"),
@@ -22,10 +22,14 @@ QUERY_TOOLS = {
             for name in ("profile", "recent", "games")
         },
         "wall": ("wall_explicit", "account"),
+        "wishlist": ("wishlist_explicit", "account"),
     },
     "dota2": {
-        name: (name + "_explicit", "match_id" if name == "match" else "account")
-        for name in ("profile", "recent", "stats", "last", "match")
+        name: (
+            name + "_explicit",
+            "match_id" if name in ("match", "analyze") else "account",
+        )
+        for name in ("profile", "recent", "stats", "last", "match", "analyze")
     },
     "deadlock": {
         name: (name + "_explicit", "match_id" if name == "match" else "account")

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "package_id": "steam_dlc",
-  "package_version": "0.2.0-alpha.5",
+  "package_version": "0.2.0-alpha.6",
   "contract_version": "2.0",
   "author": "yomihime",
   "license": "AGPL-3.0-only",
@@ -12,7 +12,7 @@
       "route": "steam",
       "category": "platform",
       "factory_entry": "steam.module:Factory",
-      "module_version": "0.2.0-alpha.5",
+      "module_version": "0.2.0-alpha.6",
       "capabilities": [
         {
           "capability_id": "bind",
@@ -315,8 +315,8 @@
               },
               "limit": {
                 "type": "integer",
-                "minimum": 1,
-                "maximum": 1000
+                "minimum": 20,
+                "maximum": 9007199254740991
               },
               "all_apps": {
                 "type": "boolean"
@@ -359,6 +359,13 @@
                 "enum": [
                   "cover",
                   "contain"
+                ]
+              },
+              "limit_mode": {
+                "type": "string",
+                "enum": [
+                  "top",
+                  "all"
                 ]
               }
             },
@@ -462,8 +469,8 @@
               },
               "limit": {
                 "type": "integer",
-                "minimum": 1,
-                "maximum": 1000
+                "minimum": 20,
+                "maximum": 9007199254740991
               },
               "all_apps": {
                 "type": "boolean"
@@ -507,6 +514,13 @@
                   "cover",
                   "contain"
                 ]
+              },
+              "limit_mode": {
+                "type": "string",
+                "enum": [
+                  "top",
+                  "all"
+                ]
               }
             },
             "required": [
@@ -524,6 +538,68 @@
               "module_id": "steam_dlc/steam",
               "capability_id": "wall_materials"
             }
+          ]
+        },
+        {
+          "capability_id": "wishlist",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "maxLength": 512
+              }
+            },
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "required_sources": [
+            "steam_wishlist",
+            "steam_browse"
+          ]
+        },
+        {
+          "capability_id": "wishlist_explicit",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "page": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000000
+              },
+              "country": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 2
+              },
+              "language": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 24
+              }
+            },
+            "required": [
+              "account"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "required_sources": [
+            "steam_wishlist",
+            "steam_browse"
+          ],
+          "invocation_origins": [
+            "command",
+            "llm_tool",
+            "web_public"
           ]
         }
       ],
@@ -601,6 +677,14 @@
           "parameter_mode": "raw_tail",
           "raw_tail_parameter": "command",
           "help_text": "游戏生涯拼图，games/recent是公开样本，full需要可选Steam Key。可选 --source games|recent|full、--mode dense|legacy、--preset single|standard|long、--aspect 2:3|9:16|1:2、--quality normal|hd、--fit cover|contain、--all-apps、--games-only、--limit 1..1000、--refresh；legacy最多200项，最终受输出预算约束。"
+        },
+        {
+          "operation_path": "wishlist",
+          "capability_id": "wishlist",
+          "parameter_mapping": {},
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "command",
+          "help_text": "wishlist [account] [--page N]：公开愿望单每页20项，仅当前页补商店信息。"
         }
       ],
       "tools": [
@@ -661,14 +745,27 @@
             "preset": "preset",
             "aspect": "aspect",
             "quality": "quality",
-            "fit": "fit"
+            "fit": "fit",
+            "limit_mode": "limit_mode"
           },
           "description": "为用户明确提供的 account ID32/SteamID64 生成游戏生涯拼图，禁止读取或推导默认绑定。games/recent 是公开样本；full 需要可选 Steam Key并遵守玩家隐私。默认密排、标准时长预设、2:3、普通清晰度、等比裁切、包含软件等全部应用，最多500项；可选1..1000项，legacy最多200项，最终受输出预算约束。保留未知及剔除计数。"
+        },
+        {
+          "name": "steam_dlc_steam_wishlist",
+          "capability_id": "wishlist_explicit",
+          "parameter_mapping": {
+            "account": "account",
+            "page": "page",
+            "country": "country",
+            "language": "language"
+          },
+          "description": "查询明确Steam账号的公开愿望单，每页20项；不能以缺失响应推断空单。"
         }
       ],
       "display": {
         "default_name": "Steam",
-        "short_name": "Steam"
+        "short_name": "Steam",
+        "summary": "公开商店、账号、完整库、愿望单与游戏生涯拼图。"
       },
       "collections": [
         {
@@ -731,7 +828,7 @@
       "resources": [
         {
           "path": "pages/steam/entry.js",
-          "sha256": "41e4dc0c631e1f5960138c282116a91b6359e4f9d8a10ef2bc6a6b4cadc3bc4b"
+          "sha256": "ccf9c603c3d6b180d503a3425d77d02896ab7e097aa8cdc954a33148c127140d"
         },
         {
           "path": "pages/steam/style.css",
@@ -784,6 +881,12 @@
           "source_id": "steam_api",
           "host": "api.steampowered.com",
           "requests_per_minute": 60
+        },
+        {
+          "source_id": "steam_wishlist",
+          "host": "api.steampowered.com",
+          "timeout_seconds": 10.0,
+          "requests_per_minute": 60
         }
       ],
       "config_fields": [
@@ -800,10 +903,10 @@
           "default": 500,
           "value_schema": {
             "type": "integer",
-            "minimum": 1,
-            "maximum": 1000
+            "minimum": 20,
+            "maximum": 9007199254740991
           },
-          "description": "数量上限1–1000；最终还受页数、像素、素材与发送预算限制。"
+          "description": "有限选集至少20项，可手填超过1000；不限使用独立模式。"
         },
         {
           "name": "poster_source",
@@ -885,6 +988,102 @@
           "sensitive": true,
           "group": "steam_key",
           "description": "可选部署者Steam Web API Key；受控注入，不绕过私密库。"
+        },
+        {
+          "name": "poster_limit_mode",
+          "default": "top",
+          "description": "前N项或不限实际来源选集；1000仍为有限数量。",
+          "value_schema": {
+            "type": "string",
+            "enum": [
+              "top",
+              "all"
+            ]
+          }
+        }
+      ],
+      "jobs": [
+        {
+          "job_id": "steam_wall",
+          "parameter_schema": {
+            "type": "object",
+            "properties": {
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "games",
+                  "recent",
+                  "full"
+                ]
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 20,
+                "maximum": 9007199254740991
+              },
+              "all_apps": {
+                "type": "boolean"
+              },
+              "refresh": {
+                "type": "boolean"
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "dense",
+                  "legacy"
+                ]
+              },
+              "preset": {
+                "type": "string",
+                "enum": [
+                  "single",
+                  "standard",
+                  "long"
+                ]
+              },
+              "aspect": {
+                "type": "string",
+                "enum": [
+                  "2:3",
+                  "9:16",
+                  "1:2"
+                ]
+              },
+              "quality": {
+                "type": "string",
+                "enum": [
+                  "normal",
+                  "hd"
+                ]
+              },
+              "fit": {
+                "type": "string",
+                "enum": [
+                  "cover",
+                  "contain"
+                ]
+              },
+              "limit_mode": {
+                "type": "string",
+                "enum": [
+                  "top",
+                  "all"
+                ]
+              }
+            },
+            "required": [
+              "account"
+            ],
+            "additionalProperties": false
+          },
+          "timeout_seconds": 1800,
+          "max_active_per_owner": 2
         }
       ]
     },
@@ -893,7 +1092,7 @@
       "route": "dota2",
       "category": "game",
       "factory_entry": "dota2.module:Factory",
-      "module_version": "0.2.0-alpha.5",
+      "module_version": "0.2.0-alpha.6",
       "capabilities": [
         {
           "capability_id": "recent",
@@ -1235,6 +1434,70 @@
           },
           "invocation_policy": "command_only",
           "effect": "write"
+        },
+        {
+          "capability_id": "analyze",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "command"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "command_only",
+          "effect": "read_only",
+          "required_sources": [
+            "opendota"
+          ],
+          "required_capabilities": [
+            {
+              "module_id": "steam_dlc/steam",
+              "capability_id": "identity"
+            }
+          ]
+        },
+        {
+          "capability_id": "analyze_explicit",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "match_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 24
+              },
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "refresh": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "match_id",
+              "account"
+            ],
+            "additionalProperties": false
+          },
+          "invocation_policy": "natural_language_allowed",
+          "effect": "read_only",
+          "required_sources": [
+            "opendota"
+          ],
+          "invocation_origins": [
+            "command",
+            "llm_tool",
+            "web_public"
+          ]
         }
       ],
       "commands": [
@@ -1307,6 +1570,14 @@
           "help_text": "取消自己在当前会话的关注 <玩家ID或订阅编号>。",
           "parameter_mode": "raw_tail",
           "raw_tail_parameter": "command"
+        },
+        {
+          "operation_path": "analyze",
+          "capability_id": "analyze",
+          "parameter_mapping": {},
+          "parameter_mode": "raw_tail",
+          "raw_tail_parameter": "command",
+          "help_text": "analyze <match_id> [--account ID32/SteamID64/本局唯一昵称] [--refresh]：本人仅走可信绑定；缺少解析不推测时间线。"
         }
       ],
       "tools": [
@@ -1352,11 +1623,22 @@
             "account": "account"
           },
           "description": "查询明确账号来源列表第一条有效比赛及该玩家基础结算，最多20条列表和一次详情，无录像解析。必须由用户明确提供 account；不能读取或推导我的默认绑定；只解释返回的事实，未知字段不能补造。"
+        },
+        {
+          "name": "steam_dlc_dota2_analyze",
+          "capability_id": "analyze_explicit",
+          "parameter_mapping": {
+            "match_id": "match_id",
+            "account": "account",
+            "refresh": "refresh"
+          },
+          "description": "指定比赛与明确玩家的详细事实投影；本局昵称必须唯一，不默认读取本人绑定，不在Tool内再次调用模型。"
         }
       ],
       "display": {
         "default_name": "Dota2",
-        "short_name": "Dota2"
+        "short_name": "Dota2",
+        "summary": "公开战绩、同场订阅合并战报与指定玩家分析。"
       },
       "sources": [
         {
@@ -1468,7 +1750,7 @@
       "resources": [
         {
           "path": "pages/dota2/entry.js",
-          "sha256": "41e4dc0c631e1f5960138c282116a91b6359e4f9d8a10ef2bc6a6b4cadc3bc4b"
+          "sha256": "ccf9c603c3d6b180d503a3425d77d02896ab7e097aa8cdc954a33148c127140d"
         },
         {
           "path": "pages/dota2/style.css",
@@ -1533,7 +1815,7 @@
       "route": "cs2",
       "category": "game",
       "factory_entry": "cs2.module:Factory",
-      "module_version": "0.2.0-alpha.5",
+      "module_version": "0.2.0-alpha.6",
       "capabilities": [
         {
           "capability_id": "status",
@@ -2095,7 +2377,8 @@
       ],
       "display": {
         "default_name": "CS2",
-        "short_name": "CS2"
+        "short_name": "CS2",
+        "summary": "完美、收录官匹和5E的独立来源战绩。"
       },
       "pages": [
         {
@@ -2145,7 +2428,7 @@
       "resources": [
         {
           "path": "pages/cs2/entry.js",
-          "sha256": "41e4dc0c631e1f5960138c282116a91b6359e4f9d8a10ef2bc6a6b4cadc3bc4b"
+          "sha256": "ccf9c603c3d6b180d503a3425d77d02896ab7e097aa8cdc954a33148c127140d"
         },
         {
           "path": "pages/cs2/style.css",
@@ -2214,7 +2497,7 @@
       "route": "deadlock",
       "category": "game",
       "factory_entry": "deadlock.module:Factory",
-      "module_version": "0.2.0-alpha.5",
+      "module_version": "0.2.0-alpha.6",
       "capabilities": [
         {
           "capability_id": "status",
@@ -2605,7 +2888,8 @@
       ],
       "display": {
         "default_name": "Deadlock",
-        "short_name": "Deadlock"
+        "short_name": "Deadlock",
+        "summary": "公开比赛与玩家近期战绩；覆盖范围随来源说明。"
       },
       "pages": [
         {
@@ -2639,7 +2923,7 @@
       "resources": [
         {
           "path": "pages/deadlock/entry.js",
-          "sha256": "41e4dc0c631e1f5960138c282116a91b6359e4f9d8a10ef2bc6a6b4cadc3bc4b"
+          "sha256": "ccf9c603c3d6b180d503a3425d77d02896ab7e097aa8cdc954a33148c127140d"
         },
         {
           "path": "pages/deadlock/style.css",
@@ -2665,5 +2949,12 @@
         }
       ]
     }
+  ],
+  "display_name": "Steam DLC",
+  "module_order": [
+    "steam",
+    "dota2",
+    "cs2",
+    "deadlock"
   ]
 }

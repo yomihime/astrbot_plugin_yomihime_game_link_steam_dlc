@@ -12,11 +12,13 @@ from ..shared.steam_ids import (
     parse_steam_id,
     steam_id64_from_account,
 )
+from .jobs import JobHandler, SteamWallJob
 from .normalization import app_id
 from .presentation import result as query_result
 from .queries import QueryFailure, image, load
-from .wall import CacheStatusHandler, MaterialsHandler, WallHandler
+from .wall import CacheStatusHandler, MaterialsHandler
 from .wall_materials import MaterialPreparer
+from .wishlist import WishlistHandler
 
 _PRIVATE = ygl.Privacy.PRIVATE
 _QUERIES = (
@@ -30,7 +32,10 @@ _QUERIES = (
     "games_explicit",
 )
 _WALL = ("wall", "wall_explicit", "wall_preview", "wall_materials", "wall_cache_status")
-_CAPABILITIES = ("bind", "binding", "unbind", "identity", "status") + _QUERIES + _WALL
+_WISHLIST = ("wishlist", "wishlist_explicit")
+_CAPABILITIES = (
+    ("bind", "binding", "unbind", "identity", "status") + _QUERIES + _WALL + _WISHLIST
+)
 
 
 class Factory:
@@ -48,10 +53,14 @@ class SteamModule:
         return ygl.ModuleHandlers(
             {
                 name: (
-                    WallHandler(
-                        self, explicit=name in ("wall_explicit", "wall_preview")
+                    JobHandler(
+                        self,
+                        "submit",
+                        explicit=name in ("wall_explicit", "wall_preview"),
                     )
                     if name in ("wall", "wall_explicit", "wall_preview")
+                    else WishlistHandler(self, explicit=name.endswith("_explicit"))
+                    if name in _WISHLIST
                     else MaterialsHandler(self)
                     if name == "wall_materials"
                     else CacheStatusHandler(self)
@@ -64,6 +73,7 @@ class SteamModule:
             },
             {},
             {},
+            jobs={"steam_wall": SteamWallJob(self)},
         )
 
     async def start(self):

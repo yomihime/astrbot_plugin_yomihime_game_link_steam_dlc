@@ -1,371 +1,397 @@
-"""Synthetic handler/dependency/privacy integration against the canonical SDK DTOs."""
+"""Offline durable-handler probes; Core owns persistence/render acceptance."""
 
+import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import yomihime_game_link_sdk as ygl
 from test_steam_wall import projection, row
-from test_steam_wall_materials import scope
-from yomihime_game_link_sdk.storage import CacheVisibility
+from yomihime_game_link_sdk.jobs import JobResultPage, JobStatus, JobView
+from yomihime_game_link_sdk.storage import CacheLookup, CacheLookupStatus
 
+from packages.steam_dlc.steam.career import load_full
+from packages.steam_dlc.steam.jobs import JobHandler, SteamWallJob
 from packages.steam_dlc.steam.module import SteamModule
-from packages.steam_dlc.steam.wall import select
-from packages.steam_dlc.steam.wall_presentation import result as wall_result
+from packages.steam_dlc.steam.queries import QueryFailure
 
 
 class HandlerTests(unittest.IsolatedAsyncioTestCase):
-    async def test_web_preview_requires_explicit_account_and_writes_only_public_materials(
-        self,
-    ):
-        web = SimpleNamespace(
-            origin=ygl.InvocationOrigin.WEB_PUBLIC, parent_id=None, actor_id=None
-        )
-        put = self.scope.cache.put
-
-        async def public_only(*args, **kwargs):
-            self.assertIs(kwargs.get("visibility"), CacheVisibility.PUBLIC)
-            return await put(*args, **kwargs)
-
-        with patch.object(self.scope.cache, "put", side_effect=public_only):
-            result = (
-                await self.module.handlers()
-                .capabilities["wall_preview"]
-                .invoke(web, {"account": "1"})
-            )
-        self.assertEqual(result.status, ygl.ResultStatus.PARTIAL_SUCCESS)
-        self.assertIs(result.privacy, ygl.Privacy.PUBLIC)
-        self.mock_load.assert_awaited_once_with(
-            self.scope, "games", self.sid, cache=False
-        )
-        self.scope.records.collection.assert_not_awaited()
-        denied = (
-            await self.module.handlers().capabilities["wall_preview"].invoke(web, {})
-        )
-        self.assertEqual(denied.status, ygl.ResultStatus.ERROR)
-
-    async def test_five_hundred_default_dense_items_are_selected_before_batched_images(
-        self,
-    ):
-        self.data["data"]["games"] = [row(i, "1") for i in range(1, 501)]
-        self.data["data"]["complete_library"] = True
-        response = (
-            await self.module.handlers().capabilities["wall"].invoke(self.context, {})
-        )
-        self.assertEqual(response.status, ygl.ResultStatus.SUCCESS)
-        self.assertEqual(
-            type(response.document.card.blocks[0]).__name__, "DenseCollage"
-        )
-        self.assertEqual(len(response.document.card.blocks[0].items), 500)
-        phases = [parameters["phase"] for _, parameters in self.calls]
-        self.assertEqual(phases, ["metadata"] * 5 + ["images"] * 5)
-        self.assertTrue(
-            all(len(parameters["app_ids"]) <= 100 for _, parameters in self.calls)
-        )
-        self.assertIsNone(response.model_facts)
-
-    async def test_impossible_thousand_max_spans_fail_before_cover_fetches(self):
-        self.data["data"]["games"] = [row(i, "80000") for i in range(1, 1001)]
-        response = (
-            await self.module.handlers()
-            .capabilities["wall"]
-            .invoke(self.context, {"limit": 1000})
-        )
-        self.assertEqual(response.status, ygl.ResultStatus.ERROR)
-        self.assertIn("减小数量", response.error.message)
-        self.assertTrue(self.calls)
-        self.assertTrue(
-            all(parameters["phase"] == "metadata" for _, parameters in self.calls)
-        )
-
-    async def test_eighty_max_spans_fail_after_metadata_before_any_cover_fetch(self):
-        self.data["data"]["games"] = [row(i, "80000") for i in range(1, 81)]
-        response = (
-            await self.module.handlers()
-            .capabilities["wall"]
-            .invoke(self.context, {"limit": 80})
-        )
-        self.assertEqual(response.status, ygl.ResultStatus.ERROR)
-        self.assertEqual(response.error.code, ygl.ErrorCode.PARAMETER_ERROR)
-        self.assertIn("减小数量", response.error.message)
-        self.assertEqual(
-            [parameters["phase"] for _, parameters in self.calls], ["metadata"]
-        )
-        self.assertFalse(
-            any(
-                request.source_id == "steam_store_image"
-                for request in self.scope.http.requests
-            )
-        )
-
-    async def test_configured_full_source_uses_public_key_metadata_without_binding_write(
-        self,
-    ):
-        from yomihime_game_link_sdk.storage import SecretMetadataState
-
-        self.services.config.current.return_value = SimpleNamespace(
-            values={},
-            secret_metadata=(
-                SimpleNamespace(
-                    field="credential_steam_key",
-                    state=SecretMetadataState.ACTIVE,
-                    revision=7,
-                ),
-            ),
-        )
-        self.data["operation"] = "full"
-        self.data["scope"] = "webapi_owned_games"
-        self.data["target"] = self.sid
-        self.data["data"]["complete_library"] = True
-        with patch(
-            "packages.steam_dlc.steam.career.load_full",
-            AsyncMock(return_value=self.data),
-        ) as full:
-            output = (
-                await self.module.handlers()
-                .capabilities["wall_explicit"]
-                .invoke(
-                    SimpleNamespace(
-                        origin=ygl.InvocationOrigin.COMMAND,
-                        parent_id="parent",
-                        actor_id="synthetic-owner",
-                    ),
-                    {"account": "1", "source": "full"},
-                )
-            )
-        self.assertEqual(output.status, ygl.ResultStatus.SUCCESS)
-        full.assert_awaited_once_with(
-            self.scope, self.sid, credential_revision=7, cache=False, refresh=False
-        )
-        self.mock_load.assert_not_awaited()
-        self.scope.records.collection.assert_not_awaited()
-        self.assertTrue(output.model_facts.facts["complete_library"])
-
-    async def test_card_visible_summary_retains_coverage_counts_and_area_semantics(
-        self,
-    ):
-        data = projection(
-            [
-                row(1, "10"),
-                row(1, "10"),
-                row(2, "1000"),
-                row(3, None),
-                row(4, "0"),
-                row(5, "20"),
-                row(6, "9"),
-                row(7, "8"),
-            ]
-        )
-        materials = {
-            "items": [
-                {"app_id": str(appid), "app_type": "software" if appid == 2 else "game"}
-                for appid in (1, 2, 3, 4, 6, 7)
-            ]
-        }
-        selection = select(data, materials, limit=1)
-        response = wall_result(selection)
-        card = response.document.card
-        visible = "\n".join((card.title, card.subtitle, *card.sources))
-        for text in (
-            "公开样本",
-            "不是完整游戏库",
-            "仅已确认游戏",
-            "XML",
-            "来源8项",
-            "去重后7项",
-            "本次纳入1项",
-            "筛除4项",
-            "limit截取2项",
-            "未知类型1项",
-            "未知时长1项",
-            "未游玩1项",
-            "分类计数可交叉",
-            "缺图1项",
-            "sqrt(累计分钟)",
-            "尺寸分档",
-            "面积非递减",
-            "非精确比例",
-            "有界裁边",
-            "不拉伸",
-            "2026-01-01T00:00:00Z",
-        ):
-            self.assertIn(text, visible)
-        self.assertIsNone(response.model_facts)
-        all_apps = wall_result(select(data, materials, limit=1, all_apps=True))
-        self.assertIn("全部应用（含软件及未知类型）", all_apps.document.card.subtitle)
-        self.assertEqual(len(card.blocks), 1)
-
     async def asyncSetUp(self):
-        self.scope = scope()
-        self.context = SimpleNamespace(
-            origin=ygl.InvocationOrigin.COMMAND,
-            parent_id=None,
-            actor_id="synthetic-owner",
-        )
-        self.sid = "76561197960265729"
-        record = SimpleNamespace(value={"steam_id64": self.sid}, revision=1)
-        self.scope.records = SimpleNamespace(
-            collection=AsyncMock(
-                return_value=SimpleNamespace(get=AsyncMock(return_value=record))
-            )
+        self.scope = SimpleNamespace(
+            resources=SimpleNamespace(
+                pin=AsyncMock(return_value="pin"), unpin=AsyncMock()
+            ),
+            jobs=SimpleNamespace(
+                submit=AsyncMock(
+                    return_value=JobView("job", 1, "steam_wall", JobStatus.QUEUED)
+                )
+            ),
         )
         self.services = SimpleNamespace(
             scopes=SimpleNamespace(bind=AsyncMock(return_value=self.scope)),
             config=SimpleNamespace(
-                current=AsyncMock(return_value=SimpleNamespace(values={}))
+                current=AsyncMock(
+                    return_value=SimpleNamespace(values={}, secret_metadata=())
+                )
             ),
         )
         self.module = SteamModule(self.services)
         await self.module.start()
+        self.context = SimpleNamespace(
+            origin=ygl.InvocationOrigin.JOB, parent_id=None, actor_id="owner"
+        )
+        self.control = SimpleNamespace(update=AsyncMock(), publish_document=AsyncMock())
         self.calls = []
 
-        async def invoke(context, reference, parameters):
-            self.calls.append((reference, parameters))
-            return (
-                await self.module.handlers()
-                .capabilities[reference.capability_id]
-                .invoke(context, parameters)
-            )
+        async def prepare(scope, appids, *, phase="images", refresh=False):
+            self.calls.append((phase, list(appids)))
+            return {
+                "items": [
+                    {
+                        "app_id": str(appid),
+                        "app_type": "game",
+                        "asset_id": "asset-" + str(appid),
+                    }
+                    for appid in appids
+                ],
+                "counters": {"image_requests": len(appids) if phase == "images" else 0},
+            }
 
-        self.scope.dependencies = SimpleNamespace(invoke=invoke)
-        self.data = projection([row(1, "10"), row(2, "1000")])
-        self.data["cache"] = {"status": "hit"}
-        self.loader = patch(
-            "packages.steam_dlc.steam.queries.load", AsyncMock(return_value=self.data)
-        )
-        self.mock_load = self.loader.start()
+        self.module._materials.prepare = AsyncMock(side_effect=prepare)
 
     async def asyncTearDown(self):
-        self.loader.stop()
         await self.module.stop()
 
-    async def test_private_default_no_facts_public_dependency_has_only_selected_appids(
-        self,
-    ):
-        result = (
-            await self.module.handlers().capabilities["wall"].invoke(self.context, {})
-        )
-        self.assertEqual(result.status, ygl.ResultStatus.PARTIAL_SUCCESS)
-        self.assertEqual(result.privacy, ygl.Privacy.PRIVATE)
-        self.assertIsNone(result.model_facts)
-        self.assertEqual(result.document.privacy, ygl.Privacy.PRIVATE)
-        self.assertEqual(len(result.document.card.blocks), 1)
-        self.assertEqual(len(result.document.card.blocks[0].items), 2)
-        self.assertEqual(self.calls[0][1]["phase"], "metadata")
-        self.assertEqual(self.calls[1][1]["app_ids"], ["2", "1"])
-        for _, parameters in self.calls:
-            self.assertNotIn("account", parameters)
-            self.assertNotIn("minutes", parameters)
-            self.assertNotIn(self.sid, repr(parameters))
-        self.assertTrue(
-            any(
-                visibility is CacheVisibility.USER
-                for visibility, _, _ in self.scope.cache.puts
-            )
-        )
-        hot = await self.module.handlers().capabilities["wall"].invoke(self.context, {})
-        self.assertIn("图片0", hot.document.ordered_blocks[0].text)
-        self.assertIn("2026-01-01", hot.document.ordered_blocks[0].text)
-
-    async def test_explicit_facts_summarized_and_tool_missing_account_never_reads_binding(
-        self,
-    ):
-        tool = SimpleNamespace(
-            origin=ygl.InvocationOrigin.LLM_TOOL,
-            parent_id=None,
-            actor_id="synthetic-owner",
-        )
-        result = (
-            await self.module.handlers()
-            .capabilities["wall_explicit"]
-            .invoke(tool, {"account": "1"})
-        )
-        self.assertEqual(result.privacy, ygl.Privacy.PUBLIC)
-        self.assertNotIn("rows", result.model_facts.facts)
-        self.assertNotIn("asset_id", repr(result.model_facts.facts))
-        self.assertNotIn(self.sid, repr(result.model_facts.facts))
-        missing = (
-            await self.module.handlers().capabilities["wall_explicit"].invoke(tool, {})
-        )
-        self.assertEqual(missing.status, ygl.ResultStatus.ERROR)
-        self.scope.records.collection.assert_not_awaited()
-
-    async def test_llm_explicit_wall_uses_no_account_or_selection_cache(self):
-        tool = SimpleNamespace(
-            origin=ygl.InvocationOrigin.LLM_TOOL,
-            parent_id=None,
-            actor_id="synthetic-owner",
-        )
-        put = self.scope.cache.put
-
-        async def public_only(*args, **kwargs):
-            if kwargs.get("visibility") is not CacheVisibility.PUBLIC:
-                raise ygl.AccessDenied()
-            return await put(*args, **kwargs)
-
-        with patch.object(self.scope.cache, "put", side_effect=public_only):
-            response = (
-                await self.module.handlers()
-                .capabilities["wall_explicit"]
-                .invoke(tool, {"account": "2"})
-            )
-        self.assertEqual(response.status, ygl.ResultStatus.PARTIAL_SUCCESS)
-        self.mock_load.assert_awaited_once_with(
-            self.scope, "games", "76561197960265730", cache=False
-        )
-        self.assertTrue(self.scope.cache.puts)
+    async def test_finite_1001_1500_and_all_split_without_total_truncation(self):
+        for count, limit, mode in (
+            (1001, 1001, "top"),
+            (1500, 1500, "top"),
+            (2501, 500, "all"),
+        ):
+            with self.subTest(count=count):
+                data = projection(
+                    [row(index, "80000") for index in range(1, count + 1)]
+                )
+                data["data"]["complete_library"] = True
+                self.control.publish_document.reset_mock()
+                with patch(
+                    "packages.steam_dlc.steam.jobs.load", AsyncMock(return_value=data)
+                ):
+                    summary = await SteamWallJob(self.module).run(
+                        self.context,
+                        {"account": "1", "limit": limit, "limit_mode": mode},
+                        self.control,
+                    )
+                self.assertEqual(summary["selected"], count)
+                self.assertEqual(summary["generated"], count)
+                self.assertEqual(summary["pending"], 0)
+                self.assertTrue(summary["completed_exactly"])
+                documents = self.control.publish_document.await_args_list
+                self.assertGreater(len(documents), 8)
+                self.assertEqual(
+                    sum(len(call.args[0].card.blocks[0].items) for call in documents),
+                    count,
+                )
+                self.assertTrue(
+                    all(
+                        len(call.args[0].card.blocks[0].items) <= 32
+                        for call in documents
+                    )
+                )
+                self.assertEqual(documents[-1].kwargs["metadata"]["end"], count)
+                self.assertEqual(
+                    self.scope.resources.pin.await_count,
+                    self.scope.resources.unpin.await_count,
+                )
         self.assertTrue(
             all(
-                visibility is CacheVisibility.PUBLIC
-                for visibility, _, _ in self.scope.cache.puts
+                len(ids) <= (100 if phase == "metadata" else 128)
+                for phase, ids in self.calls
             )
         )
-        self.assertEqual(
-            [
-                key
-                for _, key, _ in self.scope.cache.puts
-                if key.startswith("steam-wall-v1:result:")
-            ],
-            [],
-        )
-        self.scope.records.collection.assert_not_awaited()
 
-    async def test_full_blocked_visible_not_substituted_and_default_nested_guard(self):
-        full = (
-            await self.module.handlers()
-            .capabilities["wall"]
-            .invoke(self.context, {"command": "--source full"})
+    async def test_filter_before_selection_and_cover_only_selected_items(self):
+        data = projection([row(index, str(100 - index)) for index in range(1, 41)])
+        with patch("packages.steam_dlc.steam.jobs.load", AsyncMock(return_value=data)):
+            summary = await SteamWallJob(self.module).run(
+                self.context, {"account": "2", "limit": 20}, self.control
+            )
+        self.assertEqual(summary["eligible"], 40)
+        self.assertEqual(summary["selected"], 20)
+        self.assertFalse(summary["complete_source"])
+        self.assertFalse(summary["all_eligible_included"])
+        self.assertEqual(
+            [ids for phase, ids in self.calls if phase == "images"],
+            [[str(index) for index in range(1, 21)]],
         )
-        self.assertEqual(full.status, ygl.ResultStatus.NEEDS_SELECTION)
-        self.assertIn("未用公开样本替代", full.document.ordered_blocks[0].text)
-        self.assertIsNone(full.model_facts)
-        self.mock_load.assert_not_awaited()
-        self.assertFalse(self.calls)
-        nested = SimpleNamespace(
-            origin=ygl.InvocationOrigin.COMMAND,
-            parent_id="parent",
-            actor_id="synthetic-owner",
+
+    async def test_failed_later_batch_keeps_checkpoint_and_unpins(self):
+        data = projection([row(index, "80000") for index in range(1, 66)])
+        self.control.publish_document.side_effect = [
+            None,
+            RuntimeError("render failed"),
+        ]
+        with patch("packages.steam_dlc.steam.jobs.load", AsyncMock(return_value=data)):
+            with self.assertRaisesRegex(RuntimeError, "render failed"):
+                await SteamWallJob(self.module).run(
+                    self.context, {"account": "2", "limit": 65}, self.control
+                )
+        self.assertEqual(self.control.publish_document.await_count, 2)
+        self.assertEqual(self.scope.resources.unpin.await_count, 2)
+        self.assertEqual(
+            self.control.update.await_args_list[-1].kwargs["checkpoint"]["generated"],
+            32,
         )
-        denied = await self.module.handlers().capabilities["wall"].invoke(nested, {})
+
+    async def test_fresh_job_origin_and_explicit_target_required(self):
+        for context, parameters in (
+            (SimpleNamespace(origin=ygl.InvocationOrigin.COMMAND), {"account": "1"}),
+            (self.context, {}),
+        ):
+            with self.assertRaises((ygl.AccessDenied, ValueError, TypeError)):
+                await SteamWallJob(self.module).run(context, parameters, self.control)
+
+    async def test_tool_receipt_never_resolves_binding_or_fetches_source(self):
+        tool = SimpleNamespace(
+            origin=ygl.InvocationOrigin.LLM_TOOL, parent_id=None, actor_id="owner"
+        )
+        handler = JobHandler(self.module, "submit", explicit=True)
+        with patch("packages.steam_dlc.steam.jobs.load", AsyncMock()) as load:
+            response = await handler.invoke(tool, {"account": "1", "limit": 1500})
+        self.assertEqual(response.status, ygl.ResultStatus.SUCCESS)
+        self.assertIs(response.privacy, ygl.Privacy.PUBLIC)
+        self.assertIsNone(response.document.card)
+        self.assertEqual(response.model_facts.facts["job_id"], "job")
+        self.assertEqual(response.model_facts.facts["status"], "queued")
+        self.assertNotIn("account", response.model_facts.facts)
+        self.assertTrue(response.model_facts.facts["results_owner_bound"])
+        request = self.scope.jobs.submit.await_args.args[0]
+        self.assertEqual(request.parameters["account"], "76561197960265729")
+        self.assertEqual(request.parameters["limit"], 1500)
+        load.assert_not_awaited()
+        denied = await handler.invoke(tool, {})
         self.assertEqual(denied.status, ygl.ResultStatus.ERROR)
-        self.scope.records.collection.assert_not_awaited()
 
-    async def test_stats_carrier_health_and_lifecycle_include_all_handlers(self):
-        status = (
-            await self.module.handlers()
-            .capabilities["wall_cache_status"]
-            .invoke(self.context, {})
-        )
-        self.assertEqual(
-            set(status.document.ordered_blocks[0].fields["cache"]),
-            {"bytes", "items", "max_bytes", "max_items", "evictions"},
-        )
-        self.assertFalse(self.scope.http.requests)
-        health = await self.module.check_health()
-        for name in ("wall", "wall_explicit", "wall_materials", "wall_cache_status"):
-            self.assertIn(name, health.capabilities)
+    async def test_module_registers_real_job_and_stop_rejects_work(self):
+        self.assertIsInstance(self.module.handlers().jobs["steam_wall"], SteamWallJob)
+        self.assertIn("wishlist_explicit", self.module.handlers().capabilities)
         await self.module.stop()
-        stopped = (
+        response = (
             await self.module.handlers().capabilities["wall"].invoke(self.context, {})
         )
-        self.assertEqual(stopped.status, ygl.ResultStatus.ERROR)
+        self.assertEqual(response.status, ygl.ResultStatus.ERROR)
+
+    async def test_command_result_uses_opaque_cursor_and_selects_only_one_image(self):
+        job = JobView(
+            "job",
+            7,
+            "steam_wall",
+            JobStatus.SUCCEEDED,
+            summary={"generated": 21, "result_entries": 21},
+        )
+        self.scope.jobs.status = AsyncMock(return_value=job)
+        self.scope.jobs.result = AsyncMock(
+            side_effect=[
+                JobResultPage(
+                    job,
+                    tuple(
+                        {
+                            "resource": {
+                                "asset_id": f"asset-{index}",
+                                "media_type": "image/png",
+                            }
+                        }
+                        for index in range(20)
+                    ),
+                    "opaque-next",
+                ),
+                JobResultPage(
+                    job,
+                    (
+                        {
+                            "resource": {
+                                "asset_id": "final-1",
+                                "media_type": "image/png",
+                            }
+                        },
+                        {
+                            "resource": {
+                                "asset_id": "final-2",
+                                "media_type": "image/png",
+                            }
+                        },
+                    ),
+                ),
+            ]
+        )
+        command = SimpleNamespace(
+            origin=ygl.InvocationOrigin.COMMAND, parent_id=None, actor_id="owner"
+        )
+        response = (
+            await self.module.handlers()
+            .capabilities["wall"]
+            .invoke(command, {"command": "result job --page 2 --image 2"})
+        )
+        self.assertEqual(response.status, ygl.ResultStatus.SUCCESS)
+        images = [
+            block
+            for block in response.document.ordered_blocks
+            if isinstance(block, ygl.ImageBlock)
+        ]
+        self.assertEqual(len(images), 1)
+        self.assertEqual(images[0].asset_id, "final-2")
+        self.assertIs(images[0].visibility, ygl.Privacy.PRIVATE)
+        self.assertIsNone(response.model_facts)
+        self.assertEqual(
+            self.scope.jobs.result.await_args_list[0].kwargs,
+            {"cursor": None, "page_size": 20},
+        )
+        self.assertEqual(
+            self.scope.jobs.result.await_args_list[1].kwargs,
+            {"cursor": "opaque-next", "page_size": 20},
+        )
+        self.services.config.current.assert_not_awaited()
+
+    async def test_command_cancel_reads_revision_and_never_retries_conflict(self):
+        job = JobView("job", 7, "steam_wall", JobStatus.RUNNING)
+        self.scope.jobs.status = AsyncMock(return_value=job)
+        self.scope.jobs.cancel = AsyncMock(
+            side_effect=ygl.RevisionConflict("job", 7, 8)
+        )
+        command = SimpleNamespace(
+            origin=ygl.InvocationOrigin.COMMAND, parent_id=None, actor_id="owner"
+        )
+        response = (
+            await self.module.handlers()
+            .capabilities["wall"]
+            .invoke(command, {"command": "cancel job"})
+        )
+        self.assertEqual(response.status, ygl.ResultStatus.ERROR)
+        self.assertIn("任务状态已变化", response.error.message)
+        self.scope.jobs.cancel.assert_awaited_once_with("job", expected_revision=7)
+
+    async def test_tool_cannot_supply_command_to_read_private_result(self):
+        self.scope.jobs.status = AsyncMock()
+        tool = SimpleNamespace(
+            origin=ygl.InvocationOrigin.LLM_TOOL, parent_id=None, actor_id="owner"
+        )
+        response = (
+            await self.module.handlers()
+            .capabilities["wall_explicit"]
+            .invoke(tool, {"command": "result job"})
+        )
+        self.assertEqual(response.status, ygl.ResultStatus.ERROR)
+        self.scope.jobs.status.assert_not_awaited()
+
+    async def test_rate_limit_stops_subsequent_batches_and_keeps_completed_progress(
+        self,
+    ):
+        data = projection([row(index, "1") for index in range(1, 401)])
+        original = self.module._materials.prepare.side_effect
+        images = 0
+
+        async def limited(scope, appids, *, phase="images", refresh=False):
+            nonlocal images
+            payload = await original(scope, appids, phase=phase, refresh=refresh)
+            if phase == "images":
+                images += 1
+                if images == 2:
+                    payload["counters"].update(rate_limited=1, retry_after=60)
+            return payload
+
+        self.module._materials.prepare.side_effect = limited
+        with patch("packages.steam_dlc.steam.jobs.load", AsyncMock(return_value=data)):
+            with self.assertRaises(QueryFailure):
+                await SteamWallJob(self.module).run(
+                    self.context, {"account": "1", "limit": 400}, self.control
+                )
+        self.assertEqual(images, 2)
+        self.assertEqual(self.control.publish_document.await_count, 1)
+        progress = self.control.update.await_args.args[0]
+        self.assertEqual(progress["reason"], "rate_limited")
+        self.assertEqual(progress["generated"], 128)
+        self.assertEqual(progress["pending"], 272)
+
+    async def test_large_full_source_remains_usable_when_optional_json_cache_is_too_small(
+        self,
+    ):
+        target = "76561197960265729"
+        self.scope.cache = SimpleNamespace(
+            lookup=AsyncMock(return_value=CacheLookup(CacheLookupStatus.MISS)),
+            put=AsyncMock(side_effect=ygl.ParameterError("bounded cache")),
+        )
+
+        async def fetch(request):
+            body = (
+                {
+                    "response": {
+                        "game_count": 1500,
+                        "games": [
+                            {"appid": index, "name": "Synthetic", "playtime_forever": 1}
+                            for index in range(1, 1501)
+                        ],
+                    }
+                }
+                if request.path.endswith("GetOwnedGames/v1/")
+                else {
+                    "response": {
+                        "players": [{"steamid": target, "personaname": "Synthetic"}]
+                    }
+                }
+            )
+            return ygl.HttpResponse(
+                200, {"Content-Type": "application/json"}, json.dumps(body).encode()
+            )
+
+        self.scope.http = SimpleNamespace(fetch=AsyncMock(side_effect=fetch))
+        projection = await load_full(self.scope, target)
+        self.assertEqual(len(projection["data"]["games"]), 1500)
+        self.assertTrue(projection["data"]["complete_library"])
+        self.assertEqual(self.scope.http.fetch.await_count, 2)
+
+    async def test_full_without_key_is_actionable_and_submits_no_fake_sample_job(self):
+        tool = SimpleNamespace(
+            origin=ygl.InvocationOrigin.LLM_TOOL, parent_id=None, actor_id="owner"
+        )
+        response = (
+            await self.module.handlers()
+            .capabilities["wall_explicit"]
+            .invoke(tool, {"account": "1", "source": "full"})
+        )
+        self.assertEqual(response.status, ygl.ResultStatus.NEEDS_SELECTION)
+        self.assertTrue(response.model_facts.facts["steam_key_required"])
+        self.assertFalse(response.model_facts.facts["sample_fallback"])
+        self.scope.jobs.submit.assert_not_awaited()
+
+    async def test_default_binding_is_resolved_only_before_command_submit_and_stays_private(
+        self,
+    ):
+        identity = ygl.CapabilityResult(
+            "identity",
+            ygl.ResultStatus.SUCCESS,
+            document=ygl.DisplayDocument(
+                "identity",
+                "Steam",
+                (ygl.FieldsBlock({"identity": {"steam_id64": "76561197960265729"}}),),
+                privacy=ygl.Privacy.PRIVATE,
+            ),
+            privacy=ygl.Privacy.PRIVATE,
+        )
+        command = SimpleNamespace(
+            origin=ygl.InvocationOrigin.COMMAND, parent_id=None, actor_id="owner"
+        )
+        with patch(
+            "packages.steam_dlc.steam.module._Handler.invoke",
+            AsyncMock(return_value=identity),
+        ) as resolve:
+            response = (
+                await self.module.handlers().capabilities["wall"].invoke(command, {})
+            )
+        resolve.assert_awaited_once()
+        self.assertIs(response.privacy, ygl.Privacy.PRIVATE)
+        self.assertIsNone(response.model_facts)
+        self.assertEqual(
+            self.scope.jobs.submit.await_args.args[0].parameters["account"],
+            "76561197960265729",
+        )

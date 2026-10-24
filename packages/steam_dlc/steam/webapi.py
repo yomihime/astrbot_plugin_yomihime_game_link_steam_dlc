@@ -86,7 +86,7 @@ def normalize(operation, raw, steam_id):
                 "count": count,
                 "availability": {"games": "not_provided"},
             }
-        if not isinstance(games, list) or len(games) > 20000:
+        if not isinstance(games, list):
             raise ValueError("Invalid bounded games array")
         rows = []
         for game in games:
