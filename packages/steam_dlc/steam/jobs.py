@@ -171,6 +171,26 @@ class SteamWallJob:
             )
         }
         selection = select(projection, {"items": metadata_items}, **policy)
+        unclassified = selection["counts"]["metadata_unexamined"]
+        if unclassified and not value["all_apps"]:
+            # Complete library coverage does not prove unknown app types.
+            await control.update(
+                {
+                    "phase": "blocked",
+                    "reason": "metadata_incomplete",
+                    "source_returned": len(rows),
+                    "metadata_unexamined": unclassified,
+                    "verified_eligible": selection["counts"]["eligible"],
+                    "generated": 0,
+                    "selected": None,
+                    "pending": None,
+                    "counters": dict(counters),
+                }
+            )
+            raise QueryFailure(
+                ygl.ErrorCode.UPSTREAM_ERROR,
+                "部分作品类型尚未验证，无法完成仅游戏筛选；请稍后重试。",
+            )
         chosen = selection["rows"]
         selected_count = len(chosen)
         counters["list_requests"] = projection.get(
@@ -282,6 +302,9 @@ class SteamWallJob:
             "completed_exactly": generated == len(chosen),
             "counters": counters,
             "all_eligible_included": selection["all_eligible_included"],
+            "classification_complete": unclassified == 0,
+            "metadata_unexamined": unclassified,
+            "metadata_failures": counters.get("metadata_failed", 0),
             "unknown_duration": selection["counts"]["unknown_duration"],
             "zero_duration": selection["counts"]["zero_duration"],
         }

@@ -28,6 +28,7 @@ from .contracts import (
     season_value,
     steam_id,
 )
+from .facts import compact_facts
 from .provider import PlatformProvider, ProviderError
 
 DATA_CAPABILITIES = ("profile", "recent", "stats", "last", "match")
@@ -518,6 +519,8 @@ def _result(title, projection, lines, *, model_facts=True, private=False):
             ),
             privacy=privacy,
         ),
-        model_facts=ygl.FactDocument(projection) if model_facts else None,
+        model_facts=ygl.FactDocument(compact_facts(projection))
+        if model_facts
+        else None,
         privacy=privacy,
     )

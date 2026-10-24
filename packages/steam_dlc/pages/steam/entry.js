@@ -136,9 +136,12 @@ function f(e, { options: t, active: n, field: r, parseLimit: i, validatePNG: a, 
 			steam_source_unavailable: "Steam来源暂不可用，未用其他来源替代。",
 			steam_source_not_public: "Steam库未公开或当前来源授权受限，未视为空库。",
 			rate_limited: "来源限流，已停止后续批次；已完成页保留。",
-			resource_budget: "资源预算不足，已停止后续批次；已完成页保留。"
+			resource_budget: "资源预算不足，已停止后续批次；已完成页保留。",
+			metadata_incomplete: "部分作品类型尚未验证，无法完成仅游戏筛选；请稍后重试，未视为空库。"
 		};
-		M.textContent = `任务 ${m.job_id} · ${m.status} · 来源${n.source_returned ?? t.source_returned ?? "待确认"} · 符合${n.eligible ?? "待确认"} · 已选${n.selected ?? t.selected ?? "待确认"} · 已生成${n.generated ?? t.generated ?? 0} · 待处理${n.pending ?? t.pending ?? "待确认"} · 缺图${n.missing_images ?? t.missing_images ?? 0}${m.error_code ? ` · 失败原因 ${m.error_code}` : ""}${r[t.reason] ? ` · ${r[t.reason]}` : ""}${n.complete_source === !1 ? " · 来源覆盖不完整" : ""}`, L.disabled = !["queued", "running"].includes(m.status), re.disabled = ![
+		M.textContent = `任务 ${m.job_id} · ${m.status} · 来源${n.source_returned ?? t.source_returned ?? "待确认"} · 符合${n.eligible ?? "待确认"} · 已选${n.selected ?? t.selected ?? "待确认"} · 已生成${n.generated ?? t.generated ?? 0} · 待处理${n.pending ?? t.pending ?? "待确认"} · 缺图${n.missing_images ?? t.missing_images ?? 0}${m.error_code ? ` · 失败原因 ${m.error_code}` : ""}${r[t.reason] ? ` · ${r[t.reason]}` : ""}${n.complete_source === !1 ? " · 来源覆盖不完整" : ""}`;
+		let i = n.metadata_unexamined ?? t.metadata_unexamined ?? 0, a = n.metadata_failures ?? n.counters?.metadata_failed ?? t.counters?.metadata_failed ?? 0;
+		i && (M.textContent += ` · 类型尚未验证${i}项${n.classification_complete === !1 && m.status === "succeeded" ? "（已按全部应用设置入图）" : ""}`), a && (M.textContent += ` · 元数据请求失败${a}次`), L.disabled = !["queued", "running"].includes(m.status), re.disabled = ![
 			"failed",
 			"cancelled",
 			"interrupted"

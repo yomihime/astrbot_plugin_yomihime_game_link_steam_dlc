@@ -46,8 +46,12 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
     job = value; jobId.value = job.job_id;
     try {document.defaultView.sessionStorage.setItem(storageKey, job.job_id);} catch { /* Recovery storage is optional. */ }
     const progress = job.progress || {}, summary = job.summary || {};
-    const reasons = {steam_key_required: '完整库需要在可信管理页配置Steam Key，可改选公开样本。', steam_source_unavailable: 'Steam来源暂不可用，未用其他来源替代。', steam_source_not_public: 'Steam库未公开或当前来源授权受限，未视为空库。', rate_limited: '来源限流，已停止后续批次；已完成页保留。', resource_budget: '资源预算不足，已停止后续批次；已完成页保留。'};
+    const reasons = {steam_key_required: '完整库需要在可信管理页配置Steam Key，可改选公开样本。', steam_source_unavailable: 'Steam来源暂不可用，未用其他来源替代。', steam_source_not_public: 'Steam库未公开或当前来源授权受限，未视为空库。', rate_limited: '来源限流，已停止后续批次；已完成页保留。', resource_budget: '资源预算不足，已停止后续批次；已完成页保留。', metadata_incomplete: '部分作品类型尚未验证，无法完成仅游戏筛选；请稍后重试，未视为空库。'};
     status.textContent = `任务 ${job.job_id} · ${job.status} · 来源${summary.source_returned ?? progress.source_returned ?? '待确认'} · 符合${summary.eligible ?? '待确认'} · 已选${summary.selected ?? progress.selected ?? '待确认'} · 已生成${summary.generated ?? progress.generated ?? 0} · 待处理${summary.pending ?? progress.pending ?? '待确认'} · 缺图${summary.missing_images ?? progress.missing_images ?? 0}${job.error_code ? ` · 失败原因 ${job.error_code}` : ''}${reasons[progress.reason] ? ` · ${reasons[progress.reason]}` : ''}${summary.complete_source === false ? ' · 来源覆盖不完整' : ''}`;
+    const unknown = summary.metadata_unexamined ?? progress.metadata_unexamined ?? 0;
+    const metadataFailures = summary.metadata_failures ?? summary.counters?.metadata_failed ?? progress.counters?.metadata_failed ?? 0;
+    if (unknown) status.textContent += ` · 类型尚未验证${unknown}项${summary.classification_complete === false && job.status === 'succeeded' ? '（已按全部应用设置入图）' : ''}`;
+    if (metadataFailures) status.textContent += ` · 元数据请求失败${metadataFailures}次`;
     cancel.disabled = !['queued', 'running'].includes(job.status); retry.disabled = !['failed', 'cancelled', 'interrupted'].includes(job.status);
   };
   const resultPage = async pageCursor => {

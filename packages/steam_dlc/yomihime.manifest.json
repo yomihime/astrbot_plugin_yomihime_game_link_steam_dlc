@@ -676,7 +676,7 @@
           "parameter_mapping": {},
           "parameter_mode": "raw_tail",
           "raw_tail_parameter": "command",
-          "help_text": "游戏生涯拼图，games/recent是公开样本，full需要可选Steam Key。可选 --source games|recent|full、--mode dense|legacy、--preset single|standard|long、--aspect 2:3|9:16|1:2、--quality normal|hd、--fit cover|contain、--all-apps、--games-only、--limit 1..1000、--refresh；legacy最多200项，最终受输出预算约束。"
+          "help_text": "游戏生涯拼图，games/recent是公开样本，full需要可选Steam Key。可选 --source games|recent|full、--mode dense|legacy、--preset single|standard|long、--aspect 2:3|9:16|1:2、--quality normal|hd、--fit cover|contain、--all-apps、--games-only、--limit 20以上有限数值或all、--refresh；默认500项，支持1500等超过1000的数量，不限覆盖来源实际范围，任务分批发布；legacy最多200项。"
         },
         {
           "operation_path": "wishlist",
@@ -748,7 +748,7 @@
             "fit": "fit",
             "limit_mode": "limit_mode"
           },
-          "description": "为用户明确提供的 account ID32/SteamID64 生成游戏生涯拼图，禁止读取或推导默认绑定。games/recent 是公开样本；full 需要可选 Steam Key并遵守玩家隐私。默认密排、标准时长预设、2:3、普通清晰度、等比裁切、包含软件等全部应用，最多500项；可选1..1000项，legacy最多200项，最终受输出预算约束。保留未知及剔除计数。"
+          "description": "为用户明确提供的 account ID32/SteamID64 提交游戏生涯拼图任务，禁止读取或推导默认绑定。games/recent是公开样本；full需要可选Steam Key并遵守玩家隐私。默认密排、标准时长预设、2:3、普通清晰度、等比裁切、包含全部应用，默认数量500。有限limit至少20，支持1500等超过1000的整数；limit_mode=all选择来源实际覆盖的全部作品，不限不暗中截断，结果分批分页。legacy最多200项。未知、筛选、失败与来源覆盖分别报告，不能把未完成说成成功。"
         },
         {
           "name": "steam_dlc_steam_wishlist",
@@ -828,7 +828,7 @@
       "resources": [
         {
           "path": "pages/steam/entry.js",
-          "sha256": "ccf9c603c3d6b180d503a3425d77d02896ab7e097aa8cdc954a33148c127140d"
+          "sha256": "ee7ef3ac79b45fb0443aed4a9a4a9f87d6003c00b247fffabd34de0349c277e9"
         },
         {
           "path": "pages/steam/style.css",
@@ -1750,7 +1750,7 @@
       "resources": [
         {
           "path": "pages/dota2/entry.js",
-          "sha256": "ccf9c603c3d6b180d503a3425d77d02896ab7e097aa8cdc954a33148c127140d"
+          "sha256": "ee7ef3ac79b45fb0443aed4a9a4a9f87d6003c00b247fffabd34de0349c277e9"
         },
         {
           "path": "pages/dota2/style.css",
@@ -2428,7 +2428,7 @@
       "resources": [
         {
           "path": "pages/cs2/entry.js",
-          "sha256": "ccf9c603c3d6b180d503a3425d77d02896ab7e097aa8cdc954a33148c127140d"
+          "sha256": "ee7ef3ac79b45fb0443aed4a9a4a9f87d6003c00b247fffabd34de0349c277e9"
         },
         {
           "path": "pages/cs2/style.css",
@@ -2923,7 +2923,7 @@
       "resources": [
         {
           "path": "pages/deadlock/entry.js",
-          "sha256": "ccf9c603c3d6b180d503a3425d77d02896ab7e097aa8cdc954a33148c127140d"
+          "sha256": "ee7ef3ac79b45fb0443aed4a9a4a9f87d6003c00b247fffabd34de0349c277e9"
         },
         {
           "path": "pages/deadlock/style.css",

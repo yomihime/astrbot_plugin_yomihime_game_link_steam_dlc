@@ -44,7 +44,7 @@ def _legacy_result(selection, *, private=True, theme="warm_paper"):
     ]
     if counts.get("metadata_unexamined"):
         lines.append(
-            f"另有{counts['metadata_unexamined']}项未在本次1000项元数据预算内验证类型；不声称完整覆盖。"
+            f"另有{counts['metadata_unexamined']}项尚未验证类型；不声称分类完整。"
         )
     counters = selection["counters"]
     lines.append(

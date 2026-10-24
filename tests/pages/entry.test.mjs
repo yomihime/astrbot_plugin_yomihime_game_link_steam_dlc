@@ -894,6 +894,28 @@ test('Steam durable job validates legacy then publishes exact PNG and revokes pr
   assert.deepEqual(f.revoked, ['blob:job-1']); assert.equal(f.changes.length, 0, 'closing never cancels work');
 });
 
+test('Steam job distinguishes unverified classification from a verified empty selection', async () => {
+  const f = jobFixture({jobs: {async result() {return {entries: [], next_cursor: null};}}});
+  try {
+    f.view.status = 'failed'; f.view.summary = {};
+    f.view.progress = {reason: 'metadata_incomplete', source_returned: 20, metadata_unexamined: 20, selected: null, pending: null, counters: {metadata_failed: 1}};
+    f.input('account', '123'); f.submit(); await settle(); await settle();
+    assert.match(f.text(), /未视为空库/); assert.match(f.text(), /类型尚未验证20项/);
+    assert.match(f.text(), /元数据请求失败1次/); assert.match(f.text(), /已选待确认/);
+    assert.equal(f.container.querySelector('[data-action="job-retry"]').disabled, false);
+  } finally {f.close();}
+});
+
+test('Steam all-app output shows classification coverage separately from library coverage', async () => {
+  const f = jobFixture();
+  try {
+    Object.assign(f.view.summary, {selected: 20, generated: 20, complete_source: true, classification_complete: false, metadata_unexamined: 20, metadata_failures: 1});
+    f.input('account', '123'); f.submit(); await settle(); await settle();
+    assert.match(f.text(), /已按全部应用设置入图/); assert.match(f.text(), /元数据请求失败1次/);
+    assert.doesNotMatch(f.text(), /来源覆盖不完整/);
+  } finally {f.close();}
+});
+
 test('Steam shortcuts keep finite1000 distinct from all and reject malformed decimals', async () => {
   const f = jobFixture({jobs: {async result() {return {entries: [], next_cursor: null};}}});
   try {

@@ -14,6 +14,7 @@ from packages.steam_dlc.steam.career import load_full
 from packages.steam_dlc.steam.jobs import JobHandler, SteamWallJob
 from packages.steam_dlc.steam.module import SteamModule
 from packages.steam_dlc.steam.queries import QueryFailure
+from packages.steam_dlc.steam.wall_materials import MaterialPreparer
 
 
 class HandlerTests(unittest.IsolatedAsyncioTestCase):
@@ -143,6 +144,79 @@ class HandlerTests(unittest.IsolatedAsyncioTestCase):
             self.control.update.await_args_list[-1].kwargs["checkpoint"]["generated"],
             32,
         )
+
+    async def test_real_metadata_failure_or_unknown_type_cannot_succeed_as_empty_games(
+        self,
+    ):
+        data = projection([row(index, "100") for index in range(1, 21)])
+        data["data"]["complete_library"] = True
+        self.scope.cache = SimpleNamespace(
+            lookup=AsyncMock(return_value=CacheLookup(CacheLookupStatus.MISS)),
+            put=AsyncMock(),
+        )
+        for status, body in ((500, {}), (200, {"response": {"store_items": []}})):
+            with self.subTest(status=status):
+                self.scope.http = SimpleNamespace(
+                    fetch=AsyncMock(
+                        return_value=ygl.HttpResponse(
+                            status,
+                            {"Content-Type": "application/json"},
+                            json.dumps(body).encode(),
+                        )
+                    )
+                )
+                self.module._materials = MaterialPreparer()
+                try:
+                    with patch(
+                        "packages.steam_dlc.steam.jobs.load",
+                        AsyncMock(return_value=data),
+                    ):
+                        with self.assertRaises(QueryFailure):
+                            await SteamWallJob(self.module).run(
+                                self.context,
+                                {
+                                    "account": "2",
+                                    "limit_mode": "all",
+                                    "all_apps": False,
+                                },
+                                self.control,
+                            )
+                    progress = self.control.update.await_args.args[0]
+                    self.assertEqual(progress["reason"], "metadata_incomplete")
+                    self.assertEqual(progress["metadata_unexamined"], 20)
+                    self.assertIsNone(progress["selected"])
+                    self.assertIsNone(progress["pending"])
+                    self.control.publish_document.assert_not_awaited()
+                finally:
+                    await self.module._materials.stop()
+
+    async def test_all_apps_preserves_selected_rows_and_reports_unknown_classification(
+        self,
+    ):
+        data = projection([row(index, "100") for index in range(1, 21)])
+        data["data"]["complete_library"] = True
+        prepare = self.module._materials.prepare.side_effect
+
+        async def unknown(scope, ids, **kwargs):
+            payload = await prepare(scope, ids, **kwargs)
+            for item in payload["items"]:
+                item["app_type"] = "unknown"
+            payload["counters"]["metadata_failed"] = 1
+            return payload
+
+        self.module._materials.prepare.side_effect = unknown
+        with patch("packages.steam_dlc.steam.jobs.load", AsyncMock(return_value=data)):
+            result = await SteamWallJob(self.module).run(
+                self.context,
+                {"account": "2", "limit_mode": "all", "all_apps": True},
+                self.control,
+            )
+        self.assertEqual(result["selected"], 20)
+        self.assertEqual(result["generated"], 20)
+        self.assertTrue(result["complete_source"])
+        self.assertFalse(result["classification_complete"])
+        self.assertEqual(result["metadata_unexamined"], 20)
+        self.assertGreater(result["metadata_failures"], 0)
 
     async def test_fresh_job_origin_and_explicit_target_required(self):
         for context, parameters in (
