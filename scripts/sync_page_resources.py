@@ -98,6 +98,7 @@ def synchronize(root=ROOT, *, check=False):
                         "poster_quality",
                         "poster_fit",
                         "poster_include_apps",
+                        "poster_limit_mode",
                         "poster_limit",
                     ],
                     "dota2": [
