@@ -17,7 +17,7 @@ from .normalization import (
 )
 
 
-def mutable_json(value):
+def mutable_json(value, *, max_nodes=10000):
     """Copy public SDK immutable JSON containers into ordinary JSON values.
 
     CacheEntry payloads may recursively expose Mapping and tuple. Never use
@@ -25,7 +25,7 @@ def mutable_json(value):
     shallow and bounded; reject corrupt cycles/deep containers before walking
     beyond its possible shape.
     """
-    remaining = 10000
+    remaining = max_nodes
 
     def rebuild(item, depth):
         nonlocal remaining

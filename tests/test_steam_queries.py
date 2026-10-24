@@ -425,6 +425,23 @@ class _Scopes:
 
 
 class QueryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_command_origin_dependency_keeps_structured_explicit_account(self):
+        self.scopes.http.override = (
+            lambda request: response(profile_html(OTHER), "text/html")
+            if request.source_id == "steam_community"
+            else response(b"", "image/png", 404)
+        )
+        result = await self.call(
+            "profile_explicit",
+            {"account": "2", "command": "1"},
+            replace(self.context, parent_id="parent"),
+        )
+        self.assertIn(
+            result.status, (ygl.ResultStatus.SUCCESS, ygl.ResultStatus.PARTIAL_SUCCESS)
+        )
+        self.assertEqual(result.model_facts.facts["target"], OTHER)
+        self.assertEqual(self.scopes.record_reads, 0)
+
     async def test_account_load_can_skip_all_cache_io_for_explicit_tool_wall(self):
         scope = _Scopes()
         scope.cache = SimpleNamespace(
@@ -969,6 +986,104 @@ class WebAPITests(unittest.TestCase):
             webapi.normalize("level", {"response": {"player_level": 0}}, SID)["level"],
             0,
         )
+
+
+class FullLibraryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_full_safe_requests_owner_snapshot_key_rotation_and_cache_validation(
+        self,
+    ):
+        from test_steam_wall_materials import scope as make_scope
+
+        from packages.steam_dlc.steam.career import load_full
+
+        target = make_scope()
+        requests = []
+
+        async def fetch(request):
+            requests.append(request)
+            self.assertEqual(request.source_id, "steam_api")
+            self.assertIsNone(request.headers)
+            self.assertNotIn("key", dict(request.query))
+            body = (
+                {
+                    "response": {
+                        "game_count": 1,
+                        "games": [
+                            {"appid": 570, "name": "Dota", "playtime_forever": 60}
+                        ],
+                    }
+                }
+                if "GetOwnedGames" in request.path
+                else {
+                    "response": {
+                        "players": [
+                            {
+                                "steamid": SID,
+                                "personaname": "Synthetic",
+                                "avatarfull": "https://avatars.steamstatic.com/"
+                                + "a" * 40
+                                + "_full.jpg",
+                            }
+                        ]
+                    }
+                }
+            )
+            return ygl.HttpResponse(
+                200, {"Content-Type": "application/json"}, json.dumps(body).encode()
+            )
+
+        target.http.fetch = fetch
+        first = await load_full(target, SID, credential_revision=1)
+        self.assertTrue(first["data"]["complete_library"])
+        self.assertEqual(first["data"]["profile"]["nickname"], "Synthetic")
+        self.assertEqual(len(requests), 2)
+        hot = await load_full(target, SID, credential_revision=1)
+        self.assertEqual(hot["cache"]["status"], "hit")
+        self.assertEqual(len(requests), 2)
+        self.assertTrue(
+            all(v is ygl.CacheVisibility.USER for v, _, _ in target.cache.puts)
+        )
+        await load_full(target, SID, credential_revision=2)
+        self.assertEqual(len(requests), 4)
+        for value in target.cache.values.values():
+            value["data"]["complete_library"] = 1
+        await load_full(target, SID, credential_revision=2)
+        self.assertEqual(len(requests), 6)
+
+    async def test_full_hidden_empty_invalid_key_and_identity_mismatch_are_separate(
+        self,
+    ):
+        from test_steam_wall_materials import scope as make_scope
+
+        from packages.steam_dlc.steam.career import load_full
+
+        target = make_scope()
+        for status, body in (
+            (403, {}),
+            (200, {"response": {}}),
+            (200, {"response": {"game_count": 0}}),
+        ):
+
+            async def fetch(request):
+                return ygl.HttpResponse(
+                    status,
+                    {"Content-Type": "application/json"},
+                    json.dumps(body).encode(),
+                )
+
+            target.http.fetch = fetch
+            if body == {"response": {"game_count": 0}}:
+                result = await load_full(target, SID, cache=False)
+                self.assertEqual(result["data"]["games"], [])
+                self.assertTrue(result["data"]["complete_library"])
+            else:
+                with self.assertRaises(queries.QueryFailure) as failure:
+                    await load_full(target, SID, cache=False)
+                self.assertIs(failure.exception.code, ygl.ErrorCode.NOT_PUBLIC)
+        with self.assertRaises(ValueError):
+            webapi.normalize(
+                "games", {"response": {"steamid": OTHER, "game_count": 0}}, SID
+            )
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ import { JSDOM } from 'jsdom';
 import { mount, installDOM, runtime } from './source-build.mjs';
 
 const clone = value => structuredClone(value);
-const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+const settle = async () => { for (let i = 0; i < 16; i++) await Promise.resolve(); };
 const deferred = () => {
   let resolve, reject;
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
@@ -43,12 +43,12 @@ function snapshot(moduleId = 'dota2') {
   return value;
 }
 let fixtureSequence = 0;
-function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, service = {}, invoke = async () => cacheResponse(), context: contextPatch = {} } = {}) {
+function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, service = {}, initialState = null, invoke = async () => cacheResponse(), preview = async () => cacheResponse(), credentials = {async status() { return {revision: 7, fields: {}}; }}, context: contextPatch = {} } = {}) {
   const dom = new JSDOM('<!doctype html><div id="root"></div>');
   installDOM(dom);
   const container = dom.window.document.querySelector('#root');
   const abort = new AbortController();
-  let scopeCurrent = true, state = snapshot(moduleId), notifications = 0;
+  let scopeCurrent = true, state = initialState || snapshot(moduleId), notifications = 0;
   const disposal = new Set(), calls = [];
   const context = { owner: `steam_dlc/${moduleId}`, runtimeId: `runtime-${++fixtureSequence}`, epoch: 3, boundary: 'boundary-a', available, theme: 'light', locale: 'zh-CN', ...contextPatch };
   const config = {
@@ -69,7 +69,7 @@ function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, s
   };
   const page = mount(container, {
     routeId, context,
-    services: { config, invoke(id, parameters) { calls.push(['invoke', id, clone(parameters)]); return invoke(id, parameters); }, credentials: new Proxy({}, { get() { assert.fail('credentials forbidden'); } }) },
+    services: { config, invoke(id, parameters) { calls.push(['invoke', id, clone(parameters)]); return invoke(id, parameters); }, preview(id, parameters) { calls.push(['preview', id, clone(parameters)]); return preview(id, parameters); }, credentials },
     scope: { signal: abort.signal, isCurrent: () => scopeCurrent, onDispose(callback) { disposal.add(callback); return () => disposal.delete(callback); } },
     onNavigationStateChange() { notifications++; },
   });
@@ -105,7 +105,7 @@ for (const moduleId of ['steam', 'dota2', 'cs2', 'deadlock']) {
     const f = fixture({ moduleId, routeId: 'home' });
     assert.match(f.text(), new RegExp(`/ygl ${moduleId} `));
     assert.match(f.text(), /运行健康请在模块管理中查看/);
-    if (moduleId === 'cs2') assert.match(f.text(), /生产游戏数据查询受来源留存政策限制，当前已阻止/);
+    if (moduleId === 'cs2') { assert.match(f.text(), /完美收录官匹与 5E/); assert.doesNotMatch(f.text(), /Leetify|留存政策限制/); }
     if (moduleId === 'deadlock') assert.match(f.text(), /默认使用最近 20 条已收录记录/);
     assert.ok(f.container.querySelector('.ui-page .ui-page-header h1'));
     assert.ok(f.container.querySelector('.ui-settings-layout .ui-settings-group'));
@@ -116,7 +116,7 @@ for (const moduleId of ['steam', 'dota2', 'cs2', 'deadlock']) {
     }
     f.page.update({ ...f.context, available: false });
     assert.match(f.text(), /当前页面入口不可用/);
-    if (moduleId !== 'steam') assert.deepEqual(f.calls, []);
+    if (moduleId !== 'steam') assert.deepEqual(f.calls, [['invoke', 'status', {}]]);
     assert.deepEqual(Object.keys(f.page.navigationImpact()).sort(), ['credentials', 'ordinary', 'pending', 'version']);
     f.close();
   });
@@ -405,7 +405,7 @@ for (const disposal of ['close', 'disposeScope']) {
     original[disposal]();
     const home = fixture({ context, routeId: 'home' });
     assert.equal(home.page.navigationImpact().ordinary, false);
-    assert.deepEqual(home.calls, []); home.close();
+    assert.deepEqual(home.calls, [['invoke', 'status', {}]]); home.close();
     const returned = fixture({ context });
     assert.equal(returned.container.querySelector('input'), null, 'retained values need a fresh authorized snapshot');
     await settle();
@@ -637,4 +637,241 @@ test('stale Steam cache response cannot update the home page after epoch change'
   assert.doesNotMatch(f.text(), /7 项 \/ 12345 字节/);
   assert.equal(f.page.navigationImpact().pending, false);
   f.close();
+});
+
+function addSetting(value, name, initial, schema) {
+  value.fields[name] = {value: initial, state: 'valid', present: false, source: 'default'};
+  value.descriptors[name] = {description: `设置 ${name}`, default: initial, value_schema: schema};
+}
+function credentialMock(fields) {
+  let page;
+  const configured = Object.fromEntries(fields.map(field => [field, false]));
+  const calls = [];
+  const services = {
+    async status() {
+      return {revision: page?.state.revision || 7, fields: Object.fromEntries(fields.map(field => [field, {configured: configured[field], decryptable: true, upstream: 'unverified'}]))};
+    },
+    async replace(revision, field, pair) {
+      calls.push(['replace', revision, field, clone(pair)]); assert.equal(revision, page.state.revision);
+      configured[field] = true; return {revision: ++page.state.revision};
+    },
+    async clear(revision, field) {
+      calls.push(['clear', revision, field]); assert.equal(revision, page.state.revision);
+      configured[field] = false; return {revision: ++page.state.revision};
+    },
+  };
+  return {services, calls, configured, bind(value) {page = value;}};
+}
+
+test('new Steam settings use frozen enums and keep the old include-apps false value', async () => {
+  const state = snapshot('steam');
+  state.descriptors.poster_limit.value_schema.maximum = 1000;
+  for (const [name, value, choices] of [
+    ['poster_source', 'games', ['games', 'recent', 'full']], ['poster_mode', 'dense', ['dense', 'legacy']],
+    ['poster_preset', 'standard', ['single', 'standard', 'long']], ['poster_aspect', '2:3', ['2:3', '9:16', '1:2']],
+    ['poster_quality', 'normal', ['normal', 'hd']], ['poster_fit', 'cover', ['cover', 'contain']],
+  ]) addSetting(state, name, value, {type: 'string', enum: choices});
+  const f = fixture({moduleId: 'steam', initialState: state}); await settle();
+  assert.equal(f.container.querySelector('[name=poster_include_apps]').value, '0');
+  f.input('poster_preset', '2'); f.input('poster_aspect', '1'); f.input('poster_limit', '500'); f.submit(); await settle();
+  assert.deepEqual(f.calls.find(call => call[0] === 'save')[2], {poster_preset: 'long', poster_aspect: '9:16', poster_limit: 500});
+  assert.equal(f.state.fields.poster_source.value, 'games', 'never silently enables full library');
+  f.input('poster_mode', '1'); f.submit(); await settle();
+  assert.match(f.text(), /兼容旧布局最多支持 200/);
+  assert.equal(f.calls.filter(call => call[0] === 'save').length, 1);
+  f.close();
+});
+
+test('Dota budget rejects zero, empty restores default, and subscription toggles keep JSON booleans', async () => {
+  const state = snapshot('dota2');
+  addSetting(state, 'subscription_enabled', true, {type: 'boolean'});
+  addSetting(state, 'commentary_enabled', false, {type: 'boolean'});
+  addSetting(state, 'poll_interval_seconds', 300, {type: 'integer', minimum: 60, maximum: 86400});
+  addSetting(state, 'opendota_rph', 100, {type: 'integer', minimum: 1, maximum: 100000});
+  state.fields.opendota_rph = {value: 120, state: 'valid', present: true, source: 'sqlite'};
+  const f = fixture({initialState: state}); await settle();
+  f.input('opendota_rph', '0'); f.submit(); await settle();
+  assert.equal(f.calls.filter(call => call[0] === 'save').length, 0);
+  f.input('opendota_rph', ''); f.input('commentary_enabled', '1'); f.submit(); await settle();
+  assert.deepEqual(f.calls.filter(call => ['save', 'clear'].includes(call[0])), [
+    ['save', 7, {commentary_enabled: true}], ['clear', 8, ['opendota_rph']],
+  ]);
+  assert.equal(f.state.fields.opendota_rph.value, 100);
+  f.close();
+});
+
+test('credential draft is ephemeral, submits with latest shared CAS and never enters ordinary config', async () => {
+  const mock = credentialMock(['credential_steam_key']);
+  const f = fixture({moduleId: 'steam', credentials: mock.services}); mock.bind(f); await settle();
+  const password = f.container.querySelector('[name=credential_steam_key]');
+  assert.equal(password.type, 'password');
+  f.input('credential_steam_key', 'synthetic-private-key');
+  assert.equal(f.page.navigationImpact().credentials, true);
+  assert.equal(f.page.navigationImpact().ordinary, false);
+  f.click('replace-credential_steam_key');
+  assert.equal(password.value, '', 'erase DOM input before waiting for a service reply');
+  await settle();
+  assert.deepEqual(mock.calls, [['replace', 7, 'credential_steam_key', {token: 'synthetic-private-key'}]]);
+  assert.doesNotMatch(f.text(), /synthetic-private-key/);
+  f.input('poster_limit', '64'); f.submit(); await settle();
+  f.click('clear-credential_steam_key'); await settle();
+  assert.deepEqual(mock.calls[1], ['clear', 9, 'credential_steam_key']);
+  assert.equal(f.calls.filter(call => call[0] === 'save').length, 1);
+  assert.equal(f.page.navigationImpact().credentials, false);
+  f.close();
+});
+
+test('unknown credential writes clear input, show no arbitrary error and require refresh before retry', async () => {
+  const mock = credentialMock(['credential_fivee']); let writes = 0;
+  mock.services.replace = async () => {writes++; throw Error('server echoed synthetic-private-token');};
+  const f = fixture({moduleId: 'cs2', credentials: mock.services}); mock.bind(f); await settle();
+  f.input('credential_fivee', 'synthetic-private-token'); f.click('replace-credential_fivee'); await settle();
+  assert.equal(f.container.querySelector('[name=credential_fivee]').value, '');
+  assert.doesNotMatch(f.text(), /synthetic-private-token/);
+  assert.match(f.text(), /刷新并核对/);
+  f.input('credential_fivee', 'second-token'); f.click('replace-credential_fivee'); await settle();
+  assert.equal(writes, 1);
+  f.click('refresh'); await settle();
+  assert.equal(f.container.querySelector('[name=credential_fivee]').value, '');
+  f.close();
+});
+
+test('credential input survives presentation updates but is erased on disposal and never retained on remount', async () => {
+  const mock = credentialMock(['credential_opendota_key']);
+  const f = fixture({credentials: mock.services}); mock.bind(f); await settle();
+  const password = f.container.querySelector('[name=credential_opendota_key]');
+  f.input('credential_opendota_key', 'ephemeral-token'); password.focus();
+  f.page.update({...f.context, theme: 'dark'}); await settle();
+  assert.equal(password.value, 'ephemeral-token'); assert.equal(f.dom.window.document.activeElement, password);
+  const context = {...f.context}; f.close(); assert.equal(password.value, '');
+  const reopened = fixture({credentials: mock.services, context}); mock.bind(reopened); await settle();
+  assert.equal(reopened.container.querySelector('[name=credential_opendota_key]').value, '');
+  reopened.close();
+});
+
+test('scope abort immediately erases credential DOM input and stops the mounted controller', async () => {
+  const mock = credentialMock(['credential_fivee']);
+  const f = fixture({moduleId: 'cs2', credentials: mock.services}); mock.bind(f); await settle();
+  const input = f.container.querySelector('[name=credential_fivee]');
+  f.input('credential_fivee', 'abort-private-token'); f.abort();
+  assert.equal(input.value, ''); assert.equal(f.page.navigationImpact().credentials, false);
+  assert.equal(f.container.querySelector('[name=credential_fivee]'), null);
+  f.close();
+});
+
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ6sAAAAASUVORK5CYII=';
+function authSession(state = 'waiting') {
+  return {session_id: 'synthetic-session', state, expires_at: Date.now() / 1000 + 60, next_poll_at: Date.now() / 1000 + 30, polls: 0, authorized_subject: state === 'authorized' ? '76561197960265851' : null};
+}
+test('CS2 QR requests are sequential, successful capture refreshes CAS and exposes only PNG/subject state', async () => {
+  const mock = credentialMock(['credential_perfect', 'credential_fivee']); let f;
+  mock.services.authorize = async (revision, flow, step, session) => {
+    mock.calls.push([revision, flow, step, session]);
+    if (step === 'qr') return {qr_png: PNG};
+    if (step === 'poll') {
+      mock.configured.credential_perfect = true;
+      return {session: authSession('authorized'), receipt: {revision: ++f.state.revision}};
+    }
+    return {session: authSession(), receipt: null};
+  };
+  f = fixture({moduleId: 'cs2', credentials: mock.services}); mock.bind(f); await settle();
+  f.click('perfect-begin'); await settle();
+  assert.deepEqual(mock.calls, [[7, 'perfect_qr', 'begin', ''], [7, 'perfect_qr', 'qr', 'synthetic-session']]);
+  assert.ok(f.container.querySelector('.steam-dlc-qr').src.startsWith('data:image/png;base64,'));
+  assert.equal(f.page.navigationImpact().credentials, true);
+  f.click('perfect-poll'); await settle();
+  assert.equal(f.page.navigationImpact().credentials, false);
+  assert.match(f.text(), /完美授权已保存/);
+  assert.equal(f.container.querySelector('.steam-dlc-qr').hasAttribute('src'), false);
+  assert.doesNotMatch(f.text(), /accessToken|private-final-token/);
+  f.close();
+});
+
+test('cancel during an in-flight poll queues cancellation and stale QR responses cannot survive disposal', async () => {
+  const mock = credentialMock(['credential_perfect']); const poll = deferred();
+  mock.services.authorize = async (revision, flow, step) => {
+    mock.calls.push(step);
+    return step === 'qr' ? {qr_png: PNG} : step === 'poll' ? poll.promise : {session: authSession(step === 'cancel' ? 'cancelled' : 'waiting'), receipt: null};
+  };
+  const f = fixture({moduleId: 'cs2', credentials: mock.services}); mock.bind(f); await settle();
+  f.click('perfect-begin'); await settle(); f.click('perfect-poll'); await settle();
+  f.click('perfect-cancel'); await settle();
+  assert.equal(f.container.querySelector('.steam-dlc-qr').hasAttribute('src'), false);
+  poll.resolve({session: authSession(), receipt: null}); await settle();
+  assert.deepEqual(mock.calls, ['begin', 'qr', 'poll', 'cancel']);
+  assert.match(f.text(), /扫码已取消/); f.close();
+
+  const late = deferred(); mock.services.authorize = async (revision, flow, step) => step === 'qr' ? late.promise : {session: authSession(), receipt: null};
+  const other = fixture({moduleId: 'cs2', credentials: mock.services}); mock.bind(other); await settle();
+  other.click('perfect-begin'); await settle();
+  const image = other.container.querySelector('.steam-dlc-qr'); other.close();
+  late.resolve({qr_png: PNG}); await settle(); assert.equal(image.hasAttribute('src'), false);
+});
+
+test('real revoke DTO clears QR/session and confirms the atomic CAS receipt before reporting success', async () => {
+  const mock = credentialMock(['credential_perfect']); let f;
+  mock.configured.credential_perfect = true;
+  mock.services.authorize = async (revision, flow, step, session) => {
+    mock.calls.push([revision, flow, step, session]);
+    if (step === 'qr') return {qr_png: PNG};
+    if (step === 'revoke') {
+      assert.equal(revision, f.state.revision); mock.configured.credential_perfect = false;
+      return {revoked: true, receipt: {revision: ++f.state.revision}};
+    }
+    return {session: authSession(), receipt: null};
+  };
+  f = fixture({moduleId: 'cs2', credentials: mock.services}); mock.bind(f); await settle();
+  f.click('perfect-begin'); await settle();
+  assert.equal(f.container.querySelector('.steam-dlc-qr').hasAttribute('src'), true);
+  f.click('perfect-revoke'); await settle();
+  assert.match(f.text(), /完美授权已撤销/); assert.doesNotMatch(f.text(), /结果未确认/);
+  assert.equal(f.container.querySelector('.steam-dlc-qr').hasAttribute('src'), false);
+  assert.equal(f.page.navigationImpact().credentials, false);
+  assert.equal(f.page.navigationImpact().pending, false);
+  assert.equal(f.state.revision, 8); assert.equal(mock.configured.credential_perfect, false);
+  assert.deepEqual(mock.calls.at(-1), [7, 'perfect_qr', 'revoke', 'synthetic-session']);
+  f.close();
+});
+
+test('revoke refuses malformed/failed/stale/unverified receipts and never turns them into success', async () => {
+  for (const response of [
+    {revoked: false, receipt: {revision: 8}}, {revoked: true, receipt: null},
+    {revoked: true, receipt: {revision: 7}}, {session: null, receipt: {revision: 8}},
+    {revoked: true, receipt: {revision: 8}, unexpected: true},
+    {revoked: true, receipt: {revision: 8}},
+  ]) {
+    const mock = credentialMock(['credential_perfect']); let f;
+    mock.configured.credential_perfect = true;
+    mock.services.authorize = async () => {f.state.revision = 8; return response;};
+    f = fixture({moduleId: 'cs2', credentials: mock.services}); mock.bind(f); await settle();
+    f.click('perfect-revoke'); await settle();
+    assert.doesNotMatch(f.text(), /完美授权已撤销/); assert.match(f.text(), /结果未确认/);
+    assert.equal(mock.configured.credential_perfect, true);
+    assert.equal(f.page.navigationImpact().pending, false); f.close();
+  }
+});
+
+test('public CS2 query uses the single page capability with explicit account and separates 5E domain', async () => {
+  const f = fixture({moduleId: 'cs2', routeId: 'query', invoke: async () => cacheResponse()}); await settle();
+  assert.deepEqual(f.calls[0], ['invoke', 'query', {}]);
+  f.input('account', 'synthetic-domain'); f.input('platform', '5e'); f.input('action', 'match');
+  f.input('match_id', 'fivee-10001'); f.submit(); await settle();
+  assert.deepEqual(f.calls[1], ['invoke', 'query', {account: 'synthetic-domain', action: 'match', platform: '5e', match_id: 'fivee-10001'}]);
+  assert.doesNotMatch(f.text(), /留存政策限制/); f.close();
+});
+
+test('public Steam collage validates legacy limits and downloads exact returned PNG blobs with cleanup', async () => {
+  const f = fixture({moduleId: 'steam', routeId: 'collage', preview: async () => ({...cacheResponse(), images: [{media_type: 'image/png', base64: PNG}]})});
+  const created = [], revoked = [];
+  f.dom.window.URL.createObjectURL = blob => {created.push(blob); return `blob:synthetic-${created.length}`;};
+  f.dom.window.URL.revokeObjectURL = url => revoked.push(url);
+  f.input('account', '76561197960265851'); f.input('mode', 'legacy'); f.submit(); await settle();
+  assert.equal(f.calls.length, 0); assert.match(f.text(), /兼容旧布局最多 200/);
+  f.input('mode', 'dense'); f.submit(); await settle();
+  assert.equal(f.calls[0][0], 'preview'); assert.equal(f.calls[0][1], 'wall_preview');
+  assert.equal(f.calls[0][2].source, 'games'); assert.equal(f.calls[0][2].all_apps, true);
+  assert.equal(created[0].size, Buffer.from(PNG, 'base64').length);
+  const download = f.container.querySelector('a[download]'); assert.equal(download.download, 'steam-career-01.png');
+  assert.equal(download.getAttribute('href'), 'blob:synthetic-1'); f.close();
+  assert.deepEqual(revoked, ['blob:synthetic-1']);
 });

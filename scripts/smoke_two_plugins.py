@@ -15,6 +15,7 @@ import hashlib
 import importlib.metadata
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -745,13 +746,34 @@ async def main():
             if route in ("cs2", "deadlock"):
                 status_text, _ = await command(runtime, "/ygl " + route + " status")
                 assert (
-                    "留存" in status_text if route == "cs2" else "已收录" in status_text
+                    all(label in status_text for label in ("完美平台", "官匹", "5E"))
+                    if route == "cs2"
+                    else "已收录" in status_text
                 ), (route, status_text)
         passed("five-module-command-help")
         steam_a, steam_b = "76561197960265729", "76561197960265730"
         output, _ = await command(runtime, "/ygl steam bind " + steam_a)
         assert steam_a in output and "声明" in output, output
         passed("private-steam-bind-self-asserted", output)
+        watched, _ = await command(runtime, "/ygl dota2 watch", group=True)
+        assert "已关注玩家 1" in watched, watched
+        first_id = re.search(r"订阅编号：([^；\s]+)", watched)
+        assert first_id, watched
+        repeated, _ = await command(runtime, "/ygl dota2 watch 1", group=True)
+        assert first_id[1] in repeated, repeated
+        listed, _ = await command(runtime, "/ygl dota2 watchlist", group=True)
+        assert first_id[1] in listed and "玩家 1" in listed, listed
+        isolated, _ = await command(
+            runtime, "/ygl dota2 watchlist", sender="B", group=True
+        )
+        assert first_id[1] not in isolated and "没有你的" in isolated, isolated
+        cancelled, _ = await command(runtime, "/ygl dota2 unwatch 1", group=True)
+        assert "已取消" in cancelled, cancelled
+        recreated, _ = await command(runtime, "/ygl dota2 watch 1", group=True)
+        new_id = re.search(r"订阅编号：([^；\s]+)", recreated)
+        assert new_id and new_id[1] != first_id[1], recreated
+        await command(runtime, "/ygl dota2 unwatch 1", group=True)
+        passed("dota-own-session-crud-idempotent-cancel-new-generation-fixture")
         for text, expected in (
             ("/ygl dota2 recent", "本次查询账号 1"),
             ("/ygl dota2 profile", "本次查询账号 1"),
@@ -807,7 +829,7 @@ async def main():
             in {"bind", "binding", "identity", "unbind"}
             for handle in handles
         )
-        for module_id, count in (("steam", 6), ("deadlock", 5), ("cs2", 0)):
+        for module_id, count in (("steam", 6), ("deadlock", 5), ("cs2", 5)):
             assert (
                 sum(handle.module_id == "steam_dlc/" + module_id for handle in handles)
                 == count

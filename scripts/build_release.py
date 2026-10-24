@@ -12,7 +12,7 @@ from io import BytesIO
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SDK_VERSION = "0.1.0a15"
+SDK_VERSION = "0.1.0a16"
 QUERY_TOOLS = {
     "steam": {
         "search": ("search", "query"),
@@ -31,7 +31,10 @@ QUERY_TOOLS = {
         name: (name + "_explicit", "match_id" if name == "match" else "account")
         for name in ("profile", "recent", "stats", "last", "match")
     },
-    "cs2": {},
+    "cs2": {
+        name: (name + "_explicit", "match_id" if name == "match" else "account")
+        for name in ("profile", "recent", "stats", "last", "match")
+    },
 }
 ROOT_FILES = (
     "__init__.py",
@@ -40,6 +43,7 @@ ROOT_FILES = (
     "requirements.txt",
     "LICENSE",
     "README.md",
+    "THIRD_PARTY_NOTICES.md",
 )
 LOCAL_PROCESS_PATHS = {"agents.md", "docs/plan.md", "docs/collaboration.md"}
 FORBIDDEN_IMPORTS = {
@@ -116,6 +120,8 @@ def inventory(root):
             raise ValueError("page resource declarations must match page references")
     files = [root / name for name in ROOT_FILES]
     files += [root / "packages/__init__.py", package / "yomihime.manifest.json"]
+    if (package / "yomihime.source-policy.json").exists():
+        files.append(package / "yomihime.source-policy.json")
     files += sorted(package.rglob("*.py"))
     files += [package / name for name in sorted(resources)]
     result = {}

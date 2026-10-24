@@ -21,40 +21,68 @@ class _MaterialResult(TypedDict):
     counters: dict[str, int]
 
 
-def options(context, parameters, *, default_limit=60, default_apps=False):
+def options(
+    context, parameters, *, default_limit=500, default_apps=True, defaults=None
+):
+    defaults = defaults or {}
     result = {
         "account": parameters.get("account"),
-        "source": parameters.get("source", "games"),
+        "source": parameters.get("source", defaults.get("poster_source", "games")),
         "limit": parameters.get("limit", default_limit),
         "all_apps": parameters.get("all_apps", default_apps),
         "refresh": parameters.get("refresh", False),
+        **{
+            key: parameters.get(key, defaults.get("poster_" + key, value))
+            for key, value in (
+                ("mode", "dense"),
+                ("preset", "standard"),
+                ("aspect", "2:3"),
+                ("quality", "normal"),
+                ("fit", "cover"),
+            )
+        },
     }
     raw = parameters.get("command")
+    seen = set()
     if raw is not None:
         if not isinstance(raw, str) or len(raw) > 512:
             raise ValueError("海报命令参数过长。")
         args = shlex.split(raw)
-        seen = set()
         index = 0
         while index < len(args):
             token = args[index]
-            if token in ("--all-apps", "--refresh"):
-                if token in seen:
+            if token in ("--all-apps", "--games-only", "--refresh"):
+                if (
+                    token in seen
+                    or (token == "--games-only" and "--all-apps" in seen)
+                    or (token == "--all-apps" and "--games-only" in seen)
+                ):
                     raise ValueError("选项重复。")
                 seen.add(token)
-                result["all_apps" if token == "--all-apps" else "refresh"] = True
-            elif token in ("--source", "--limit"):
+                if token == "--games-only":
+                    result["all_apps"] = False
+                else:
+                    result["all_apps" if token == "--all-apps" else "refresh"] = True
+            elif token in (
+                "--source",
+                "--limit",
+                "--mode",
+                "--preset",
+                "--aspect",
+                "--quality",
+                "--fit",
+            ):
                 if token in seen or index + 1 >= len(args):
                     raise ValueError("选项缺值或重复。")
                 seen.add(token)
                 index += 1
                 value = args[index]
                 if token == "--limit":
-                    if not re.fullmatch(r"[0-9]{1,3}", value):
-                        raise ValueError("数量必须是1..200整数。")
+                    if not re.fullmatch(r"[0-9]{1,4}", value):
+                        raise ValueError("数量必须是1..1000整数。")
                     result["limit"] = int(value)
                 else:
-                    result["source"] = value
+                    result[token[2:]] = value
             elif token.startswith("--"):
                 raise ValueError("海报不支持此选项。")
             elif "account" in seen or result["account"] is not None:
@@ -64,13 +92,27 @@ def options(context, parameters, *, default_limit=60, default_apps=False):
                 result["account"] = token
             index += 1
     if (
+        result["mode"] == "legacy"
+        and "limit" not in parameters
+        and "--limit" not in seen
+    ):
+        result["limit"] = min(result["limit"], 200)
+    if (
         result["source"] not in ("games", "recent", "full")
         or type(result["limit"]) is not int
-        or not 1 <= result["limit"] <= 200
+        or not 1 <= result["limit"] <= 1000
         or type(result["all_apps"]) is not bool
         or type(result["refresh"]) is not bool
+        or result["mode"] not in ("dense", "legacy")
+        or result["preset"] not in ("single", "standard", "long")
+        or result["aspect"] not in ("2:3", "9:16", "1:2")
+        or result["quality"] not in ("normal", "hd")
+        or result["fit"] not in ("cover", "contain")
+        or (result["mode"] == "legacy" and result["limit"] > 200)
     ):
-        raise ValueError("来源为games/recent/full；数量必须是1..200整数。")
+        raise ValueError(
+            "来源games/recent/full；密排数量1..1000，legacy最多200；请检查预设/比例/清晰度/裁剪选项。"
+        )
     return result
 
 
@@ -150,8 +192,25 @@ def source_rows(projection):
     return rows, counts
 
 
-def select(projection, materials, *, limit=60, all_apps=False):
-    if type(limit) is not int or not 1 <= limit <= 200 or type(all_apps) is not bool:
+def select(
+    projection,
+    materials,
+    *,
+    limit=60,
+    all_apps=False,
+    mode="legacy",
+    preset="standard",
+    aspect="2:3",
+    quality="normal",
+    fit="cover",
+):
+    from .career import span_for_minutes
+
+    if (
+        type(limit) is not int
+        or not 1 <= limit <= (1000 if mode == "dense" else 200)
+        or type(all_apps) is not bool
+    ):
         raise ValueError("Invalid wall selection")
     rows, counts = source_rows(projection)
     metadata = {
@@ -168,6 +227,7 @@ def select(projection, materials, *, limit=60, all_apps=False):
             "eligible": 0,
             "included": 0,
             "missing_images": 0,
+            "names_truncated": 0,
         }
     )
     selected: list[dict[str, Any]] = []
@@ -196,7 +256,11 @@ def select(projection, materials, *, limit=60, all_apps=False):
             raw_type=data.get("raw_type"),
             asset_id=data.get("asset_id"),
             weight=math.sqrt(float(minutes)),
+            span=span_for_minutes(minutes, preset),
         )
+        if mode == "dense" and len(row["name"]) > 56:
+            row["name"] = row["name"][:56] + "…"
+            counts["names_truncated"] += 1
         if not row["asset_id"]:
             counts["missing_images"] += 1
         selected.append(row)
@@ -207,14 +271,30 @@ def select(projection, materials, *, limit=60, all_apps=False):
         row["precision"] == "displayed_hours" for row in selected
     )
     counts["api_minutes"] = sum(row["precision"] == "api_minutes" for row in selected)
-    counts["metadata_unexamined"] = max(0, len(rows) - 200)
+    counts["metadata_unexamined"] = sum(
+        row["app_id"] not in metadata
+        and row["minutes"] is not None
+        and Decimal(row["minutes"]) > 0
+        for row in rows
+    )
+    counts["requested"] = limit
+    counts["omitted"] = counts["limited"]
     return {
         "schema": VERSION,
         "rows": selected,
         "counts": counts,
         "scope": projection.get("scope", "unknown"),
         "fetched_at": projection.get("fetched_at"),
-        "complete_library": False,
+        "complete_library": projection.get("data", {}).get("complete_library") is True,
+        "all_eligible_included": counts["limited"] == 0
+        and (all_apps or counts["metadata_unexamined"] == 0),
+        "mode": mode,
+        "preset": preset,
+        "aspect": aspect,
+        "quality": quality,
+        "fit": fit,
+        "nickname": projection.get("data", {}).get("nickname"),
+        "profile": projection.get("data", {}).get("profile"),
         "rule": "sqrt(cumulative_minutes); equal minutes ordered by numeric AppID",
         "all_apps": all_apps,
         "limit": limit,
@@ -260,33 +340,42 @@ class WallHandler:
             value = options(
                 context,
                 parameters,
-                default_limit=settings.get("poster_limit", 60),
-                default_apps=settings.get("poster_include_apps", False),
+                default_limit=settings.get("poster_limit", 500),
+                default_apps=settings.get("poster_include_apps", True),
+                defaults=settings,
             )
             if value["source"] == "full":
-                state = {
-                    "status": "blocked",
-                    "full_library": "optional_key_unconfigured",
-                    "complete_library": False,
-                    "sample_fallback": False,
-                }
-                return ygl.CapabilityResult(
-                    "steam-wall-full-unconfigured",
-                    ygl.ResultStatus.NEEDS_SELECTION,
-                    document=ygl.DisplayDocument(
-                        "Steam · 完整库海报未配置",
-                        "Steam DLC",
-                        (
-                            ygl.TextBlock(
-                                "完整库海报需要可选 Steam Web API user key；当前未配置受控凭据入口，完整库场景blocked/unrun，未用公开样本替代。请明确选择 --source games 或 recent 公开样本。"
+                from yomihime_game_link_sdk.storage import SecretMetadataState
+
+                configured = any(
+                    meta.field == "credential_steam_key"
+                    and meta.state is SecretMetadataState.ACTIVE
+                    for meta in getattr(config, "secret_metadata", ())
+                )
+                if not configured:
+                    state = {
+                        "status": "needs_configuration",
+                        "full_library": "optional_key_unconfigured",
+                        "complete_library": False,
+                        "sample_fallback": False,
+                    }
+                    return ygl.CapabilityResult(
+                        "steam-wall-full-unconfigured",
+                        ygl.ResultStatus.NEEDS_SELECTION,
+                        document=ygl.DisplayDocument(
+                            "Steam · 完整库海报未配置",
+                            "Steam DLC",
+                            (
+                                ygl.TextBlock(
+                                    "完整库需要部署者配置一把可选Steam Web API Key，请在可信管理页配置；Key不会绕过玩家隐私。未用公开样本替代，可明确选择 --source games 或 recent。"
+                                ),
+                                ygl.FieldsBlock({"availability": state}),
                             ),
-                            ygl.FieldsBlock({"availability": state}),
+                            privacy=privacy,
                         ),
                         privacy=privacy,
-                    ),
-                    privacy=privacy,
-                    model_facts=ygl.FactDocument(state) if self.explicit else None,
-                )
+                        model_facts=ygl.FactDocument(state) if self.explicit else None,
+                    )
             if context.origin is not ygl.InvocationOrigin.COMMAND and not self.explicit:
                 raise ValueError(
                     "默认海报只接受用户直接命令；工具必须明确提供account。"
@@ -316,7 +405,29 @@ class WallHandler:
                 ]
             target = _account(target)
             scope = await self.owner._services.scopes.bind(context)
-            if context.origin is ygl.InvocationOrigin.LLM_TOOL:
+            if value["source"] == "full":
+                from .career import load_full
+
+                revision = next(
+                    (
+                        meta.revision
+                        for meta in getattr(config, "secret_metadata", ())
+                        if meta.field == "credential_steam_key"
+                    ),
+                    0,
+                )
+                projection = await load_full(
+                    scope,
+                    target,
+                    credential_revision=revision,
+                    cache=context.origin is ygl.InvocationOrigin.COMMAND
+                    and context.parent_id is None,
+                    refresh=value["refresh"],
+                )
+            elif (
+                context.origin is not ygl.InvocationOrigin.COMMAND
+                or context.parent_id is not None
+            ):
                 # Tool cache defaults to PUBLIC in Core. Account lists and
                 # personal selections must not enter that shared partition.
                 projection = await load(scope, value["source"], target, cache=False)
@@ -324,7 +435,11 @@ class WallHandler:
                 projection = await load(scope, value["source"], target)
             rows, _ = source_rows(projection)
             # Only a bounded public AppID set crosses the preparation capability.
-            candidates = [row["app_id"] for row in rows[:200]]
+            candidates = [
+                row["app_id"]
+                for row in rows
+                if row["minutes"] is not None and Decimal(row["minutes"]) > 0
+            ][:1000]
             country, language = "CN", "schinese"
             combined: _MaterialResult = {"items": [], "counters": {}}
 
@@ -369,19 +484,36 @@ class WallHandler:
                 return payload
 
             if candidates:
-                metadata = await materials("metadata", candidates)
+                metadata = {"items": []}
+                for start in range(0, len(candidates), 100):
+                    metadata["items"].extend(
+                        (await materials("metadata", candidates[start : start + 100]))[
+                            "items"
+                        ]
+                    )
                 chosen = select(
                     projection,
                     metadata,
                     limit=value["limit"],
                     all_apps=value["all_apps"],
+                    **{
+                        key: value[key]
+                        for key in ("mode", "preset", "aspect", "quality", "fit")
+                    },
                 )
+                from .career import preflight
+
+                preflight(chosen)
                 if chosen["rows"]:
-                    combined["items"] = (
-                        await materials(
-                            "images", [row["app_id"] for row in chosen["rows"]]
+                    selected_ids = [row["app_id"] for row in chosen["rows"]]
+                    for start in range(0, len(selected_ids), 100):
+                        combined["items"].extend(
+                            (
+                                await materials(
+                                    "images", selected_ids[start : start + 100]
+                                )
+                            )["items"]
                         )
-                    )["items"]
                 # Retain classification for excluded rows so coverage counts stay truthful.
                 returned = {row["app_id"]: row for row in combined["items"]}
                 combined["items"] = [
@@ -395,16 +527,32 @@ class WallHandler:
                     )
                     for row in metadata["items"]
                 ]
-            combined["counters"]["list_requests"] = (
-                0 if projection.get("cache", {}).get("status") == "hit" else 1
+                if combined["counters"].get("image_bytes", 0) > 256 * 1024 * 1024:
+                    raise QueryFailure(
+                        ygl.ErrorCode.PARAMETER_ERROR,
+                        "本次原始封面超过256MiB缓存预算；请减小数量后重试。",
+                    )
+            combined["counters"]["list_requests"] = projection.get(
+                "source_requests",
+                0 if projection.get("cache", {}).get("status") == "hit" else 1,
             )
             selection = select(
-                projection, combined, limit=value["limit"], all_apps=value["all_apps"]
+                projection,
+                combined,
+                limit=value["limit"],
+                all_apps=value["all_apps"],
+                **{
+                    key: value[key]
+                    for key in ("mode", "preset", "aspect", "quality", "fit")
+                },
             )
             theme = settings.get("reply_theme", "warm_paper")
             if theme not in ("warm_paper", "cool_white", "deep_indigo"):
                 theme = "warm_paper"
-            if context.origin is ygl.InvocationOrigin.COMMAND:
+            if (
+                context.origin is ygl.InvocationOrigin.COMMAND
+                and context.parent_id is None
+            ):
                 try:
                     await scope.cache.put(
                         selection_key(target, selection, theme),
@@ -414,7 +562,14 @@ class WallHandler:
                     )
                 except ygl.CacheUnavailable:
                     pass
-            return result(selection, private=not self.explicit, theme=theme)
+            from .queries import image
+
+            avatar = (
+                await image(scope, projection) if projection.get("operation") else None
+            )
+            return result(
+                selection, private=not self.explicit, theme=theme, avatar=avatar
+            )
         except (ValueError, TypeError, KeyError, AttributeError):
             return failure(
                 ygl.ErrorCode.PARAMETER_ERROR,
@@ -433,7 +588,9 @@ class WallHandler:
                 ygl.ErrorCode.RATE_LIMITED
                 if exc.status_code == 429
                 else ygl.ErrorCode.UPSTREAM_ERROR,
-                "Steam 列表来源暂不可用。",
+                "Steam 完整库凭据不可用；请在可信管理页检查或重新配置Steam Key，未用公开样本替代。"
+                if exc.code == "credentials_unavailable"
+                else "Steam 列表来源暂不可用；未用其他来源替代。",
                 privacy=privacy,
                 retry_after_seconds=exc.retry_after_seconds,
             )

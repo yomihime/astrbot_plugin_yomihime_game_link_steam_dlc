@@ -144,7 +144,24 @@ def normalize_profile(payload: object, account: int) -> PlayerProfile:
     profile = payload.get("profile")
     if not isinstance(profile, dict):
         profile = {}
+    # The requested identity is context, never a replacement for contradictory
+    # upstream identity. Optional missing identities remain optional.
+    for source in (payload, profile):
+        if source.get("account_id") is not None:
+            response_account = _int(
+                source["account_id"], minimum=1, maximum=(1 << 32) - 1
+            )
+            if response_account != account_id:
+                raise ValueError("profile identity does not match requested account")
     steam_id = profile.get("steamid")
+    if steam_id is not None:
+        try:
+            if account_id32(steam_id) != account_id:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise ValueError(
+                "profile Steam identity does not match requested account"
+            ) from None
     if isinstance(steam_id, str):
         try:
             steam_id = account_id32(steam_id)
@@ -152,6 +169,11 @@ def normalize_profile(payload: object, account: int) -> PlayerProfile:
             steam_id = None
     else:
         steam_id = None
+    profile_url = _valid_profile_url(profile.get("profileurl"))
+    if profile_url is not None:
+        url_account = parse_dota_account(urlsplit(profile_url).path.rsplit("/", 1)[-1])
+        if url_account != account_id:
+            raise ValueError("profile URL identity does not match requested account")
     rank_tier = _int(payload.get("rank_tier"), maximum=100)
     leaderboard_rank = _int(
         payload.get("leaderboard_rank"), minimum=1, maximum=10_000_000
@@ -162,7 +184,7 @@ def normalize_profile(payload: object, account: int) -> PlayerProfile:
         steam_id64=str(steam_id and _steam64(profile.get("steamid")) or "") or None,
         rank_tier=rank_tier,
         leaderboard_rank=leaderboard_rank,
-        profile_url=_valid_profile_url(profile.get("profileurl")),
+        profile_url=profile_url,
     )
 
 
@@ -182,6 +204,9 @@ def normalize_match(payload: object, match_id: str) -> MatchSummary:
         raise ValueError("match_id must be a positive decimal identifier")
     if not isinstance(payload, dict):
         raise ValueError("match payload must be an object")
+    if payload.get("match_id") is not None:
+        if _match_id(payload["match_id"]) != normalized_match_id:
+            raise ValueError("match identity does not match requested match")
     rows = payload.get("players")
     if rows is not None and not isinstance(rows, list):
         raise ValueError("match players must be a list when present")

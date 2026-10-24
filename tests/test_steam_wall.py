@@ -3,8 +3,10 @@
 import unittest
 from types import SimpleNamespace
 
+from packages.steam_dlc.steam.career import ANCHORS, grid_spec, span_for_minutes
 from packages.steam_dlc.steam.wall import cumulative, options, select, source_rows
 from packages.steam_dlc.steam.wall_materials import material_request, normalize_items
+from packages.steam_dlc.steam.wall_presentation import result as wall_result
 
 
 def projection(rows):
@@ -26,6 +28,72 @@ def row(appid, hours, **updates):
 
 
 class WallBusinessTests(unittest.TestCase):
+    def test_owned_source_provenance_and_coverage_remain_distinct_in_both_modes(self):
+        data = projection([row(3, "2")])
+        data["scope"] = "webapi_owned_games"
+        materials = {
+            "items": [{"app_id": "3", "app_type": "game", "asset_id": "opaque"}]
+        }
+        for mode in ("dense", "legacy"):
+            for complete in (False, True):
+                data["data"]["complete_library"] = complete
+                output = wall_result(select(data, materials, mode=mode), private=False)
+                self.assertEqual(output.provenance, ("steam_api", "steam_browse"))
+                self.assertEqual(output.model_facts.facts["complete_library"], complete)
+                self.assertNotIn("样本", output.document.title)
+                self.assertEqual(
+                    output.status.value, "success" if complete else "partial_success"
+                )
+
+    def test_dense_presets_anchor_area_interpolation_and_absolute_sizes(self):
+        for preset, anchors in ANCHORS.items():
+            for span, hours in enumerate(anchors, 1):
+                self.assertEqual(span_for_minutes(hours * 60, preset), span)
+            values = [
+                span_for_minutes(minutes, preset) for minutes in range(0, 500001, 100)
+            ]
+            self.assertEqual(values, sorted(values))
+            self.assertEqual(values[0], 1)
+            self.assertEqual(span_for_minutes(10**12, preset), 8)
+        self.assertEqual(span_for_minutes(10 * 60, "standard"), 2)
+        for aspect in ("2:3", "9:16", "1:2"):
+            low, high = grid_spec(aspect), grid_spec(aspect, "hd")
+            self.assertEqual(tuple(v * 4 for v in low), tuple(v * 3 for v in high))
+
+    def test_dense_thousand_long_tail_metadata_and_legacy_numeric_ties(self):
+        rows = [row(i, "1", name="Long title " * 50) for i in range(1000, 0, -1)]
+        data = projection(rows)
+        materials = {
+            "items": [{"app_id": str(i), "app_type": "game"} for i in range(1, 1001)]
+        }
+        selection = select(data, materials, mode="dense", all_apps=True, limit=1000)
+        self.assertEqual(selection["counts"]["included"], 1000)
+        self.assertEqual(selection["counts"]["names_truncated"], 1000)
+        output = wall_result(selection)
+        self.assertEqual(
+            [item.key for item in output.document.card.blocks[0].items],
+            [str(i) for i in range(1, 1001)],
+        )
+        self.assertTrue(
+            all(item.span == 1 for item in output.document.card.blocks[0].items)
+        )
+        self.assertLess(len(output.document.ordered_blocks[0].text), 160000)
+        legacy = wall_result(
+            select(
+                projection([row(20, "2"), row(3, "2")]),
+                {
+                    "items": [
+                        {"app_id": "20", "app_type": "game"},
+                        {"app_id": "3", "app_type": "game"},
+                    ]
+                },
+            )
+        )
+        self.assertEqual(
+            [item.key for item in legacy.document.card.blocks[0].items],
+            ["0000000003", "0000000020"],
+        )
+
     def test_unknown_zero_precision_and_exact_minutes_are_distinct(self):
         for value in (None, True, "NaN", "Infinity", "-1", {}, "bad"):
             self.assertIsNone(cumulative(row(1, value)))
@@ -79,7 +147,7 @@ class WallBusinessTests(unittest.TestCase):
         self.assertEqual(value["limit"], 200)
         for command in (
             "--limit 0",
-            "--limit 201",
+            "--limit 1001",
             "--limit true",
             "--source bad",
             "1 2",

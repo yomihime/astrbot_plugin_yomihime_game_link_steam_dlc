@@ -15,6 +15,112 @@ from packages.steam_dlc.steam.wall_presentation import result as wall_result
 
 
 class HandlerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_web_preview_requires_explicit_account_and_writes_only_public_materials(
+        self,
+    ):
+        web = SimpleNamespace(
+            origin=ygl.InvocationOrigin.WEB_PUBLIC, parent_id=None, actor_id=None
+        )
+        put = self.scope.cache.put
+
+        async def public_only(*args, **kwargs):
+            self.assertIs(kwargs.get("visibility"), CacheVisibility.PUBLIC)
+            return await put(*args, **kwargs)
+
+        with patch.object(self.scope.cache, "put", side_effect=public_only):
+            result = (
+                await self.module.handlers()
+                .capabilities["wall_preview"]
+                .invoke(web, {"account": "1"})
+            )
+        self.assertEqual(result.status, ygl.ResultStatus.PARTIAL_SUCCESS)
+        self.assertIs(result.privacy, ygl.Privacy.PUBLIC)
+        self.mock_load.assert_awaited_once_with(
+            self.scope, "games", self.sid, cache=False
+        )
+        self.scope.records.collection.assert_not_awaited()
+        denied = (
+            await self.module.handlers().capabilities["wall_preview"].invoke(web, {})
+        )
+        self.assertEqual(denied.status, ygl.ResultStatus.ERROR)
+
+    async def test_five_hundred_default_dense_items_are_selected_before_batched_images(
+        self,
+    ):
+        self.data["data"]["games"] = [row(i, "1") for i in range(1, 501)]
+        self.data["data"]["complete_library"] = True
+        response = (
+            await self.module.handlers().capabilities["wall"].invoke(self.context, {})
+        )
+        self.assertEqual(response.status, ygl.ResultStatus.SUCCESS)
+        self.assertEqual(
+            type(response.document.card.blocks[0]).__name__, "DenseCollage"
+        )
+        self.assertEqual(len(response.document.card.blocks[0].items), 500)
+        phases = [parameters["phase"] for _, parameters in self.calls]
+        self.assertEqual(phases, ["metadata"] * 5 + ["images"] * 5)
+        self.assertTrue(
+            all(len(parameters["app_ids"]) <= 100 for _, parameters in self.calls)
+        )
+        self.assertIsNone(response.model_facts)
+
+    async def test_impossible_thousand_max_spans_fail_before_cover_fetches(self):
+        self.data["data"]["games"] = [row(i, "80000") for i in range(1, 1001)]
+        response = (
+            await self.module.handlers()
+            .capabilities["wall"]
+            .invoke(self.context, {"limit": 1000})
+        )
+        self.assertEqual(response.status, ygl.ResultStatus.ERROR)
+        self.assertIn("减小数量", response.error.message)
+        self.assertTrue(self.calls)
+        self.assertTrue(
+            all(parameters["phase"] == "metadata" for _, parameters in self.calls)
+        )
+
+    async def test_configured_full_source_uses_public_key_metadata_without_binding_write(
+        self,
+    ):
+        from yomihime_game_link_sdk.storage import SecretMetadataState
+
+        self.services.config.current.return_value = SimpleNamespace(
+            values={},
+            secret_metadata=(
+                SimpleNamespace(
+                    field="credential_steam_key",
+                    state=SecretMetadataState.ACTIVE,
+                    revision=7,
+                ),
+            ),
+        )
+        self.data["operation"] = "full"
+        self.data["scope"] = "webapi_owned_games"
+        self.data["target"] = self.sid
+        self.data["data"]["complete_library"] = True
+        with patch(
+            "packages.steam_dlc.steam.career.load_full",
+            AsyncMock(return_value=self.data),
+        ) as full:
+            output = (
+                await self.module.handlers()
+                .capabilities["wall_explicit"]
+                .invoke(
+                    SimpleNamespace(
+                        origin=ygl.InvocationOrigin.COMMAND,
+                        parent_id="parent",
+                        actor_id="synthetic-owner",
+                    ),
+                    {"account": "1", "source": "full"},
+                )
+            )
+        self.assertEqual(output.status, ygl.ResultStatus.SUCCESS)
+        full.assert_awaited_once_with(
+            self.scope, self.sid, credential_revision=7, cache=False, refresh=False
+        )
+        self.mock_load.assert_not_awaited()
+        self.scope.records.collection.assert_not_awaited()
+        self.assertTrue(output.model_facts.facts["complete_library"])
+
     async def test_card_visible_summary_retains_coverage_counts_and_area_semantics(
         self,
     ):
@@ -124,9 +230,9 @@ class HandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result.model_facts)
         self.assertEqual(result.document.privacy, ygl.Privacy.PRIVATE)
         self.assertEqual(len(result.document.card.blocks), 1)
-        self.assertEqual(len(result.document.card.blocks[0].items), 1)
+        self.assertEqual(len(result.document.card.blocks[0].items), 2)
         self.assertEqual(self.calls[0][1]["phase"], "metadata")
-        self.assertEqual(self.calls[1][1]["app_ids"], ["1"])
+        self.assertEqual(self.calls[1][1]["app_ids"], ["2", "1"])
         for _, parameters in self.calls:
             self.assertNotIn("account", parameters)
             self.assertNotIn("minutes", parameters)

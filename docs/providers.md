@@ -1,29 +1,30 @@
 # 数据来源与可用性
 
-默认零 Key，不使用登录 Cookie、借用 token 或客户端采集。来源返回字段缺失时保留未知；真实零值、无记录、私密/未收录、限流、登录墙及格式变化分开处理。所有生产请求经过 canonical SDK，图片从已声明且验证的来源取得 bytes 后提交受限 cards.Asset；图片失败保留文字。没有海报墙生产功能。
+所有生产请求经过 canonical SDK 的固定来源声明。普通模块不持有明文凭据、不直连网络或数据库。缺失与未知不补零，私密、未收录、空历史、限流、登录墙、格式变化和凭据错误分别处理。
 
-| 模块 | 来源与覆盖 | 留存和降级 |
+| 模块 | 来源和覆盖 | 凭据与留存 |
 | --- | --- | --- |
-| Steam 商店 | 官方 storesearch、appdetails；普通商店页评价摘要保留其原始语言/时间范围 | SDK 公开投影缓存包含 AppID、国家、语言与版本；无历史最低价推断 |
-| Steam 账号 | 正常 Community HTML 的昵称、头像、真实等级与最多 3 款 recent_game | 按字段可用性报告；来源时长是网页小时字符串，非 API 分钟精度 |
-| Steam games | 已弃用 Community XML 的最多 5 项 mostPlayedGames | 明确 legacy 样本，不称完整库或完整两周列表；登录墙不当空库 |
-| Dota 2 | OpenDota 公开基础 GET；最多 20 条原始窗口，不提交解析 | PUBLIC SDK 缓存；stats/last 共享带版本和获取时间的规范列表，损坏投影重新取数 |
-| Deadlock | 社区 Deadlock API；最近已收录段位、有界历史及单场 metadata | PUBLIC SDK 缓存；无记录不当零胜场，429 不读错误 body、不假刷新 |
-| CS2 | Leetify Public API，字段及指标保持 provider 含义 | 当前生产查询 blocked；无数据 Tool、持久缓存或真实响应 fixtures |
+| Steam 商店 | 官方 storesearch、appdetails与实际商店页 | 无 Key；保留国家/语言/币种及采样时间，不推断历史低价 |
+| Steam 网页 | Community主页资料、最多3款recent、legacy XML最多5款mostPlayedGames | 匿名样本；网页小时精度，不称完整库 |
+| Steam API | GetPlayerSummaries、GetSteamLevel、GetRecentlyPlayedGames、GetOwnedGames | Core以x-webapi-key注入部署Key；完整公开库包含玩过的免费游戏，不能穿透隐私 |
+| Dota 2 | OpenDota公开GET资料、最多20条近期窗口与比赛结算 | 可选Bearer Key；无Key匿名、已填错误Key不静默降级；公共投影缓存及订阅持久回执 |
+| CS2 完美/官匹 | api.wmpvp.com；官匹为完美收录口径 | 完美二维码通过passport.pwesports.cn受控授权；Core按精确path/method注入header或顶层JSON |
+| CS2 5E | ya-api-app.5eplay.com；账号标识与SteamID分开 | 受控App Token；近期摘要不当完整单场/完整历史 |
+| Deadlock | 社区Deadlock API已收录资料、近期及metadata | 不承诺Valve官方全历史；实际人数、未知段位与有效统计分母分开 |
 
-Steam 主页允许 SDK 声明的最多两次匿名 HTTPS GET 同源跳转，仅 `/profiles/` 与 `/id/` 路径。请求仍只接受明确 ID32/SteamID64；自定义 vanity URL 不是用户输入入口。最终路径、内容类型、登录墙与嵌入账号身份均需核对。其他来源保持默认拒绝跳转。
+Steam主页最多两次匿名同源GET跳转，仅允许profiles/id路径；最终路径和嵌入身份需核对，不接受用户任意URL。头像仅接受受限hash路径及声明的avatars.steamstatic.com、avatars.fastly.steamstatic.com。公共封面缓存只保存公开素材；个人列表/时长与成图保持USER或现有授权分区。
 
-头像从实际头像元素的 `src` 或受限 `srcset` 读取，忽略装饰头像框。下载仅接受已声明的 `avatars.steamstatic.com` 与 `avatars.fastly.steamstatic.com` 及受限头像路径；不会为装饰图扩大图片来源，失败时保留文字资料。
+CS2数据保留provider/platform/target/season/fetched_at/coverage/detail_level/field_availability。官方与5E单场可能只覆盖近期摘要；缺项不从其他平台拼凑。旧Leetify DTO/UUID/gate已退休，旧配置和绑定不清空，不通过其他来源绕过旧供应方限制。正常家庭出站、切换出口后的会话、IPv6-only须分别实测，不给统一线上保证。
 
-Steam 完整数据增强对应 GetPlayerSummaries、GetSteamLevel、GetRecentlyPlayedGames 与 GetOwnedGames。OwnedGames 请求明确 `include_played_free_games=true`，避免漏掉免费游戏；Key 不能穿透私密库。四接口的请求/规范化已做合成合同验证，但当前外包桥接未提供安全静态 Key 注入，未声明普通秘密配置或启用该来源。完整库增强 blocked，真实 Key 路径 unrun；不能把 Key 填进普通 config、USER records、源码或 JSON cache。
+OpenDota滚动RPH由Core按受信host共享并持久化，默认100，可配置正整数；空值恢复默认、0非法。RPM与429 Retry-After同时生效，缓存命中不计、实际重试计数。Key配置不自动放大额度。源码默认不代表线上商业套餐承诺。
 
-Leetify 指南要求来源署名并不存 API 数据。适配器保留 `Data Provided by Leetify` 与来源链接，Premier Rating、地图竞技段位、FACEIT level/ELO 和 Leetify 分析评分各自独立。当前 Host 会持久化工具日志、对话历史及消息附件，因而生产能力在 scope/HTTP 前停用；不靠关闭全局隐私保护或引入其他平台登录来解除限制。独立 Steam 素材不受该 provider 的缓存策略影响。
+来源合同：
 
-来源依据：
-
-- [Steam Web API 认证](https://partner.steamgames.com/doc/webapi_overview/auth)、[ISteamUser](https://partner.steamgames.com/doc/webapi/ISteamUser)、[IPlayerService](https://partner.steamgames.com/doc/webapi/IPlayerService)。
-- [Steam Community legacy XML](https://partner.steamgames.com/documentation/community_data?l=english)。商店公开页/端点的可用性不构成永久稳定 API 承诺。
+- [Steam认证](https://partner.steamgames.com/doc/webapi_overview/auth)、[ISteamUser](https://partner.steamgames.com/doc/webapi/ISteamUser)、[IPlayerService](https://partner.steamgames.com/doc/webapi/IPlayerService)、[Library Capsule](https://partner.steamgames.com/doc/store/assets/libraryassets)。
+- [Steam legacy XML](https://partner.steamgames.com/documentation/community_data?l=english)。
+- [OpenDota服务端](https://github.com/odota/core/blob/master/svc/web.ts)。
+- [CS2UID固定参考](https://github.com/Agnes4m/CS2UID/tree/ac46894dfb184bd27a81a9a5667aff49b8d0b226)。
+- [Dota订阅固定参考](https://github.com/mml-hrb/astrbot-plugin-dota2matches/tree/703a5dcf2d501a2a232fd44e4eaecf395ed293a6)。
 - [Deadlock API](https://docs.deadlock-api.com/)。
-- [Leetify Public API](https://api-public-docs.cs-prod.leetify.com/)、[开发者指南](https://leetify.com/blog/leetify-api-developer-guidelines/)。
 
-离线合成合同、匿名 API 探测、实际 SDK/Host 命令、模型工具、页面视觉与真实 IM 分别验收；任一层通过不代表其他层通过。实际候选的分层结果以配对交付记录为准。
+单元fixture、隔离Host、真实平台、原实例浏览器、WebChat、第三方IM与真实新比赛是不同证据层。实现代码及接口协议测试不保证生产接口当前有效；具体结果以相同配对revision的交付记录为准。

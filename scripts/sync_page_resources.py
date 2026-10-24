@@ -79,7 +79,7 @@ def synchronize(root=ROOT, *, check=False):
                 **(
                     {"capability_id": "wall_cache_status"}
                     if module_id == "steam"
-                    else {}
+                    else {"capability_id": "status"}
                 ),
                 **common,
             },
@@ -88,16 +88,51 @@ def synchronize(root=ROOT, *, check=False):
                 "role": "config",
                 "title": "设置",
                 "order": 10,
-                "config_fields": (["timezone"] if module_id == "dota2" else [])
-                + ["reply_theme"]
-                + (
-                    ["poster_include_apps", "poster_limit"]
-                    if module_id == "steam"
-                    else []
-                ),
+                "config_fields": {
+                    "steam": [
+                        "reply_theme",
+                        "poster_source",
+                        "poster_mode",
+                        "poster_preset",
+                        "poster_aspect",
+                        "poster_quality",
+                        "poster_fit",
+                        "poster_include_apps",
+                        "poster_limit",
+                    ],
+                    "dota2": [
+                        "timezone",
+                        "reply_theme",
+                        "subscription_enabled",
+                        "poll_interval_seconds",
+                        "opendota_rph",
+                        "commentary_enabled",
+                    ],
+                    "cs2": ["reply_theme", "default_platform"],
+                    "deadlock": ["reply_theme"],
+                }[module_id],
+                "credential_fields": {
+                    "steam": ["credential_steam_key"],
+                    "dota2": ["credential_opendota_key"],
+                    "cs2": ["credential_perfect", "credential_fivee"],
+                    "deadlock": [],
+                }[module_id],
                 **common,
             },
         ]
+        if module_id in {"steam", "cs2"}:
+            pages.append(
+                {
+                    "route_id": "collage" if module_id == "steam" else "query",
+                    "role": "aux",
+                    "title": "游戏生涯拼图" if module_id == "steam" else "平台查询",
+                    "order": 5,
+                    "capability_id": "wall_preview"
+                    if module_id == "steam"
+                    else "query",
+                    **common,
+                }
+            )
         page_resource_paths = {f"{base}/{name}" for name in sources}
         resources = [
             resource

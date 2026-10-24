@@ -3,10 +3,12 @@
 from collections.abc import Mapping
 from datetime import datetime
 from math import isfinite
+from urllib.parse import urlsplit
 
 from ..shared.contracts import RecentMatch
+from ..shared.steam_ids import account_id32, parse_dota_account
 
-VERSION = 1
+VERSION = 2
 
 
 def _integer(value):
@@ -192,7 +194,7 @@ def valid_projection(operation, value, target, limit, match_id):
             value.get("matches")
         )
     if operation == "profile":
-        return _object(
+        valid = _object(
             value.get("profile"),
             {
                 "account_id32": lambda item: item == str(target),
@@ -206,6 +208,24 @@ def valid_projection(operation, value, target, limit, match_id):
                 },
             },
         )
+        if not valid:
+            return False
+        profile = value["profile"]
+        try:
+            if (
+                profile["steam_id64"] is not None
+                and account_id32(profile["steam_id64"]) != target
+            ):
+                return False
+            url = profile["profile_url"]
+            if url is not None:
+                parsed = urlsplit(url)
+                if parsed.hostname in ("steamcommunity.com", "www.opendota.com"):
+                    if parse_dota_account(parsed.path.rsplit("/", 1)[-1]) != target:
+                        return False
+        except (TypeError, ValueError):
+            return False
+        return True
     if operation == "match":
         player_fields = {
             "account_id32": _optional(_identifier),

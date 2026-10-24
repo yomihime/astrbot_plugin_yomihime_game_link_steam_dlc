@@ -199,7 +199,7 @@ class TestDotaModule(unittest.IsolatedAsyncioTestCase):
         projection = MappingProxyType({"account_id32": "123", "matches": (row,)})
         self.cache.cached = CacheEntry(
             key="opendota:recent:123:5",
-            payload={"schema_version": 1, "projection": projection},
+            payload={"schema_version": 2, "projection": projection},
             expires_at=datetime.now(UTC) + timedelta(minutes=1),
         )
         result = await self.handlers["recent"].invoke(
@@ -401,9 +401,12 @@ class TestDotaModule(unittest.IsolatedAsyncioTestCase):
                 invocation(InvocationOrigin.LLM_TOOL, "recent"), {"account": "123"}
             )
 
-    async def test_lifecycle_health_and_empty_collectors(self):
-        self.assertEqual(dict(self.module.handlers().collectors), {})
-        self.assertEqual(dict(self.module.handlers().evaluators), {})
+    async def test_lifecycle_health_and_subscription_handlers(self):
+        self.assertEqual(set(self.module.handlers().collectors), {"dota2.matches"})
+        self.assertEqual(set(self.module.handlers().evaluators), {"dota2.matches"})
+        self.assertEqual(
+            set(self.module.handlers().event_composers), {"dota2.match_report"}
+        )
         self.assertTrue(
             all(
                 item.status is ygl.HealthStatus.AVAILABLE

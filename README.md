@@ -1,121 +1,87 @@
 # 如月怜的游戏连结：Steam DLC
 
-Steam DLC 是 AstrBot 游戏连结的独立 alpha 插件，包含共享 Steam 身份、免 Key 商店与公开账号样本、时长海报、Dota 2 和 Deadlock 查询。CS2 适配器已实现，但当前 Host 会留存来源数据，生产查询保持停用。候选兼容面为 Core 分支 `feat/steam-dlc-support`、canonical SDK `0.1.0a15`、模块 ABI `2.0`；DLC 分支为 `feat/steam-dlc-alpha`。这些分支尚未合并或发布，候选 ZIP 和验收记录以最终构建产物为准。
+独立 AstrBot 插件，提供共享 Steam 身份、商店与完整库、游戏生涯拼图、Dota 2 比赛订阅、CS2 完美/官匹/5E 查询和 Deadlock 查询。当前版本 `0.2.0-alpha.1`，需要精确配对的 Core `0.1.5`、canonical SDK `0.1.0a16`、模块 ABI `2.0`、外包桥接 `1`。这些是候选功能分支，安装与线上实测结果以配对交付记录为准。
 
-请使用精确配对的 Core 与 DLC ZIP，DLC ZIP 的 `BUILD.json` 记录其源提交和文件摘要；Core ZIP 的来源、构建输入与摘要由配对交付记录证明。候选的兼容合同见[架构文档](docs/architecture.md)，合并与发布由维护者决定。
+## 安装与凭据
 
-## 安装
+先安装配对 Core ZIP，再安装 DLC ZIP，启用两者后正常重启 AstrBot。DLC 不包含第二份 SDK。Python/SDK 更新需要重启，运行时不热替换代码。页面、完整 manifest 和受信来源策略均与 Core 构建配对；失配时管理页及凭据接入会拒绝工作，应安装同一交付的两包。
 
-1. 从 Core 候选构建取得 Core ZIP。它包含 canonical `yomihime_game_link_sdk`。
-2. 在 AstrBot 插件管理中安装 Core ZIP，再安装本 DLC ZIP，并启用两者。
-3. 首次装载后按需重启 AstrBot。Core/DLC 或 SDK 的 Python 代码更新需要重启；运行时不做任意 Python 热替换，模块会报告 `restart_required`。
+在 Core 模块管理中打开相应模块的设置：
 
-插件注册设计允许两种加载顺序，但推荐先装 Core、再装 DLC。单独安装 DLC 不会带入第二份 SDK。候选包面向 AstrBot 4.29.1；正式 ZIP 生成后请核对包内 `BUILD.json` 的 SDK、ABI、提交和文件摘要。
+| 模块 | 可选或必需凭据 | 用途 |
+| --- | --- | --- |
+| Steam | 部署者 Steam Web API Key | 完整公开库与资料增强；一把受控部署 Key 可用于多个明确目标，不能穿透隐私 |
+| Dota 2 | 可选 OpenDota Key | 不填继续匿名；填写无效 Key 明确报错；不自动提高请求额度 |
+| CS2 | 完美二维码授权；5E App Token | 完美与完美收录的官匹共用受控凭据；5E 单独授权 |
+
+凭据只在受信 Dashboard 管理页输入。完美扫码由用户亲自确认，支持取消、超时、重新登录和清除；临时票据和最终凭据由 Core 接收并加密保存，模块不读取明文。不要在聊天、普通配置、源码或问题日志中粘贴 Token/Key。平台授权账号和被查询玩家是两个独立身份，不覆盖用户 Steam 绑定。
 
 ## 命令
 
-下列示例使用游戏连结命令入口 `/ygl`：
+入口为 `/ygl`。账号支持范围内 ID32、SteamID64 或标准 Steam profiles URL；5E 使用独立平台标识。
 
-| 命令 | 用途 |
+| 命令 | 行为 |
 | --- | --- |
-| `/ygl steam bind <Dota ID32、SteamID64 或标准 profiles URL>` | 私聊中关联默认 Steam 账号 |
-| `/ygl steam binding` | 私聊查看当前关联状态 |
-| `/ygl steam unbind` | 私聊解除当前关联 |
-| `/ygl steam search <游戏名或 AppID>` | 商店搜索；多结果明确选择 AppID |
-| `/ygl steam app <AppID>` | 价格、折扣、发行与评价摘要；不推断历史低价 |
-| `/ygl steam profile [账号]` | 公开昵称、头像、实际 Steam 等级；字段分别报告可用性 |
-| `/ygl steam recent [账号]` | 主页最多 3 款最近展示游戏，保留网页小时精度 |
-| `/ygl steam games [账号]` | legacy XML 最多 5 款 mostPlayedGames 样本 |
-| `/ygl steam wall [账号] [--source games\|recent\|full] [--all-apps] [--limit N] [--refresh]` | 私聊生成累计时长公开样本海报；默认 games，完整库 full 当前未配置 |
-| `/ygl dota2 recent [账号] [--limit N]` | 查询最近战绩；默认 5 场，最多 20 场 |
-| `/ygl dota2 profile [账号]` | 查询精简玩家资料 |
-| `/ygl dota2 stats [账号] [--limit N]` | 最近 N 场实际样本统计；默认20，范围1–20 |
-| `/ygl dota2 last [账号]` | 最近列表首条有效比赛的个人战报 |
-| `/ygl dota2 match <match_id> [--account <账号>]` | 单场概览；可显式指定玩家焦点 |
-| `/ygl dota2 status` | 查看 Dota 2 能力状态 |
-| `/ygl cs2 status` | 查看 CS2 模块状态 |
-| `/ygl deadlock status` | 查看 Deadlock 模块状态 |
-| `/ygl deadlock profile [账号]` | 已收录昵称、头像与最近可用排位资料 |
-| `/ygl deadlock recent [账号] [--limit N]` | 有界近期记录，默认及上限 20 场 |
-| `/ygl deadlock stats [账号] [--limit N]` | 当前已收录样本统计与有效分母 |
-| `/ygl deadlock last [账号]` | 当前窗口最近有效记录的单场详情 |
-| `/ygl deadlock match <比赛ID> [--account <账号>]` | 单场实际人数与队伍，可选精确个人焦点 |
+| `steam bind <账号>` / `steam binding` / `steam unbind` | 私聊关联、查看、解除本人默认 Steam 身份 |
+| `steam search <名字或AppID>` / `steam app <AppID>` | 官方商店搜索、当前地区价格与评价摘要 |
+| `steam profile [账号]` / `steam recent [账号]` / `steam games [账号]` | 公开资料、主页近期样本、legacy XML 样本 |
+| `steam wall [账号] [--source games\|recent\|full] [--mode dense\|legacy] [--preset single\|standard\|long] [--aspect 2:3\|9:16\|1:2] [--quality normal\|hd] [--fit cover\|contain] [--limit N] [--all-apps\|--games-only] [--refresh]` | 私聊输出有界多页生涯拼图；full 需要部署 Key |
+| `dota2 profile [账号]` / `recent [账号] [--limit N]` / `stats [账号] [--limit N]` / `last [账号]` | OpenDota 已收录公开资料与最近最多20场样本 |
+| `dota2 match <比赛ID> [--account <账号>]` | 比赛与可选玩家焦点，缺失指标明确显示 |
+| `dota2 watch [账号]` / `watchlist` / `unwatch <账号或订阅ID>` | 当前群或私聊中创建、查看、取消自己的订阅 |
+| `cs2 profile\|recent\|stats\|last [账号] [--platform perfect\|official\|5e]` | 对应平台资料、近期、赛季/样本统计和上一场 |
+| `cs2 match <来源比赛ID> [--account <账号>] [--platform perfect\|official\|5e]` | 单场或近期摘要；不解释旧 Leetify UUID |
+| `deadlock profile\|recent\|stats\|last [账号]` / `deadlock match <比赛ID> [--account <账号>]` | 社区 API 已收录数据与实际人数的比赛详情 |
+| `dota2 status` / `cs2 status` / `deadlock status` | 来源和能力状态；不是凭据有效性证明 |
 
-Steam 的 `bind`、`binding`、`unbind` 仅允许私聊。关联是用户主动声明（`self_asserted`），插件不验证账号所有权，也不提供 Steam 登录或 OpenID 验证。
+`bind` 是用户主动声明的账号关联，不是 Steam 所有权认证。本人默认身份仅在可信命令根调用中读取；模型和公开 Web 查询必须给明确目标，不推导私人绑定。默认身份路径整份 `model_facts=None`。商店默认 CN/schinese；时长与比赛数据保留来源、取数时间和缺项原因。
 
-Steam 查询默认地区 CN、语言 schinese，商店结果明确标注地区、语言、币种与取数时间；显式 Tool 可传 country/language。免费、未发售、无当地价格、查无结果分别说明。账号网页固定使用英文来源便于保留展示时长口径。`recent` 与 `games` 是不同公开样本，均不代表完整两周列表或完整游戏库；登录页不算空库，XML steamRating 不算 Steam 等级。详见[数据来源与限制](docs/providers.md)。默认不需要 Key、Cookie 或登录态。可选 Steam Web API 四接口已有离线适配，但当前外包安全凭据注入未开放，不能把 Key 写入普通设置来启用；完整库增强仍为 blocked，真实调用 unrun。
+## 生涯拼图与缓存
 
-时长海报使用 `/ygl steam wall`，省略账号时只读取发起者的默认关联；也可显式给出 ID32 或 SteamID64。默认 `--source games` 使用 XML 最多 5 项 mostPlayedGames 样本，`--source recent` 使用主页最多 3 项最近展示样本，成品均明确标为“公开样本海报”。`--source full` 当前显示完整库需要可选 Steam Web API user key、受控凭据入口未配置的 blocked/unrun 状态，不会改用样本冒充完整库。模型工具 `steam_dlc_steam_wall` 必须显式提供 `account`，不读取默认关联；海报命令不接受地区或语言选项。
+默认 dense、20列、1080px 内容宽、原版2:3竖海报、标准时长预设、包含软件、最多500项。0时长排除，未知时长单独计数，不冒充0。`--games-only` 排除软件。已有显式配置保持原值，旧 legacy 模式继续可选且上限200项。
 
-默认仅纳入官方元数据确认的游戏，并排除软件、未知类型、未知累计时长和未游玩项；`--all-apps` 可纳入软件及未知类型，但仍排除未知或零时长。按 AppID 去重，重复时长取最大的已知累计观测值，不相加；等时长按 AppID 排序。`--limit N` 范围为 1–200，初始默认 60，可在 Steam 设置中调整；输出列出来源、去重、筛除、未知和本次纳入数量，数量上限不会扩大公开样本的覆盖范围。
+| 倍率 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 单机 single 小时 | 1 | 5 | 15 | 30 | 60 | 100 | 200 | 500 |
+| 标准 standard 小时 | 1 | 20 | 50 | 100 | 250 | 500 | 1000 | 2000 |
+| 长玩 long 小时 | 1 | 50 | 200 | 500 | 1000 | 2000 | 4000 | 8000 |
 
-海报以累计分钟的平方根作为面积权重；网页来源仍保留其显示小时精度，换算分钟仅用于权重。Core 为可读性限制权重比例并使用尺寸分档，实际面积随权重非递减，接近的时长可以同面积，不是精确比例图。官方竖版素材等比覆盖、有界裁边，不拉伸；缺图使用保留名称和时长的备用块。画布受限时自动分段，最多 8 页，每页有页码；完整排序列表保留在文字回退中。
+锚点间按面积插值后量化为1–8倍，每张占 k列×k行；相同时长与规格不受库中其他作品影响。大图跨行、小图填空，物理密排顺序可不同于逻辑时长榜；同分逻辑榜按数值 AppID 排序。普通基元54×81/96/108，高质量为72×108/128/144。窄比例 cover 会裁剪，contain 等比留边，均不拉伸。无法容纳时明确说明预算与 omitted，不静默丢图。500是默认选择上限，1000是有界压力上限，不承诺任意1000张最大倍率都能输出。
 
-`--refresh` 重新验证本次所需的官方封面元数据和图片，可使用 ETag 条件请求，并非清空缓存。它**不会强制刷新账号游戏列表或累计时长**：列表仍遵循现有约 300 秒缓存，输出保留原始来源时间。设置页的“刷新缓存状态”按钮仅重读公共素材缓存的项数、字节、容量上限和淘汰数，不刷新封面、账号列表或个人成品。
+`games` 最多5款 mostPlayedGames，`recent` 是主页最多3款展示；都不代表完整库。`full` 使用 GetOwnedGames，明确包含玩过的免费游戏；私密库、缺 Key、上游错误分别报告。来源完整性与筛选后入图完整性分开显示 requested/eligible/included/omitted。页面可用明确账号生成和下载原始 PNG，不发送聊天消息。
 
-Dota 2 `recent`、`profile`、`stats` 和 `last` 省略账号时，会读取发起命令的当前用户默认关联；因此可在群聊中使用，但只查询发起者自己的关联。指定账号可用 Dota ID32 或 SteamID64。最近场次的 `--limit` 范围是 1–20。命令参数不接受任意 URL。模型工具 `steam_dlc_dota2_recent`、`steam_dlc_dota2_profile`、`steam_dlc_dota2_stats`、`steam_dlc_dota2_last` 必须显式提供 `account`；`steam_dlc_dota2_match` 必须显式提供 `match_id`，可选 `account` 为单场焦点；工具不会代用户读取默认关联。旧 `match` 不带焦点仍为全场概览，从不隐式读取绑定。
+公开原封面由 Core 持久资源缓存复用，切换预设/比例复用同源素材。本人的选择快照与命令成图保留 USER 隔离。热成图命中仍复核权限、epoch、过期与文件完整性；不能用缓存取得已撤销内容。性能与真实库数量应以具体候选实测为准。
 
-Steam bind 接受规范 ASCII ID32（1–4294967295，支持短值和十位值）、合法 SteamID64 和标准 HTTPS profiles URL；ID32 URL、前导零、Unicode 数字等拒绝。只保存同一 Steam 身份，不新增 Dota 绑定副本；这是本人声明，不能证明账号所有权。
+## Dota 订阅
 
-`stats` 只用一次最多20条的近期请求，按有效比赛 ID 去重，列出请求/返回/有效、无效/重复以及胜负未知数。胜率分母为胜+负，K/D/A 和时长均值各有自己的有效样本数；英雄与模式分布只代表本次样本，Turbo 分开统计。时间不足或顺序不确定时不推算连续胜负；没有全生涯、固定日期完整战绩或评分承诺。资料显示可读段位/星级及原始值，不估算 MMR。
+首次完整成功采样仅建立基线。订阅固定创建时的 ID32，换绑不会改变目标；重复创建原子复用，取消后重建产生新 generation。恢复采样最多保留24小时内最新3场候选，包含待详情项，较旧积压明确跳过。不同会话同玩家共享公共采集；同一目标会话同场的多个玩家在30秒收集窗口内合并通知，保留每个原事件回执。已封口后的晚到成员留下 suppressed 诊断，不伪称已发送。
 
-`last` 在最多20条近期记录中选来源第一条有效比赛，最多再取一次详情；详情缺失或失败不改查更早比赛，时间顺序不明会提示。焦点仅按明确账号匹配，匿名或不在场不猜人。基础详情有字段才显示等级、经济、伤害和物品；0与未提供严格区分，物品为最终槽位而非购买时间线，不会提交录像解析。
+默认启用订阅、轮询300秒、OpenDota RPH100、模型短评关闭。间隔可选60/300/900/3600/21600/43200/86400秒。RPH 是本机同源滚动60分钟的实际尝试，手动、模型、后台共用，重试计数、缓存命中不计；RPM 与429冷却同时生效并跨重启保留。空值恢复默认，0不代表无限。页面显示额度和恢复时间；CRUD 使用上述可信命令，不伪造 Web 聊天身份。
 
-统计与战报使用公开 SDK DisplayDocument/结构化 blocks/cards，由 Core 排版、字体与主题渲染；相同投影保留完整文字回退。所有默认关联路径整份 `model_facts=None`，只有显式公开输入可供宿主模型解释有界事实。缓存说明取数时间与命中；扩展比赛详情使用 v2、新统计/上一场使用 v1 键，旧详情缺项不当作0。
+可选短评在持久化事件后、发送前调用 Host 模型，隔离会话、无历史/工具，严格超时；失败照常发送确定性事实战报。不@玩家、不解析 Demo、不保证绝对 exactly-once；发送结果不明保持 UNKNOWN，不自动重发。详见 [Dota 合同](packages/steam_dlc/dota2/README.md)。
 
-Deadlock 使用社区 Deadlock API，仅代表已收录公开记录，不承诺 Valve 官方实时完整历史。最近可用段位、未定级/无记录与未知字段分别展示；不从队伍平均徽章推算个人 MMR。`last` 的详情失败不会暗换另一场，焦点只按账号 ID 匹配。Steam、Deadlock 的默认账号也只由根 COMMAND 读取共享身份，所有默认路径整份 `model_facts=None`；显式 Tool 必须给出账号或比赛 ID。
+## CS2 与页面
 
-CS2 的 Leetify 匿名资料→近期→单场 API 路线可用，适配器和合成合同已实现。当前 AstrBot 会把完整 Tool 结果写入日志/会话历史，并保存 WebChat 图片附件，与来源要求不兼容；`profile/recent/stats/last/match` 在联网前返回明确不可用，不发布数据 Tool，不持久缓存或伪造零战绩。需要来源专属的无留存宿主路径后才能启用；一把 Steam Key 无法解除该限制。
+CS2 以 CS2UID 为行为和接口参考，退休旧 Leetify 主方案。perfect、official、5e 分别保留 provider、platform、来源ID、赛季、时间、覆盖与缺项。official 是完美收录的官匹，不能覆盖所有 Valve 历史。5E及官匹的单场能力在来源只提供近期摘要时明确显示 summary/partial，不伪造完整技术指标；实际接口字段和可用性需真实凭据验证。详见 [CS2 来源合同](packages/steam_dlc/cs2/README.md)。
 
-## 管理与设置
+页面复用 Core `@game-link/ui`、主题与生命周期，包含普通设置、受控凭据、CS2查询和Steam拼图下载。普通草稿按 scope 隔离，Token不留草稿；CAS冲突先重读，未知写入不自动重试，旧响应不覆盖新状态。桌面和390px移动视口模拟、真实手机、扫码与线上来源是不同验收层。
 
-在 Core 的“模块管理”中可查看四模块的实际运行状态。进入任一模块可查看命令帮助和业务范围；“进入设置”打开普通配置页。Dota2 提供 `timezone`（默认 `Asia/Shanghai`），四模块提供回复主题选择。主题选项由 Core 返回，“跟随核心”恢复继承。保存发生版本冲突时先重新读取，再确认更改。
+## 构建与边界
 
-Steam 设置还提供 `poster_include_apps`（默认关闭）和 `poster_limit`（默认 60，范围 1–200），分别控制海报是否包含全部应用及默认数量；命令中的 `--all-apps`、`--limit` 可为本次请求指定选择。公共素材缓存统计不包含账号列表和个人时长。
-
-页面使用公开 `@game-link/ui` 和 Module UI contract v1，复用宿主同一 Vue/Naive/UI runtime。主题和语言由规范 PageContext 更新，主题切换保留草稿与焦点。Steam 账号关联仍使用私聊命令，查询使用命令或显式 ID 工具。
-
-此 alpha 的页面资源需要由 Core 构建时显式装配：在独立 Core 构建 staging 使用 `scripts/build_release.py --sdk-wheel <a15.whl> --external-page-package <本仓库/packages/steam_dlc> --output-dir <新产物目录>`。时长海报需要 SDK `0.1.0a15` 的公开持久资源引用和加权拼贴合同，以及实现这些能力的精确配对 Core。构建只收录摘要匹配的静态资源，不把 DLC Python 业务复制进 Core。请安装精确匹配的两个候选并重启，再从宿主正式入口重新打开页面；DLC 页面或 manifest 更新后须重新构建配对资源。资源失配时页面拒绝装载，模块命令不因此获得额外权限。
-
-## 数据与隐私边界
-
-- Steam 是唯一账号关联 owner。关联数据由 SDK USER records 保存；停用、重启或卸载 DLC 不触发自动删除。`unbind` 保留版本记录所需的 tombstone。
-- Steam 身份依赖只向已声明且获授权的消费者提供私有 identity 文档。Steam/Dota/Deadlock 公开查询保持其来源可见性；所有默认关联查询整份抑制模型 facts。显式公开查询可以呈现实际来源字段。
-- 官方公共封面和元数据可跨用户复用，资源字节由 Core 管理；账号列表、累计时长与规范化海报选择保存在 USER 分区，个人成品按本次请求权限处理。公共素材缓存不包含个人库或时长，也不授予读取个人结果的权限。默认关联海报保持私有且整份 `model_facts=None`；显式公开工具仅提供覆盖范围、计数等精简 facts。
-- Dota 2 通过 SDK HTTP、配置和缓存接口访问固定 OpenDota 主机 `api.opendota.com`，仅使用固定 GET 查询路径，不提交 POST、不调用任意 URL。接口不可用、限流、超时或无记录时返回稳定错误；不自动重试。
-- 时间戳按 UTC 处理；展示时区由 Dota 配置 `timezone` 控制，默认 `Asia/Shanghai`。
-- Valve 官方简体中文英雄名称映射收录于源码 [hero_names.py](packages/steam_dlc/shared/hero_names.py)，共 127 条。来源为 [Dota 2 官方英雄数据接口](https://www.dota2.com/datafeed/herolist?language=schinese)，源响应 SHA-256 为 `c3d7e9ac5b145aa066857645dd89612f51643dd8b3354d2beccf41ddebb0f054`；未知 ID 使用显式编号回退。
-- DLC 使用独立的纯 DOM 页面，遵循 Core 的公开管理 UI 合同。
-
-## 构建与验证
-
-在已安装兼容 canonical SDK 的开发环境中，可运行：
+所有业务仅使用公开 SDK；Core 不含游戏协议。SDK仅由 Core提供。正式许可与行为参考见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，架构与来源见 [architecture.md](docs/architecture.md)、[providers.md](docs/providers.md)。
 
 ```powershell
-python -m unittest discover -s tests
 npm ci --ignore-scripts
+npm run build:pages
+python scripts/sync_page_resources.py
+python -m unittest discover -s tests -v
 npm run test:pages
-python scripts/sync_page_resources.py --check
-ruff check packages/steam_dlc tests scripts
-ruff format --check packages/steam_dlc tests scripts
+ruff check main.py packages tests scripts
+ruff format --check main.py packages tests scripts
+mypy packages/steam_dlc
 python scripts/build_release.py
 ```
 
-最终构建要求源码已提交且工作区干净；构建脚本会审计 ZIP 内容并输出构建收据。开发中的脏工作区仅供本地临时 harness 使用 `--allow-dirty`，不得作为最终安装包证据。
+页面构建需要配对 Core 的锁定前端依赖。先构建页面/同步摘要，再在干净已提交源码生成正式包。Core配对构建同时传 `--sdk-wheel <a16.whl> --external-page-package <本仓库/packages/steam_dlc> --external-source-policy-package <同一路径> --output-dir <新目录>`。策略显式绑定完整原 manifest，不从模块声明自动获得秘密权限。`--allow-dirty`仅供本地开发。
 
-修改页面规范源 `packages/steam_dlc/pages/src/entry.js`、`src/controller.js` 或 `style.css` 后，先运行 `node scripts/build_pages.mjs`，再运行 `python scripts/sync_page_resources.py` 生成四模块独立资源及 manifest 摘要。两脚本均支持 `--check`。开发构建默认复用现有 Core worktree 的锁定依赖，其他位置可设置 `YGL_CORE_ROOT` 或传入 `--core-root`；先在该 Core 执行 `npm ci --prefix pages/frontend`。不要手工修改生成副本。Node、Vite、Vue 与 jsdom 的开发依赖不进入 DLC ZIP，生产页面从配对 Core 导入同一共享 runtime。
-
-双插件离线 Host harness 需要 Core ZIP、DLC ZIP、AstrBot 4.29.1 源码和新的隔离工作目录：
-
-```powershell
-python scripts/smoke_two_plugins.py `
-  --core-zip <core.zip> `
-  --dlc-zip <steam-dlc.zip> `
-  --host-source <astrbot-4.29.1-source> `
-  --work-root <fresh-temp-dir> `
-  --order core-first
-```
-
-另以新的工作目录和独立进程将 `--order` 设为 `dlc-first`，覆盖另一注册顺序。该 harness 使用真实 Host 插件管理与生命周期，但消息投递和 OpenDota HTTPS 响应为合成数据；它不证明真实 IM、浏览器 UI 或在线 OpenDota 验收。离线单测、包审计、Host harness、在线 API、真实 IM/UI 与发布是不同证据层，分别记录，不互相替代。
-
-自动化检查由仓库 CI 执行；真实 Dashboard、Host SDK 在线查询、IM 和模型调用需分别验收。构建与安装合同见[架构文档](docs/architecture.md)。
+双插件 harness 入口为 `scripts/smoke_two_plugins.py`，分别在新隔离目录运行 `--order core-first` 和 `--order dlc-first`，同时给 `--core-zip`、`--dlc-zip`、`--host-source`、`--work-root`。其事件与接口响应为合成数据；不证明真实新比赛、IM、扫码或线上平台通过。未配置凭据时先使用已有公开能力，实际Key、扫码、目标发送授权和IPv6-only测试应分别记录。安装前备份最新数据；不要把旧 schema 数据库覆盖到已升级实例。过程证据、账号、Key、附件、缓存均不进入公开仓库或安装包。

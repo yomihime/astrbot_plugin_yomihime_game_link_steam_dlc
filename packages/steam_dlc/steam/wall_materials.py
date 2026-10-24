@@ -566,7 +566,9 @@ class MaterialPreparer:
                 ],
                 "counters": counters,
             }
-        large = len(appids) <= 12
+        # One stable highest-quality original is reused across poster settings.
+        # Output quality/aspect/preset belong to Core's derivative cache.
+        large = True
 
         async def item(target):
             data = metadata.get(

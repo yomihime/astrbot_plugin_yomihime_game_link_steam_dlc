@@ -46,6 +46,14 @@ from .cache_validation import VERSION, decode_window, valid_projection
 from .normalization import normalize_match, normalize_profile, normalize_recent
 from .presentation import report_result
 from .statistics import project_normalized_stats
+from .subscriptions import (
+    COLLECTOR_ID,
+    COMPOSER_ID,
+    TYPE_ID,
+    DotaMatchCollector,
+    DotaMatchComposer,
+    DotaMatchEvaluator,
+)
 
 _SOURCE = "opendota"
 _MAX_RESPONSE_BYTES = 1_000_000
@@ -78,10 +86,14 @@ class Dota2Module:
                 "stats_explicit": _Query(self, "stats"),
                 "last": _Query(self, "last"),
                 "last_explicit": _Query(self, "last"),
-                "status": _Status(),
+                "status": _Status(self),
+                "watch": _Manage(self, "watch"),
+                "watchlist": _Manage(self, "list"),
+                "unwatch": _Manage(self, "unwatch"),
             },
-            collectors={},
-            evaluators={},
+            collectors={COLLECTOR_ID: DotaMatchCollector(self._services)},
+            evaluators={TYPE_ID: DotaMatchEvaluator()},
+            event_composers={COMPOSER_ID: DotaMatchComposer()},
         )
 
     async def start(self) -> None:
@@ -108,20 +120,59 @@ class Dota2Module:
                     "last",
                     "last_explicit",
                     "status",
+                    "watch",
+                    "watchlist",
+                    "unwatch",
                 )
             }
         )
 
 
 class _Status:
+    def __init__(self, owner):
+        self.owner = owner
+
     async def invoke(self, context: InvocationView, parameters: ygl.JsonObject):
-        del context, parameters
+        del parameters
+        budget = None
+        enabled, interval = True, 300
+        try:
+            config = await self.owner._services.config.current()
+            enabled = config.values.get("subscription_enabled", True) is True
+            interval = config.values.get("poll_interval_seconds", 300)
+            scope = await self.owner._services.scopes.bind(context)
+            current = await scope.http.budget(_SOURCE)
+            budget = {
+                "requests_per_hour": current.requests_per_hour,
+                "used": current.used,
+                "remaining": current.remaining,
+                "next_available_at": current.next_available_at.isoformat()
+                if current.next_available_at
+                else None,
+            }
+        except (InvalidInvocation, AccessDenied, OperationTimeout, ServiceUnavailable):
+            raise
+        except Exception:
+            # Missing budget evidence is unknown, never a fabricated full quota.
+            pass
         return success(
             "Dota 2 状态",
             [
-                "最近战绩、近期样本统计、玩家资料、上一场和指定玩家战报已实现；使用 OpenDota 公开数据，不提交解析。"
+                "最近战绩、近期样本统计、玩家资料、上一场和指定玩家战报已实现；使用 OpenDota 公开数据，不提交解析。",
+                f"自动订阅：{'开启' if enabled else '暂停'}；轮询间隔 {interval} 秒。",
+                "在目标会话使用 /ygl dota2 watch [账号]、watchlist、unwatch <账号或订阅编号> 管理自己的关注。",
             ],
-            {"module": "dota2", "implemented": True, "source": _SOURCE},
+            {
+                "module": "dota2",
+                "implemented": True,
+                "source": _SOURCE,
+                "subscription": {
+                    "enabled": enabled,
+                    "poll_interval_seconds": interval,
+                    "management": "current_session_commands",
+                },
+                "opendota_budget": budget,
+            },
         )
 
 
@@ -181,6 +232,128 @@ class _Query:
                 type(exc).__name__,
             )
             return failure(ErrorCode.MODULE_UNAVAILABLE, "Dota 2 查询服务暂不可用。")
+
+
+class _Manage:
+    def __init__(self, owner, action):
+        self.owner = owner
+        self.action = action
+
+    async def invoke(self, context, parameters):
+        # Core validates exact issuer provenance again for every CRUD operation.
+        if (
+            context.origin is not InvocationOrigin.COMMAND
+            or context.parent_id is not None
+        ):
+            return failure(
+                ErrorCode.AUTH_REQUIRED,
+                "请在当前群或私聊使用 /ygl dota2 命令管理自己的订阅。",
+            )
+        if not self.owner._started:
+            return failure(ErrorCode.MODULE_UNAVAILABLE, "Dota 2 模块当前未运行。")
+        services = self.owner._services
+        try:
+            raw = parameters.get("command", "")
+            if not isinstance(raw, str):
+                raise ValueError
+            args = _command_tokens(raw)
+            if self.action == "watch":
+                if len(args) > 1:
+                    raise ValueError
+                config = await services.config.current()
+                if config.values.get("subscription_enabled", True) is False:
+                    return failure(
+                        ErrorCode.MODULE_UNAVAILABLE,
+                        "Dota 2 自动订阅当前暂停；已有订阅可以查看和取消。",
+                    )
+                account = (
+                    _explicit_account(args[0])
+                    if args
+                    else (await _default_identity(services, context))["account_id32"]
+                )
+                request = ygl.SubscriptionRequest(
+                    TYPE_ID,
+                    {"account_id32": account},
+                    {"account_id32": account},
+                    "instant",
+                    creation_key=f"match-watch:{account}",
+                )
+                view = await services.subscriptions.create_request(context, request)
+                return success(
+                    "Dota 2 订阅",
+                    [
+                        f"已关注玩家 {account}；重复创建会复用当前订阅。",
+                        f"订阅编号：{view.subscription_id}；版本：{view.revision}。",
+                        "首次完整采样只建立基线；新比赛收录后发送到当前会话。",
+                        "取消：/ygl dota2 unwatch <玩家ID或订阅编号>",
+                    ],
+                    privacy=ygl.Privacy.PUBLIC,
+                )
+            views = await services.subscriptions.list_current(context)
+            own = [view for view in views if "account_id32" in view.filters]
+            if self.action == "list":
+                if args:
+                    raise ValueError
+                return success(
+                    "我的 Dota 2 订阅",
+                    [
+                        f"玩家 {view.filters['account_id32']} · {view.subscription_id} · 版本 {view.revision} · {_subscription_state(view)}"
+                        for view in own
+                    ]
+                    or ["当前会话没有你的 Dota 2 订阅。"],
+                    privacy=ygl.Privacy.PUBLIC,
+                )
+            if len(args) != 1:
+                raise ValueError
+            target = args[0]
+            try:
+                account = parse_dota_account(target)
+            except ValueError:
+                account = None
+            matches = [
+                view
+                for view in own
+                if view.subscription_id == target
+                or view.filters["account_id32"] == account
+            ]
+            if not matches:
+                return failure(
+                    ErrorCode.NOT_FOUND,
+                    "当前会话没有找到你的该订阅。",
+                    privacy=ygl.Privacy.PUBLIC,
+                )
+            for view in matches:
+                await services.subscriptions.cancel(
+                    context, view.subscription_id, expected_revision=view.revision
+                )
+            return success(
+                "Dota 2 订阅",
+                ["已取消该关注；重新创建将建立新基线。"],
+                privacy=ygl.Privacy.PUBLIC,
+            )
+        except _QueryFailure as exc:
+            return failure(exc.code, exc.message)
+        except (ValueError, TypeError):
+            return failure(
+                ErrorCode.PARAMETER_ERROR,
+                "用法：/ygl dota2 watch [ID32或SteamID64]；watchlist；unwatch <玩家ID或订阅编号>。",
+            )
+        except Exception:
+            return failure(
+                ErrorCode.MODULE_UNAVAILABLE,
+                "订阅操作未完成；请在当前会话重试并查看最新状态。",
+                privacy=ygl.Privacy.PUBLIC,
+            )
+
+
+def _subscription_state(view):
+    state = getattr(view, "evaluation_state", None)
+    values = (
+        state.value if state is not None and isinstance(state.value, Mapping) else {}
+    )
+    if not values.get("initialized"):
+        return "等待首次完整采样建立基线"
+    return f"已建立基线；待处理 {len(values.get('pending', ()))} 场；窗口/积压限制已跳过 {values.get('omitted_count', 0)} 场"
 
 
 class _QueryFailure(Exception):

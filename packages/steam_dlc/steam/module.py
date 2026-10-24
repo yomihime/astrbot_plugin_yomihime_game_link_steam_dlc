@@ -29,7 +29,7 @@ _QUERIES = (
     "recent_explicit",
     "games_explicit",
 )
-_WALL = ("wall", "wall_explicit", "wall_materials", "wall_cache_status")
+_WALL = ("wall", "wall_explicit", "wall_preview", "wall_materials", "wall_cache_status")
 _CAPABILITIES = ("bind", "binding", "unbind", "identity", "status") + _QUERIES + _WALL
 
 
@@ -48,8 +48,10 @@ class SteamModule:
         return ygl.ModuleHandlers(
             {
                 name: (
-                    WallHandler(self, explicit=name == "wall_explicit")
-                    if name in ("wall", "wall_explicit")
+                    WallHandler(
+                        self, explicit=name in ("wall_explicit", "wall_preview")
+                    )
+                    if name in ("wall", "wall_explicit", "wall_preview")
                     else MaterialsHandler(self)
                     if name == "wall_materials"
                     else CacheStatusHandler(self)
@@ -236,7 +238,7 @@ def _input(context, parameters, operation):
         parameters.get("country", "CN"),
         parameters.get("language", "schinese"),
     )
-    if context.origin is ygl.InvocationOrigin.COMMAND:
+    if context.origin is ygl.InvocationOrigin.COMMAND and context.parent_id is None:
         raw = parameters.get(
             "command",
             parameters.get("query" if operation == "search" else "app_id", "")

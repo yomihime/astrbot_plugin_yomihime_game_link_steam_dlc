@@ -127,7 +127,7 @@ class ReleaseResourcesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "regular file"):
             release.inventory(self.root)
 
-    def test_tool_allowlist_keeps_cs2_blocked_and_requires_explicit_targets(self):
+    def test_tool_allowlist_requires_explicit_targets_for_cs2_and_steam(self):
         cs2 = next(
             module
             for module in self.manifest["modules"]

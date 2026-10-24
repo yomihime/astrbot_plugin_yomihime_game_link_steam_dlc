@@ -41,6 +41,8 @@ def normalize(operation, raw, steam_id):
     ):
         raise ValueError("Invalid Steam Web API response")
     data = raw["response"]
+    if data.get("steamid") is not None and data["steamid"] != steam_id:
+        raise ValueError("Steam response identity differs from request")
     if operation == "profile":
         players = data.get("players")
         if not isinstance(players, list):
@@ -111,7 +113,8 @@ def normalize(operation, raw, steam_id):
             "state": "empty" if count == 0 and not rows else "available",
             "complete_library": operation == "games"
             and count is not None
-            and count == len(rows),
+            and count == len(rows)
+            and len({row["app_id"] for row in rows}) == len(rows),
         }
     result["availability"] = availability(result)
     return result

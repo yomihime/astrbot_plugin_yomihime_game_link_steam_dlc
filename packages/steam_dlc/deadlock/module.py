@@ -59,7 +59,9 @@ class Module:
         handlers: dict[str, _Status | Query] = {"status": _Status()}
         for operation in OPERATIONS:
             handlers[operation] = Query(self, operation)
-            handlers[operation + "_explicit"] = Query(self, operation)
+            handlers[operation + "_explicit"] = Query(
+                self, operation, explicit_only=True
+            )
         return ygl.ModuleHandlers(handlers, {}, {})
 
     async def start(self):
@@ -89,8 +91,9 @@ class _Status:
 
 
 class Query:
-    def __init__(self, owner, operation):
+    def __init__(self, owner, operation, *, explicit_only=False):
         self.owner, self.operation = owner, operation
+        self.explicit_only = explicit_only
 
     async def invoke(self, context, parameters):
         if not self.owner.running:
@@ -98,7 +101,11 @@ class Query:
         selected = None
         try:
             account, limit, mid, default = await resolve(
-                self.owner.services, context, parameters, self.operation
+                self.owner.services,
+                context,
+                parameters,
+                self.operation,
+                explicit_only=self.explicit_only,
             )
             scope = await self.owner.services.scopes.bind(context)
             operation = self.operation
@@ -201,10 +208,10 @@ def explicit(value):
         ) from None
 
 
-async def resolve(services, context, parameters, operation):
+async def resolve(services, context, parameters, operation, *, explicit_only=False):
     account, mid = None, None
     limit: str | int = 20
-    if context.origin is InvocationOrigin.COMMAND:
+    if context.origin is InvocationOrigin.COMMAND and not explicit_only:
         raw = parameters.get("command", "")
         if not isinstance(raw, str) or len(raw) > 256:
             raise QueryFailure(
@@ -443,7 +450,8 @@ async def avatar_asset(scope, url):
         parsed = urlsplit(url)
         if (
             parsed.scheme != "https"
-            or parsed.hostname != "avatars.steamstatic.com"
+            or parsed.hostname
+            not in {"avatars.steamstatic.com", "avatars.fastly.steamstatic.com"}
             or parsed.port not in (None, 443)
             or parsed.username
             or parsed.password
@@ -452,7 +460,14 @@ async def avatar_asset(scope, url):
             or not re.fullmatch(r"/[0-9a-f]{40}(?:_full|_medium)?\.jpg", parsed.path)
         ):
             return None
-        response = await scope.http.fetch(HttpRequest("steam_avatar", parsed.path))
+        response = await scope.http.fetch(
+            HttpRequest(
+                "steam_avatar_fastly"
+                if parsed.hostname == "avatars.fastly.steamstatic.com"
+                else "steam_avatar",
+                parsed.path,
+            )
+        )
         if (
             response.status_code != 200
             or not isinstance(response.body, bytes)

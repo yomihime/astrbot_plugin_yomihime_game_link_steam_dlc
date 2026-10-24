@@ -167,6 +167,17 @@ class Queries(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.dependency_calls, [])
         self.assertEqual(self.http.requests, [])
 
+    async def test_command_dependency_explicit_account_ignores_root_command(self):
+        result = await self.invoke(
+            "recent_explicit",
+            {"account": "123", "command": "unrelated root command"},
+            InvocationOrigin.COMMAND,
+        )
+        self.assertEqual(result.status, ygl.ResultStatus.SUCCESS)
+        self.assertEqual(self.dependency_calls, [])
+        self.assertIn("/players/123/", self.http.requests[0].path)
+        self.assertIsNotNone(result.model_facts)
+
     async def test_default_command_whole_facts_absent(self):
         r = await self.invoke("stats", {"command": ""}, InvocationOrigin.COMMAND)
         self.assertEqual(r.status, ygl.ResultStatus.SUCCESS)
@@ -366,6 +377,30 @@ class Queries(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(asset.required)
         self.assertEqual(self.http.requests[0].source_id, "steam_avatar")
         self.assertNotIn("://", self.http.requests[0].path)
+
+    async def test_fastly_avatar_accepts_exact_host_and_rejects_url_escapes(self):
+        async def image(request):
+            self.http.requests.append(request)
+            return HttpResponse(200, {}, b"\xff\xd8\xffsynthetic")
+
+        self.scope.http = SimpleNamespace(fetch=image)
+        path = "/" + "b" * 40 + "_full.jpg"
+        asset = await avatar_asset(
+            self.scope, "https://avatars.fastly.steamstatic.com" + path
+        )
+        self.assertEqual(asset.content, b"\xff\xd8\xffsynthetic")
+        self.assertEqual(self.http.requests[0].source_id, "steam_avatar_fastly")
+        self.assertEqual(self.http.requests[0].path, path)
+        for prefix, suffix in (
+            ("http://avatars.fastly.steamstatic.com", ""),
+            ("https://avatars.fastly.steamstatic.com.evil.invalid", ""),
+            ("https://user@avatars.fastly.steamstatic.com", ""),
+            ("https://avatars.fastly.steamstatic.com:8443", ""),
+            ("https://avatars.fastly.steamstatic.com", "?credential=synthetic"),
+            ("https://avatars.fastly.steamstatic.com", "#fragment"),
+        ):
+            self.assertIsNone(await avatar_asset(self.scope, prefix + path + suffix))
+        self.assertEqual(len(self.http.requests), 1)
 
 
 class Normalization(unittest.TestCase):
