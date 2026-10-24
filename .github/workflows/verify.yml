@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: yomihime/astrbot_plugin_yomihime_game_link
-          ref: f395bb0880cceeb7a6aca1c3ca61755bc6d77bcb
+          ref: ad518da5ce63a6410c363560ec839a4f95723666
           path: .ci-core
           persist-credentials: false
       - uses: actions/setup-python@v6
