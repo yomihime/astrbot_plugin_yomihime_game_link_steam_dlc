@@ -25,7 +25,6 @@
                 "maxLength": 256
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -37,7 +36,6 @@
           "input_schema": {
             "type": "object",
             "properties": {},
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -49,7 +47,6 @@
           "input_schema": {
             "type": "object",
             "properties": {},
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -61,7 +58,6 @@
           "input_schema": {
             "type": "object",
             "properties": {},
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -73,7 +69,6 @@
           "input_schema": {
             "type": "object",
             "properties": {},
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_and_public_web",
@@ -156,7 +151,6 @@
                 "maxLength": 256
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -203,7 +197,6 @@
                 "maxLength": 256
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -250,7 +243,6 @@
                 "maxLength": 256
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -297,7 +289,6 @@
                 "maxLength": 512
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -420,7 +411,6 @@
           "input_schema": {
             "type": "object",
             "properties": {},
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_and_public_web",
@@ -859,7 +849,6 @@
                 "maximum": 20
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "natural_language_allowed",
@@ -890,7 +879,6 @@
                 "maxLength": 256
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "natural_language_allowed",
@@ -927,7 +915,6 @@
                 "maxLength": 20
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "natural_language_allowed",
@@ -942,7 +929,6 @@
           "input_schema": {
             "type": "object",
             "properties": {},
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_and_public_web",
@@ -969,7 +955,6 @@
                 "maximum": 20
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -1028,7 +1013,6 @@
                 "maxLength": 256
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -1156,7 +1140,6 @@
                 "maxLength": 256
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -1179,7 +1162,6 @@
                 "maxLength": 256
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -1196,7 +1178,6 @@
                 "maxLength": 256
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -1507,7 +1488,6 @@
           "input_schema": {
             "type": "object",
             "properties": {},
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_and_public_web",
@@ -1542,7 +1522,6 @@
                 "maxLength": 512
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "natural_language_allowed",
@@ -1624,7 +1603,6 @@
                 "maxLength": 512
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "natural_language_allowed",
@@ -1706,7 +1684,6 @@
                 "maxLength": 512
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "natural_language_allowed",
@@ -1783,7 +1760,6 @@
                 "maxLength": 512
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "natural_language_allowed",
@@ -1865,7 +1841,6 @@
                 "maxLength": 512
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "natural_language_allowed",
@@ -1967,7 +1942,6 @@
                 "maxLength": 64
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_and_public_web",
@@ -2207,7 +2181,6 @@
           "input_schema": {
             "type": "object",
             "properties": {},
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_and_public_web",
@@ -2229,7 +2202,6 @@
                 "maxLength": 256
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -2292,7 +2264,6 @@
                 "maximum": 20
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -2356,7 +2327,6 @@
                 "maximum": 20
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -2415,7 +2385,6 @@
                 "maxLength": 256
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
@@ -2474,7 +2443,6 @@
                 "maxLength": 20
               }
             },
-            "required": [],
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
