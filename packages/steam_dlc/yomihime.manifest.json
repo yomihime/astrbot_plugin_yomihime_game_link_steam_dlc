@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "package_id": "steam_dlc",
-  "package_version": "0.2.0-alpha.4",
+  "package_version": "0.2.0-alpha.5",
   "contract_version": "2.0",
   "author": "yomihime",
   "license": "AGPL-3.0-only",
@@ -12,7 +12,7 @@
       "route": "steam",
       "category": "platform",
       "factory_entry": "steam.module:Factory",
-      "module_version": "0.2.0-alpha.4",
+      "module_version": "0.2.0-alpha.5",
       "capabilities": [
         {
           "capability_id": "bind",
@@ -72,8 +72,7 @@
             "additionalProperties": false
           },
           "invocation_policy": "command_and_public_web",
-          "effect": "read_only",
-          "privacy_floor": "public"
+          "effect": "read_only"
         },
         {
           "capability_id": "search",
@@ -102,7 +101,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "steam_store",
             "steam_store_image"
@@ -135,7 +133,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "steam_store",
             "steam_store_image"
@@ -155,7 +152,6 @@
           },
           "invocation_policy": "command_only",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "steam_community",
             "steam_avatar",
@@ -180,7 +176,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "steam_community",
             "steam_avatar",
@@ -201,7 +196,6 @@
           },
           "invocation_policy": "command_only",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "steam_community",
             "steam_avatar",
@@ -226,7 +220,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "steam_community",
             "steam_avatar",
@@ -247,7 +240,6 @@
           },
           "invocation_policy": "command_only",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "steam_community",
             "steam_avatar",
@@ -272,7 +264,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "steam_community",
             "steam_avatar",
@@ -325,13 +316,50 @@
               "limit": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 200
+                "maximum": 1000
               },
               "all_apps": {
                 "type": "boolean"
               },
               "refresh": {
                 "type": "boolean"
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "dense",
+                  "legacy"
+                ]
+              },
+              "preset": {
+                "type": "string",
+                "enum": [
+                  "single",
+                  "standard",
+                  "long"
+                ]
+              },
+              "aspect": {
+                "type": "string",
+                "enum": [
+                  "2:3",
+                  "9:16",
+                  "1:2"
+                ]
+              },
+              "quality": {
+                "type": "string",
+                "enum": [
+                  "normal",
+                  "hd"
+                ]
+              },
+              "fit": {
+                "type": "string",
+                "enum": [
+                  "cover",
+                  "contain"
+                ]
               }
             },
             "required": [
@@ -341,7 +369,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "steam_community"
           ],
@@ -395,7 +422,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "steam_browse",
             "steam_store_image"
@@ -414,8 +440,7 @@
             "additionalProperties": false
           },
           "invocation_policy": "command_and_public_web",
-          "effect": "read_only",
-          "privacy_floor": "public"
+          "effect": "read_only"
         },
         {
           "capability_id": "wall_preview",
@@ -438,13 +463,50 @@
               "limit": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 200
+                "maximum": 1000
               },
               "all_apps": {
                 "type": "boolean"
               },
               "refresh": {
                 "type": "boolean"
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "dense",
+                  "legacy"
+                ]
+              },
+              "preset": {
+                "type": "string",
+                "enum": [
+                  "single",
+                  "standard",
+                  "long"
+                ]
+              },
+              "aspect": {
+                "type": "string",
+                "enum": [
+                  "2:3",
+                  "9:16",
+                  "1:2"
+                ]
+              },
+              "quality": {
+                "type": "string",
+                "enum": [
+                  "normal",
+                  "hd"
+                ]
+              },
+              "fit": {
+                "type": "string",
+                "enum": [
+                  "cover",
+                  "contain"
+                ]
               }
             },
             "required": [
@@ -454,7 +516,6 @@
           },
           "invocation_policy": "command_and_public_web",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "steam_community"
           ],
@@ -539,7 +600,7 @@
           "parameter_mapping": {},
           "parameter_mode": "raw_tail",
           "raw_tail_parameter": "command",
-          "help_text": "私聊生成累计时长海报：公开 games/recent 样本；可用 --source、--all-apps、--limit 1..200、--refresh。完整库需要另行配置可选 Steam Key。"
+          "help_text": "游戏生涯拼图，games/recent是公开样本，full需要可选Steam Key。可选 --source games|recent|full、--mode dense|legacy、--preset single|standard|long、--aspect 2:3|9:16|1:2、--quality normal|hd、--fit cover|contain、--all-apps、--games-only、--limit 1..1000、--refresh；legacy最多200项，最终受输出预算约束。"
         }
       ],
       "tools": [
@@ -595,9 +656,14 @@
             "source": "source",
             "limit": "limit",
             "all_apps": "all_apps",
-            "refresh": "refresh"
+            "refresh": "refresh",
+            "mode": "mode",
+            "preset": "preset",
+            "aspect": "aspect",
+            "quality": "quality",
+            "fit": "fit"
           },
-          "description": "为用户明确提供的 account ID32/SteamID64 生成累计时长海报。禁止读取或推导默认绑定。games/recent 是公开主页样本，不是完整库；full 当前未配置可选 Steam Key。默认仅游戏，保留未知及剔除计数。"
+          "description": "为用户明确提供的 account ID32/SteamID64 生成游戏生涯拼图，禁止读取或推导默认绑定。games/recent 是公开样本；full 需要可选 Steam Key并遵守玩家隐私。默认密排、标准时长预设、2:3、普通清晰度、等比裁切、包含软件等全部应用，最多500项；可选1..1000项，legacy最多200项，最终受输出预算约束。保留未知及剔除计数。"
         }
       ],
       "display": {
@@ -827,7 +893,7 @@
       "route": "dota2",
       "category": "game",
       "factory_entry": "dota2.module:Factory",
-      "module_version": "0.2.0-alpha.4",
+      "module_version": "0.2.0-alpha.5",
       "capabilities": [
         {
           "capability_id": "recent",
@@ -853,7 +919,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_capabilities": [
             {
               "module_id": "steam_dlc/steam",
@@ -883,7 +948,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_capabilities": [
             {
               "module_id": "steam_dlc/steam",
@@ -919,7 +983,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "opendota"
           ]
@@ -932,8 +995,7 @@
             "additionalProperties": false
           },
           "invocation_policy": "command_and_public_web",
-          "effect": "read_only",
-          "privacy_floor": "public"
+          "effect": "read_only"
         },
         {
           "capability_id": "stats",
@@ -959,7 +1021,6 @@
           },
           "invocation_policy": "command_only",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_capabilities": [
             {
               "module_id": "steam_dlc/steam",
@@ -993,7 +1054,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "opendota"
           ]
@@ -1017,7 +1077,6 @@
           },
           "invocation_policy": "command_only",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_capabilities": [
             {
               "module_id": "steam_dlc/steam",
@@ -1046,7 +1105,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "opendota"
           ]
@@ -1074,7 +1132,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "opendota"
           ]
@@ -1097,7 +1154,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "opendota"
           ]
@@ -1125,7 +1181,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "opendota"
           ]
@@ -1144,7 +1199,6 @@
           },
           "invocation_policy": "command_only",
           "effect": "write",
-          "privacy_floor": "public",
           "required_capabilities": [
             {
               "module_id": "steam_dlc/steam",
@@ -1165,8 +1219,7 @@
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
-          "effect": "read_only",
-          "privacy_floor": "public"
+          "effect": "read_only"
         },
         {
           "capability_id": "unwatch",
@@ -1181,8 +1234,7 @@
             "additionalProperties": false
           },
           "invocation_policy": "command_only",
-          "effect": "write",
-          "privacy_floor": "public"
+          "effect": "write"
         }
       ],
       "commands": [
@@ -1481,7 +1533,7 @@
       "route": "cs2",
       "category": "game",
       "factory_entry": "cs2.module:Factory",
-      "module_version": "0.2.0-alpha.4",
+      "module_version": "0.2.0-alpha.5",
       "capabilities": [
         {
           "capability_id": "status",
@@ -1491,8 +1543,7 @@
             "additionalProperties": false
           },
           "invocation_policy": "command_and_public_web",
-          "effect": "read_only",
-          "privacy_floor": "public"
+          "effect": "read_only"
         },
         {
           "capability_id": "profile",
@@ -1526,7 +1577,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "perfect_api",
             "fivee_api"
@@ -1569,7 +1619,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "perfect_api",
             "fivee_api"
@@ -1607,7 +1656,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "perfect_api",
             "fivee_api"
@@ -1650,7 +1698,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "perfect_api",
             "fivee_api"
@@ -1688,7 +1735,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "perfect_api",
             "fivee_api"
@@ -1731,7 +1777,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "perfect_api",
             "fivee_api"
@@ -1764,7 +1809,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "perfect_api",
             "fivee_api"
@@ -1802,7 +1846,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "perfect_api",
             "fivee_api"
@@ -1845,7 +1888,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "perfect_api",
             "fivee_api"
@@ -1887,7 +1929,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "perfect_api",
             "fivee_api"
@@ -1946,7 +1987,6 @@
           },
           "invocation_policy": "command_and_public_web",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "perfect_api",
             "fivee_api"
@@ -2174,7 +2214,7 @@
       "route": "deadlock",
       "category": "game",
       "factory_entry": "deadlock.module:Factory",
-      "module_version": "0.2.0-alpha.4",
+      "module_version": "0.2.0-alpha.5",
       "capabilities": [
         {
           "capability_id": "status",
@@ -2184,8 +2224,7 @@
             "additionalProperties": false
           },
           "invocation_policy": "command_and_public_web",
-          "effect": "read_only",
-          "privacy_floor": "public"
+          "effect": "read_only"
         },
         {
           "capability_id": "profile",
@@ -2206,7 +2245,6 @@
           },
           "invocation_policy": "command_only",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "deadlock_api",
             "steam_avatar",
@@ -2237,7 +2275,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "deadlock_api",
             "steam_avatar",
@@ -2268,7 +2305,6 @@
           },
           "invocation_policy": "command_only",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "deadlock_api"
           ],
@@ -2302,7 +2338,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "deadlock_api"
           ]
@@ -2331,7 +2366,6 @@
           },
           "invocation_policy": "command_only",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "deadlock_api"
           ],
@@ -2365,7 +2399,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "deadlock_api"
           ]
@@ -2389,7 +2422,6 @@
           },
           "invocation_policy": "command_only",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "deadlock_api"
           ],
@@ -2418,7 +2450,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "deadlock_api"
           ]
@@ -2447,7 +2478,6 @@
           },
           "invocation_policy": "command_only",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "deadlock_api"
           ]
@@ -2475,7 +2505,6 @@
           },
           "invocation_policy": "natural_language_allowed",
           "effect": "read_only",
-          "privacy_floor": "public",
           "required_sources": [
             "deadlock_api"
           ]

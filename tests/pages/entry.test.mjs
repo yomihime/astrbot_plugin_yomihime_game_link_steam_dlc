@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { mount, installDOM, runtime } from './source-build.mjs';
 
@@ -874,6 +875,47 @@ test('public Steam collage validates legacy limits and downloads exact returned 
   const download = f.container.querySelector('a[download]'); assert.equal(download.download, 'steam-career-01.png');
   assert.equal(download.getAttribute('href'), 'blob:synthetic-1'); f.close();
   assert.deepEqual(revoked, ['blob:synthetic-1']);
+});
+
+test('every Steam collage form choice and dense limit fits the published page and tool contracts', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../../packages/steam_dlc/yomihime.manifest.json', import.meta.url)));
+  const steam = manifest.modules.find(module => module.module_id === 'steam');
+  const descriptors = ['wall_preview', 'wall_explicit'].map(id => steam.capabilities.find(capability => capability.capability_id === id));
+  const mapping = steam.tools.find(tool => tool.capability_id === 'wall_explicit').parameter_mapping;
+  const f = fixture({moduleId: 'steam', routeId: 'collage', preview: async () => ({...cacheResponse(), image_state: 'none', images: []})});
+  try {
+    f.input('account', '76561197960265851');
+    const checkSubmission = async () => {
+      const before = f.calls.length;
+      f.submit(); await settle();
+      assert.equal(f.calls.length, before + 1, 'the form must submit the selected options');
+      const parameters = f.calls.at(-1)[2];
+      for (const {capability_id: id, input_schema: schema} of descriptors) {
+        for (const required of schema.required) assert.ok(required in parameters, `${id}: required ${required}`);
+        for (const [name, value] of Object.entries(parameters)) {
+          const rule = schema.properties[name];
+          assert.ok(rule, `${id} must declare the form field ${name}`);
+          assert.equal(mapping[name], name, `tool must expose ${name}`);
+          assert.equal(typeof value, rule.type === 'integer' ? 'number' : rule.type, `${id}.${name}: type`);
+          if (rule.type === 'integer') assert.ok(Number.isInteger(value));
+          if (rule.enum) assert.ok(rule.enum.includes(value), `${id}.${name}: choice`);
+          if (rule.minimum !== undefined) assert.ok(value >= rule.minimum, `${id}.${name}: minimum`);
+          if (rule.maximum !== undefined) assert.ok(value <= rule.maximum, `${id}.${name}: maximum`);
+        }
+      }
+    };
+    await checkSubmission(); // Actual default includes all five layout options and 500 items.
+    f.input('limit', '1000'); await checkSubmission();
+    f.input('limit', '1'); await checkSubmission();
+    f.input('limit', '200');
+    for (const select of f.container.querySelectorAll('select[name]')) {
+      const original = select.value;
+      for (const option of select.options) {
+        f.input(select.name, option.value); await checkSubmission();
+      }
+      f.input(select.name, original);
+    }
+  } finally { f.close(); }
 });
 
 function cs2Response(platform, data, {kind = 'match', detail = 'player_summary'} = {}) {

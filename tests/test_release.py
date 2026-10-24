@@ -175,7 +175,9 @@ class ReleaseResourcesTest(unittest.TestCase):
                             capability["invocation_policy"]
                         ),
                         effect=CapabilityEffect(capability["effect"]),
-                        privacy_floor=PrivacyFloor(capability["privacy_floor"]),
+                        privacy_floor=PrivacyFloor(
+                            capability.get("privacy_floor", "public")
+                        ),
                         invocation_origins=(
                             tuple(
                                 map(InvocationOrigin, capability["invocation_origins"])
