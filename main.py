@@ -12,7 +12,7 @@ CORE_NAME = "astrbot_plugin_yomihime_game_link"
 SDK_VERSION = "0.1.0a16"
 
 
-@register(PLUGIN_NAME, "yomihime", "如月怜的游戏连结：Steam DLC", "0.2.0-alpha.3")
+@register(PLUGIN_NAME, "yomihime", "如月怜的游戏连结：Steam DLC", "0.2.0-alpha.4")
 class SteamDLC(Star):
     def __init__(self, context: Context):
         super().__init__(context)
