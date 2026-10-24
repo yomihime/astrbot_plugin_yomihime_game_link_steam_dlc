@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { JSDOM } from 'jsdom';
+import { readFileSync } from 'node:fs';
 import { mount, installDOM, runtime } from './source-build.mjs';
 
 const clone = value => structuredClone(value);
@@ -29,6 +30,8 @@ function snapshot(moduleId = 'dota2') {
     };
   }
   if (moduleId === 'steam') {
+    // Keep this legacy descriptor fixture: older installed packages used 1..200
+    // and had no limit-mode field. Current package coverage uses the manifest below.
     value.fields.poster_include_apps = { value: false, state: 'valid', present: false, source: 'default' };
     value.descriptors.poster_include_apps = {
       description: '默认仅纳入游戏；开启后包含软件等全部应用。', default: false,
@@ -41,6 +44,34 @@ function snapshot(moduleId = 'dota2') {
     };
   }
   return value;
+}
+
+function manifestSettingsSnapshot(moduleId = 'steam') {
+  const manifest = JSON.parse(readFileSync(new URL('../../packages/steam_dlc/yomihime.manifest.json', import.meta.url), 'utf8'));
+  const module = manifest.modules.find(item => item.module_id === moduleId);
+  const page = module.pages.find(item => item.route_id === 'settings');
+  // Mirror services/module_pages.py's page authorization projection. Module-owned
+  // defaults/schemas come only from the shipped manifest, never a handwritten list.
+  // Core injects reply_theme separately; reuse its explicit presentation fixture.
+  const theme = snapshot('cs2');
+  const declarations = new Map(module.config_fields.map(field => [field.name, field]));
+  declarations.set('reply_theme', {name: 'reply_theme', ...theme.descriptors.reply_theme});
+  const state = {revision: 7, fields: {}, descriptors: {}};
+  for (const name of page.config_fields) {
+    const declaration = declarations.get(name);
+    assert.ok(declaration && !declaration.sensitive, `invalid ordinary page field ${name}`);
+    const {name: _name, ...descriptor} = declaration;
+    state.descriptors[name] = clone(descriptor);
+    state.fields[name] = name === 'reply_theme' ? clone(theme.fields.reply_theme)
+      : {value: clone(descriptor.default), state: 'valid', present: false, source: 'default'};
+  }
+  return state;
+}
+
+function clickQuantity(f, label) {
+  const button = [...f.container.querySelectorAll('button')].find(item => item.textContent === label);
+  assert.ok(button, `missing quantity shortcut ${label}`);
+  button.click();
 }
 let fixtureSequence = 0;
 function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, service = {}, initialState = null, invoke = async () => cacheResponse(), preview = async () => cacheResponse(), jobs = undefined, credentials = {async status() { return {revision: 7, fields: {}}; }}, context: contextPatch = {} } = {}) {
@@ -554,6 +585,93 @@ test('exact authorization failure during save revokes cached intent', async () =
   assert.match(original.text(), /授权或模块上下文已失效/); original.close();
   const returned = fixture({ context: original.context }); await settle();
   assert.equal(returned.page.navigationImpact().ordinary, false); returned.close();
+});
+
+test('manifest-projected Steam settings save all, finite1000 and truncated limits with exact JSON types', async () => {
+  const state = manifestSettingsSnapshot();
+  assert.equal(state.descriptors.poster_limit.value_schema.minimum, 20);
+  assert.equal(state.fields.poster_limit.value, 500);
+  assert.equal(state.fields.poster_include_apps.value, true);
+  assert.equal(state.fields.credential_steam_key, undefined);
+  const f = fixture({moduleId: 'steam', initialState: state});
+  try {
+    await settle();
+    clickQuantity(f, '不限'); f.submit(); await settle();
+    assert.doesNotMatch(f.text(), /当前配置尚未提供不限模式/);
+    assert.deepEqual(state.descriptors.poster_limit_mode.value_schema, {type: 'string', enum: ['top', 'all']});
+    assert.equal(f.container.querySelectorAll('[name=poster_limit_mode] option').length, 2);
+    assert.equal(f.state.fields.poster_limit.value, 500, 'all keeps the independent finite count');
+    clickQuantity(f, '1000'); f.submit(); await settle();
+    f.input('poster_limit', '1500.9'); f.input('poster_include_apps', '0'); f.input('poster_preset', '2');
+    f.submit(); await settle();
+    assert.deepEqual(f.calls.filter(call => call[0] === 'save'), [
+      ['save', 7, {poster_limit_mode: 'all'}],
+      ['save', 8, {poster_limit_mode: 'top', poster_limit: 1000}],
+      ['save', 9, {poster_limit: 1500, poster_include_apps: false, poster_preset: 'long'}],
+    ]);
+    assert.equal(typeof f.state.fields.poster_limit.value, 'number');
+    assert.equal(typeof f.state.fields.poster_include_apps.value, 'boolean');
+    assert.equal(typeof f.state.fields.poster_limit_mode.value, 'string');
+    assert.equal(f.page.navigationImpact().ordinary, false);
+  } finally {f.close();}
+});
+
+test('manifest-projected Steam minimum20 and malformed counts block the entire save', async () => {
+  const f = fixture({moduleId: 'steam', initialState: manifestSettingsSnapshot()});
+  try {
+    await settle(); f.input('poster_include_apps', '0');
+    for (const value of ['', '19', '19.99', '20abc', 'NaN', 'Infinity', '-20', '9007199254740992']) {
+      f.input('poster_limit', value); f.submit(); await settle();
+      assert.equal(f.calls.some(call => call[0] === 'save'), false, `must reject ${JSON.stringify(value)}`);
+      const control = f.container.querySelector('[name=poster_limit]');
+      assert.equal(control.value, value);
+      assert.equal(control.getAttribute('aria-invalid'), 'true');
+    }
+    f.input('poster_limit', '20'); f.submit(); await settle();
+    assert.deepEqual(f.calls.find(call => call[0] === 'save'), ['save', 7, {poster_include_apps: false, poster_limit: 20}]);
+    assert.equal(f.state.fields.poster_limit_mode.value, 'top');
+  } finally {f.close();}
+});
+
+test('manifest-projected Steam mode and invalid count drafts survive disposal without writes', async () => {
+  const f = fixture({moduleId: 'steam', initialState: manifestSettingsSnapshot()});
+  await settle(); clickQuantity(f, '不限'); f.input('poster_limit', '20abc'); f.submit(); await settle();
+  assert.equal(f.calls.some(call => call[0] === 'save'), false);
+  const context = f.context; f.close();
+  const reopened = fixture({moduleId: 'steam', initialState: manifestSettingsSnapshot(), context});
+  try {
+    await settle();
+    assert.equal(reopened.container.querySelector('[name=poster_limit_mode]').value, '1');
+    assert.equal(reopened.container.querySelector('[name=poster_limit]').value, '20abc');
+    assert.equal(reopened.page.navigationImpact().ordinary, true);
+    assert.deepEqual(reopened.calls, [['current']]);
+    reopened.input('poster_limit', '1500.9'); reopened.submit(); await settle();
+    assert.deepEqual(reopened.calls.find(call => call[0] === 'save'), ['save', 7, {poster_limit_mode: 'all', poster_limit: 1500}]);
+  } finally {reopened.close();}
+});
+
+test('manifest-projected Steam preserves newer mode drafts through pending save and sequential CAS clear', async () => {
+  const f = fixture({moduleId: 'steam', initialState: manifestSettingsSnapshot()});
+  const write = deferred();
+  try {
+    await settle();
+    const save = f.config.save;
+    f.config.save = async (...args) => {await write.promise; return save(...args);};
+    f.input('poster_limit', '1500.9'); f.input('reply_theme', '0'); f.submit();
+    clickQuantity(f, '不限'); f.input('poster_include_apps', '0'); f.submit();
+    assert.equal(f.page.navigationImpact().pending, true);
+    write.resolve(); await settle();
+    assert.deepEqual(f.calls.filter(call => ['save', 'clear'].includes(call[0])), [
+      ['save', 7, {poster_limit: 1500}], ['clear', 8, ['reply_theme']],
+    ]);
+    assert.equal(f.container.querySelector('[name=poster_limit_mode]').value, '1');
+    assert.equal(f.container.querySelector('[name=poster_include_apps]').value, '0');
+    assert.equal(f.page.navigationImpact().ordinary, true);
+    assert.match(f.text(), /新的未保存修改/);
+    f.submit(); await settle();
+    assert.deepEqual(f.calls.filter(call => call[0] === 'save').at(-1), ['save', 9, {poster_limit_mode: 'all', poster_include_apps: false}]);
+    assert.equal(f.page.navigationImpact().ordinary, false);
+  } finally {write.resolve(); f.close();}
 });
 
 test('Steam poster settings save boolean and integer values with their JSON types', async () => {
