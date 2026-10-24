@@ -3,7 +3,13 @@
 import unittest
 from types import SimpleNamespace
 
-from packages.steam_dlc.steam.career import ANCHORS, grid_spec, span_for_minutes
+from packages.steam_dlc.steam.career import (
+    ANCHORS,
+    grid_spec,
+    preflight,
+    span_for_minutes,
+)
+from packages.steam_dlc.steam.queries import QueryFailure
 from packages.steam_dlc.steam.wall import cumulative, options, select, source_rows
 from packages.steam_dlc.steam.wall_materials import material_request, normalize_items
 from packages.steam_dlc.steam.wall_presentation import result as wall_result
@@ -28,6 +34,114 @@ def row(appid, hours, **updates):
 
 
 class WallBusinessTests(unittest.TestCase):
+    def test_dense_preflight_rejects_fragmentation_at_exact_nominal_area(self):
+        def selection(count, aspect="2:3", quality="normal"):
+            return {
+                "mode": "dense",
+                "aspect": aspect,
+                "quality": quality,
+                "rows": [{"span": 8} for _ in range(count)],
+            }
+
+        # Twenty columns fit only two eight-column tiles per row band.
+        pages = preflight(selection(64))
+        self.assertEqual([len(page) for page in pages], [8] * 8)
+        for count in (65, 80):
+            with self.subTest(count=count), self.assertRaises(QueryFailure):
+                preflight(selection(count))
+        # HD's public pixel envelope has fewer rows even without page chrome.
+        with self.assertRaises(QueryFailure):
+            preflight(selection(40, quality="hd"))
+        self.assertIsNone(preflight({"mode": "legacy", "rows": [{"span": 8}] * 80}))
+
+    def test_dense_preflight_backfills_stably_and_respects_page_item_bound(self):
+        for spans in (
+            [8, 8, 1],
+            [3, 3, 8, 1, 8, 3],
+            [8, 7] + [6] * 2 + [5] * 4 + [4] * 8 + [3] * 16 + [2] * 32 + [1] * 436,
+            [1] * 1000,
+        ):
+            selection = {
+                "mode": "dense",
+                "aspect": "2:3",
+                "quality": "normal",
+                "rows": [{"span": span} for span in spans],
+            }
+            pages = preflight(selection)
+            self.assertEqual(pages, preflight(selection))
+            self.assertLessEqual(len(pages), 8)
+            self.assertEqual(
+                sorted(tile.rank for page in pages for tile in page),
+                list(range(1, len(spans) + 1)),
+            )
+            for page in pages:
+                self.assertLessEqual(len(page), 512)
+                cells = set()
+                for tile in page:
+                    self.assertLessEqual(tile.column + tile.span, 20)
+                    self.assertLessEqual(tile.row + tile.span, 32)
+                    for y in range(tile.row, tile.row + tile.span):
+                        for x in range(tile.column, tile.column + tile.span):
+                            self.assertNotIn((x, y), cells)
+                            cells.add((x, y))
+        pages = preflight(
+            {
+                "mode": "dense",
+                "aspect": "2:3",
+                "quality": "normal",
+                "rows": [{"span": 1}] * 1000,
+            }
+        )
+        self.assertEqual([len(page) for page in pages], [512, 488])
+        pages = preflight(
+            {
+                "mode": "dense",
+                "aspect": "2:3",
+                "quality": "normal",
+                "rows": [{"span": 8}, {"span": 8}, {"span": 1}],
+            }
+        )
+        self.assertEqual((pages[0][2].column, pages[0][2].row), (16, 0))
+
+    def test_dense_preflight_mixed_and_tied_ranks_across_public_grid_presets(self):
+        spans = [8, 7] + [6] * 2 + [5] * 4 + [4] * 8 + [3] * 16 + [2] * 32 + [1] * 436
+        for aspect in ("2:3", "9:16", "1:2"):
+            for quality in ("normal", "hd"):
+                with self.subTest(aspect=aspect, quality=quality):
+                    pages = preflight(
+                        {
+                            "mode": "dense",
+                            "aspect": aspect,
+                            "quality": quality,
+                            "rows": [{"span": span} for span in spans],
+                        }
+                    )
+                    width, height = grid_spec(aspect, quality)
+                    rows = min(
+                        32, ((128 * 1024 * 1024) // 36 // (20 * width)) // height
+                    )
+                    self.assertLessEqual(len(pages), 8)
+                    self.assertEqual(sum(map(len, pages)), 500)
+                    for page in pages:
+                        self.assertLessEqual(len(page), 512)
+                        self.assertTrue(
+                            all(tile.row + tile.span <= rows for tile in page)
+                        )
+                    for span in range(1, 9):
+                        self.assertEqual(
+                            [
+                                tile.rank
+                                for page in pages
+                                for tile in page
+                                if tile.span == span
+                            ],
+                            [
+                                rank
+                                for rank, value in enumerate(spans, 1)
+                                if value == span
+                            ],
+                        )
+
     def test_owned_source_provenance_and_coverage_remain_distinct_in_both_modes(self):
         data = projection([row(3, "2")])
         data["scope"] = "webapi_owned_games"

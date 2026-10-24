@@ -484,7 +484,7 @@ class WallHandler:
                 return payload
 
             if candidates:
-                metadata = {"items": []}
+                metadata: dict[str, list[dict[str, object]]] = {"items": []}
                 for start in range(0, len(candidates), 100):
                     metadata["items"].extend(
                         (await materials("metadata", candidates[start : start + 100]))[

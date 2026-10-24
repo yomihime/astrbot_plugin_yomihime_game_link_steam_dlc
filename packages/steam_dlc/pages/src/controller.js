@@ -75,6 +75,48 @@ const LABELS = {timezone: '输出时区', reply_theme: '回复主题', poster_so
 const CHOICE_LABELS = {games: '公开主页样本', recent: '近期公开样本', full: '完整游戏库（需要 Key）', dense: '游戏生涯拼图', legacy: '兼容旧布局', single: '单机', standard: '标准', long: '长玩', normal: '标准', hd: '高清', cover: '等比裁切填充', contain: '保留完整封面', perfect: '完美平台', official: '完美收录官匹', '5e': '5E'};
 const CREDENTIALS = {steam: [['credential_steam_key', 'Steam Web API Key']], dota2: [['credential_opendota_key', 'OpenDota Key（可选）']], cs2: [['credential_perfect', '完美扫码授权'], ['credential_fivee', '5E 会话 Token']]};
 
+const PNG_CRC = Uint32Array.from({length: 256}, (_, index) => {
+  let value = index;
+  for (let bit = 0; bit < 8; bit++) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+  return value >>> 0;
+});
+function previewPNG(encoded, window) {
+  if (typeof encoded !== 'string' || !encoded.length || encoded.length > 24000000 || encoded.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(encoded)) throw Error('invalid_images');
+  const binary = window.atob(encoded);
+  if (!binary.startsWith('\x89PNG\r\n\x1a\n')) throw Error('invalid_images');
+  const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+  const uint = index => ((bytes[index] << 24) | (bytes[index + 1] << 16) | (bytes[index + 2] << 8) | bytes[index + 3]) >>> 0;
+  let offset = 8, header = false, palette = false, data = false, dataEnded = false, dataBytes = 0, indexed = false;
+  while (offset + 12 <= bytes.length) {
+    const length = uint(offset), end = offset + length + 12;
+    if (end > bytes.length) throw Error('invalid_images');
+    const type = binary.slice(offset + 4, offset + 8);
+    if (!/^[A-Za-z]{4}$/u.test(type) || (!header && type !== 'IHDR')) throw Error('invalid_images');
+    let crc = 0xffffffff;
+    for (let index = offset + 4; index < end - 4; index++) crc = PNG_CRC[(crc ^ bytes[index]) & 255] ^ (crc >>> 8);
+    if (((crc ^ 0xffffffff) >>> 0) !== uint(end - 4)) throw Error('invalid_images');
+    if (type === 'IHDR') {
+      const depth = bytes[offset + 16], color = bytes[offset + 17];
+      if (header || length !== 13 || !uint(offset + 8) || !uint(offset + 12) || !({0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16]}[color]?.includes(depth)) || bytes[offset + 18] !== 0 || bytes[offset + 19] !== 0 || bytes[offset + 20] > 1) throw Error('invalid_images');
+      header = true; indexed = color === 3;
+    } else if (type === 'PLTE') {
+      if (palette || data || !length || length > 768 || length % 3) throw Error('invalid_images');
+      palette = true;
+    } else if (type === 'IDAT') {
+      if (dataEnded || (indexed && !palette)) throw Error('invalid_images');
+      data = true; dataBytes += length;
+    } else if (type === 'IEND') {
+      if (length || !dataBytes || end !== bytes.length) throw Error('invalid_images');
+      return bytes;
+    } else {
+      if (type[0] === type[0].toUpperCase()) throw Error('invalid_images');
+      if (data) dataEnded = true;
+    }
+    offset = end;
+  }
+  throw Error('invalid_images');
+}
+
 // This module instance retains ONLY ordinary configuration intent. Each captured
 // module entry has its own store; no snapshots, credentials, bindings, services
 // or DOM references are retained. Identity changes evict the same owner's past
@@ -709,8 +751,47 @@ export function mountController(container, options) {
     } else { input.type = 'text'; input.maxLength = 128; input.autocomplete = 'off'; }
     input.value = initial; row.append(text, input); parent.append(row); publicInputs.push(input); return input;
   };
+  const renderCS2 = (projection, target) => {
+    if (!['match', 'recent'].includes(projection.kind)) return;
+    const data = projection.data;
+    const metric = value => typeof value === 'number' && Number.isFinite(value) ? String(value) : '未知';
+    const text = value => typeof value === 'string' && value ? value : '未知';
+    const score = row => `${metric(row?.scores?.[0])} : ${metric(row?.scores?.[1])}`;
+    const kda = row => `${metric(row?.kills)}/${metric(row?.deaths)}/${metric(row?.assists)}`;
+    const table = (columns, rows) => {
+      const wrap = node('div', undefined, 'steam-dlc-table'), element = node('table'), head = node('tr');
+      head.append(...columns.map(value => node('th', value))); element.append(head);
+      for (const values of rows) {
+        const row = node('tr'); row.append(...values.map(value => node('td', value))); element.append(row);
+      }
+      wrap.append(element); target.append(wrap);
+    };
+    const coverage = {platform_recorded: '平台收录', recorded_official: '完美收录官匹', recent_first_page: '近期首批样本', recent_player_summary: '有界近期玩家摘要'}[projection.coverage] || text(projection.coverage);
+    const full = projection.detail_level === 'full_match';
+    target.append(node('p', `来源：${CHOICE_LABELS[projection.platform] || text(projection.platform)} · 范围：${coverage} · 详情：${full ? '完整比赛' : '玩家摘要'}`, 'steam-dlc-hint'));
+    if (!full) target.append(node('p', '该来源仅提供该玩家的有界近期摘要，不含完整比赛名单与详情。', 'steam-dlc-hint'));
+    if (projection.unavailable_reason && projection.unavailable_reason !== 'full_match_detail_unavailable') target.append(node('p', `缺项说明：${text(projection.unavailable_reason)}`, 'steam-dlc-hint'));
+    target.append(node('p', '未知表示来源未提供，不按 0 计算。', 'steam-dlc-hint'));
+    if (projection.kind === 'recent') {
+      if (!Array.isArray(data.matches) || !data.matches.length) {
+        target.append(node('p', '来源当前样本没有可展示的比赛。')); return;
+      }
+      table(['比赛', '地图', '比分', 'K/D/A', 'rating'], data.matches.map(row => [text(row?.match_id), text(row?.map), score(row), kda(row), metric(row?.rating)]));
+      return;
+    }
+    target.append(node('p', `比赛：${text(data.match_id)} · 地图：${text(data.map)} · 比分：${score(data)}`));
+    if (!full) {
+      target.append(node('p', `玩家：${text(data.focus?.id || projection.target?.id)} · K/D/A：${kda(data)} · rating：${metric(data.rating)}`));
+      return;
+    }
+    if (data.focus && typeof data.focus === 'object') target.append(node('p', `焦点：${text(data.focus.nickname)} · ${text(data.focus.account_id)} · K/D/A：${kda(data.focus)} · rating：${metric(data.focus.rating)}`));
+    if (!Array.isArray(data.players) || !data.players.length) {
+      target.append(node('p', '来源未提供可用玩家名单。')); return;
+    }
+    table(['玩家', '账号', '队伍', 'K/D/A', 'rating', 'PW rating', 'ADR'], data.players.map(row => [text(row?.nickname), text(row?.account_id), metric(row?.team), kda(row), metric(row?.rating), metric(row?.pw_rating), metric(row?.adr)]));
+  };
   const renderResult = (response, target) => {
-    if (!response || response.schema_version !== 1 || !['success', 'partial_success', 'error'].includes(response.status)) throw Error('invalid_result');
+    if (!response || response.schema_version !== 1 || !['success', 'partial_success', 'needs_selection', 'error'].includes(response.status)) throw Error('invalid_result');
     target.replaceChildren();
     if (response.status === 'error') {
       target.append(node('p', typeof response.error?.message === 'string' ? response.error.message : '来源未返回可用结果。', 'steam-dlc-field-error'));
@@ -735,12 +816,13 @@ export function mountController(container, options) {
           list.append(node('dt', CHOICE_LABELS[source.platform] || source.platform), node('dd', source.credential_state === 'configured' ? '凭据已配置；查询时验证上游有效性。' : '需要在可信设置页授权。'));
         }
         target.append(list);
-      } else if (data?.data && data.fetched_at) {
-        target.append(node('p', `采样：${data.fetched_at}${data.season ? ` · 赛季 ${data.season}` : ''}`, 'steam-dlc-hint'));
+      } else if (data?.data) {
+        if (typeof data.fetched_at === 'string') target.append(node('p', `采样：${data.fetched_at}${data.season ? ` · 赛季 ${data.season}` : ''}`, 'steam-dlc-hint'));
+        renderCS2(data, target);
       }
     }
     for (const warning of response.warnings || []) if (typeof warning === 'string') target.append(node('p', warning, 'steam-dlc-hint'));
-    return true;
+    return response.status !== 'needs_selection';
   };
   const buildPublicForm = collage => {
     const queryForm = node('form', undefined, 'steam-dlc-public-form');
@@ -796,14 +878,14 @@ export function mountController(container, options) {
         const response = collage ? await options.services.preview('wall_preview', parameters) : await options.services.invoke('query', parameters);
         if (!active() || ticket !== previewGeneration) return;
         const success = renderResult(response, result);
-        if (collage && success) {
-          if (!Array.isArray(response.images) || !response.images.length || response.images.length > 8) throw Error('invalid_images');
+        if (collage && response.status !== 'error') {
+          if (!['none', 'ready'].includes(response.image_state) || !Array.isArray(response.images) || response.images.length > 8) throw Error('invalid_images');
+          if (response.image_state === 'none' ? response.images.length !== 0 : !success || response.images.length === 0) throw Error('invalid_images');
           let total = 0;
           for (const [index, image] of response.images.entries()) {
-            if (image.media_type !== 'image/png' || typeof image.base64 !== 'string' || image.base64.length > 24000000 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(image.base64)) throw Error('invalid_images');
-            const binary = document.defaultView.atob(image.base64); total += binary.length;
-            if (total > 16 * 1024 * 1024 || !binary.startsWith('\x89PNG\r\n\x1a\n')) throw Error('invalid_images');
-            const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+            if (image?.media_type !== 'image/png') throw Error('invalid_images');
+            const bytes = previewPNG(image.base64, document.defaultView); total += bytes.length;
+            if (total > 16 * 1024 * 1024) throw Error('invalid_images');
             const blob = new document.defaultView.Blob([bytes], {type: 'image/png'});
             const url = document.defaultView.URL.createObjectURL(blob); previewURLs.push(url);
             const figure = node('figure', undefined, 'steam-dlc-preview'), preview = node('img');
@@ -812,7 +894,9 @@ export function mountController(container, options) {
             figure.append(preview, download); result.append(figure);
           }
         }
-        say(success ? collage ? '拼图已生成，可逐页下载。' : '来源结果已更新。' : '查询未完成，请查看来源反馈。', success ? 'success' : 'warning');
+        if (response.status === 'needs_selection') say('需要补充选择，请按来源提示配置或改选。', 'warning');
+        else if (success && collage && response.image_state === 'none') say('来源结果已返回，本次没有生成图片。', 'warning');
+        else say(success ? collage ? '拼图已生成，可逐页下载。' : '来源结果已更新。' : '查询未完成，请查看来源反馈。', success ? 'success' : 'warning');
       } catch {
         if (!active() || ticket !== previewGeneration) return;
         revokePreviews(); result.replaceChildren(node('p', '请求未完成，或返回内容不完整。请核对来源设置后重试。', 'steam-dlc-field-error'));

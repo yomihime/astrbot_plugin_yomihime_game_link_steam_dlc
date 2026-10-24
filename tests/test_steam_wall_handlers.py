@@ -78,6 +78,26 @@ class HandlerTests(unittest.IsolatedAsyncioTestCase):
             all(parameters["phase"] == "metadata" for _, parameters in self.calls)
         )
 
+    async def test_eighty_max_spans_fail_after_metadata_before_any_cover_fetch(self):
+        self.data["data"]["games"] = [row(i, "80000") for i in range(1, 81)]
+        response = (
+            await self.module.handlers()
+            .capabilities["wall"]
+            .invoke(self.context, {"limit": 80})
+        )
+        self.assertEqual(response.status, ygl.ResultStatus.ERROR)
+        self.assertEqual(response.error.code, ygl.ErrorCode.PARAMETER_ERROR)
+        self.assertIn("减小数量", response.error.message)
+        self.assertEqual(
+            [parameters["phase"] for _, parameters in self.calls], ["metadata"]
+        )
+        self.assertFalse(
+            any(
+                request.source_id == "steam_store_image"
+                for request in self.scope.http.requests
+            )
+        )
+
     async def test_configured_full_source_uses_public_key_metadata_without_binding_write(
         self,
     ):

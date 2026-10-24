@@ -12,10 +12,15 @@ from yomihime_game_link_sdk.errors import (
     AccessDenied,
     CacheUnavailable,
     InvalidInvocation,
+    ServiceUnavailable,
     SourceHttpError,
 )
 from yomihime_game_link_sdk.results import CapabilityResult, ErrorCode, ResultStatus
-from yomihime_game_link_sdk.services import ConfigSnapshot, HttpResponse
+from yomihime_game_link_sdk.services import (
+    ConfigSnapshot,
+    HttpBudgetStatus,
+    HttpResponse,
+)
 from yomihime_game_link_sdk.storage import (
     CacheEntry,
     CacheLookup,
@@ -420,6 +425,94 @@ class TestDotaModule(unittest.IsolatedAsyncioTestCase):
                 for item in (await self.module.check_health()).capabilities.values()
             )
         )
+
+    async def _status_with_budget(self, value):
+        async def budget(source_id):
+            self.assertEqual(source_id, "opendota")
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+        self.http.budget = budget
+        result = await self.handlers["status"].invoke(
+            invocation(InvocationOrigin.WEB_PUBLIC, "status"), {}
+        )
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
+        self.assertEqual(result.privacy, ygl.Privacy.PUBLIC)
+        self.assertEqual(self.http.requests, [])
+        self.assertEqual(self.dependencies.calls, [])
+        text = "\n".join(
+            block.text
+            for block in result.document.ordered_blocks
+            if isinstance(block, ygl.TextBlock)
+        )
+        return result, text
+
+    async def test_public_status_document_displays_normal_shared_hour_budget(self):
+        result, text = await self._status_with_budget(
+            HttpBudgetStatus("opendota", 100, 7, 93)
+        )
+        for value in ("正常", "RPH 100", "已用 7", "剩余 93", "恢复时间 无需等待"):
+            self.assertIn(value, text)
+        self.assertEqual(result.model_facts.facts["opendota_budget"]["remaining"], 93)
+
+    async def test_public_status_document_displays_exhaustion_and_recovery_time(self):
+        recovery = datetime(2026, 10, 24, 23, 59, tzinfo=UTC)
+        result, text = await self._status_with_budget(
+            HttpBudgetStatus("opendota", 100, 100, 0, recovery)
+        )
+        for value in (
+            "预算耗尽",
+            "RPH 100",
+            "已用 100",
+            "剩余 0",
+            recovery.isoformat(),
+        ):
+            self.assertIn(value, text)
+        self.assertNotIn("无需等待", text)
+        self.assertEqual(result.model_facts.facts["opendota_budget"]["remaining"], 0)
+
+    async def test_public_status_document_displays_cooldown_with_remaining_budget(self):
+        recovery = datetime(2026, 10, 24, 23, 59, tzinfo=UTC)
+        _, text = await self._status_with_budget(
+            HttpBudgetStatus("opendota", 100, 7, 93, recovery)
+        )
+        for value in ("来源冷却", "剩余 93", "恢复时间", recovery.isoformat()):
+            self.assertIn(value, text)
+        self.assertNotIn("正常", text)
+        self.assertNotIn("无需等待", text)
+
+    async def test_public_status_document_marks_missing_or_unreadable_budget_unknown(
+        self,
+    ):
+        for value in (
+            None,
+            RuntimeError("private-storage-detail-must-not-leak"),
+            ServiceUnavailable(),
+            SimpleNamespace(requests_per_hour=100),
+            HttpBudgetStatus("different", 100, 0, 100),
+            HttpBudgetStatus("opendota", 100, 1, -1),
+            HttpBudgetStatus("opendota", 100, 1, 99, datetime(2026, 10, 24)),
+        ):
+            with self.subTest(value=value):
+                result, text = await self._status_with_budget(value)
+                self.assertIn("RPH 未知；已用 未知；剩余 未知；恢复时间 未知", text)
+                self.assertIsNone(result.model_facts.facts["opendota_budget"])
+                self.assertNotIn("剩余 100", text)
+                self.assertNotIn("private-storage-detail", text)
+
+    async def test_public_status_document_does_not_invent_unknown_recovery_or_limit(
+        self,
+    ):
+        _, exhausted = await self._status_with_budget(
+            HttpBudgetStatus("opendota", 100, 100, 0)
+        )
+        self.assertIn("预算耗尽", exhausted)
+        self.assertIn("恢复时间 未知", exhausted)
+        _, unspecified = await self._status_with_budget(
+            HttpBudgetStatus("opendota", None, 7, None)
+        )
+        self.assertIn("RPH 未知；已用 7；剩余 未知；恢复时间 未知", unspecified)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
+from typing import NamedTuple, NoReturn
 
 import yomihime_game_link_sdk as ygl
 from yomihime_game_link_sdk.storage import (
@@ -24,6 +25,16 @@ ANCHORS = {
     "long": (1, 50, 200, 500, 1000, 2000, 4000, 8000),
 }
 ASPECT_HEIGHT = {"2:3": 81, "9:16": 96, "1:2": 108}
+_DENSE_COLUMNS = 20
+_DENSE_PAGE_ITEMS = 512
+_DENSE_MAX_PAGES = 8
+
+
+class _GridTile(NamedTuple):
+    rank: int
+    column: int
+    row: int
+    span: int
 
 
 def span_for_minutes(minutes, preset="standard"):
@@ -57,22 +68,69 @@ def grid_spec(aspect="2:3", quality="normal"):
 def preflight(selection):
     """Reject impossible complete outputs before any cover image requests.
 
-    Core performs exact packing and includes measured header/footer pixel work.
-    This public-spec lower bound never claims to be the final page count.
+    Plan the public body-grid envelope with stable largest-first, row-major
+    first-fit backfill, including per-page item/page limits. Area alone cannot
+    prove packing: e.g. eighty 8x8 tiles cannot fit twenty columns across eight
+    32-row pages even though their total area equals that nominal capacity.
+
+    The pixel ceiling here deliberately assumes zero header/footer height.
+    Passing proves placement only in that upper body envelope. Core measures
+    actual theme/font/header/footer and can reduce available rows, so this is
+    not a guarantee of final rendering, PNG size or invocation duration.
     """
     if selection["mode"] == "legacy":
         return
     cell_width, cell_height = grid_spec(selection["aspect"], selection["quality"])
-    width = 20 * cell_width
+    width = _DENSE_COLUMNS * cell_width
     rows = min(32, max(0, ((128 * 1024 * 1024) // 36 // width) // cell_height))
-    if (
-        rows < max((row["span"] for row in selection["rows"]), default=1)
-        or sum(row["span"] ** 2 for row in selection["rows"]) > 8 * 20 * rows
+    spans = [row["span"] for row in selection["rows"]]
+    if len(spans) > 1000 or any(
+        type(span) is not int or not 1 <= span <= 8 for span in spans
     ):
+        raise ValueError("Invalid dense selection spans")
+
+    def overflow() -> NoReturn:
         raise QueryFailure(
             ygl.ErrorCode.PARAMETER_ERROR,
-            "拼图超过8页像素预算；请减小数量、选择较小倍率预设或普通清晰度。",
+            "拼图超过整数格/像素预算（每页最多512项、共8页）；请减小数量、选择较小倍率预设或普通清晰度。",
         )
+
+    occupied: list[list[int]] = []
+    pages: list[list[_GridTile]] = []
+    for rank, span in sorted(
+        enumerate(spans, 1), key=lambda entry: (-entry[1], entry[0])
+    ):
+        if span > rows:
+            overflow()
+        placement = None
+        for page_index in range(len(pages) + 1):
+            if page_index == len(pages):
+                if len(pages) == _DENSE_MAX_PAGES:
+                    break
+                occupied.append([0] * rows)
+                pages.append([])
+            if len(pages[page_index]) == _DENSE_PAGE_ITEMS:
+                continue
+            for y in range(rows - span + 1):
+                for x in range(_DENSE_COLUMNS - span + 1):
+                    mask = ((1 << span) - 1) << x
+                    if all(
+                        not occupied[page_index][line] & mask
+                        for line in range(y, y + span)
+                    ):
+                        placement = page_index, x, y, mask
+                        break
+                if placement is not None:
+                    break
+            if placement is not None:
+                break
+        if placement is None:
+            overflow()
+        page_index, x, y, mask = placement
+        for line in range(y, y + span):
+            occupied[page_index][line] |= mask
+        pages[page_index].append(_GridTile(rank, x, y, span))
+    return tuple(tuple(page) for page in pages)
 
 
 async def load_full(scope, target, *, credential_revision=0, cache=True, refresh=False):

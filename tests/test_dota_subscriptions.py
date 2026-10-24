@@ -80,7 +80,7 @@ class DotaSubscriptionTests(unittest.TestCase):
         )
         self.assertEqual(decision.events, ())
         self.assertTrue(decision.state["initialized"])
-        self.assertEqual(decision.state["seen"], ["90"])
+        self.assertEqual(decision.state["seen"], ("90",))
         for incomplete in (
             ObservationCompleteness.FAILED,
             ObservationCompleteness.PARTIAL,
@@ -112,7 +112,7 @@ class DotaSubscriptionTests(unittest.TestCase):
             [event.event_key for event in result.events],
             ["dota2.match:102", "dota2.match:103", "dota2.match:99"],
         )
-        self.assertEqual(result.state["pending"], [])
+        self.assertEqual(result.state["pending"], ())
         self.assertEqual(result.state["omitted_count"], 1)
         resumed = self.evaluator.evaluate(
             self.subscription, sample(ids, facts), EvaluationState(2, result.state)
@@ -137,7 +137,7 @@ class DotaSubscriptionTests(unittest.TestCase):
         waiting = self.evaluator.evaluate(
             self.subscription, sample(["100", "99"]), prior
         )
-        self.assertEqual(waiting.state["pending"], ["99"])
+        self.assertEqual(waiting.state["pending"], ("99",))
         resumed = self.evaluator.evaluate(
             self.subscription,
             sample(["99", "100"], {"99": fact("99")}),
@@ -200,7 +200,7 @@ class DotaCollectorTests(unittest.IsolatedAsyncioTestCase):
         )
         context = CollectionView(KEY, invocation=object())
         first = await collector.collect(context, KEY.parameters, None)
-        self.assertEqual(first.payload["known_ids"], [])
+        self.assertEqual(first.payload["known_ids"], ())
         with self.assertRaises(SourceHttpError):
             await collector.collect(context, KEY.parameters, first)
         self.assertEqual(calls[-1], "/api/matches/99")

@@ -759,7 +759,7 @@ test('scope abort immediately erases credential DOM input and stops the mounted 
   f.close();
 });
 
-const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ6sAAAAASUVORK5CYII=';
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAX+XDSwAAAABJRU5ErkJggg==';
 function authSession(state = 'waiting') {
   return {session_id: 'synthetic-session', state, expires_at: Date.now() / 1000 + 60, next_poll_at: Date.now() / 1000 + 30, polls: 0, authorized_subject: state === 'authorized' ? '76561197960265851' : null};
 }
@@ -861,7 +861,7 @@ test('public CS2 query uses the single page capability with explicit account and
 });
 
 test('public Steam collage validates legacy limits and downloads exact returned PNG blobs with cleanup', async () => {
-  const f = fixture({moduleId: 'steam', routeId: 'collage', preview: async () => ({...cacheResponse(), images: [{media_type: 'image/png', base64: PNG}]})});
+  const f = fixture({moduleId: 'steam', routeId: 'collage', preview: async () => ({...cacheResponse(), image_state: 'ready', images: [{media_type: 'image/png', base64: PNG}]})});
   const created = [], revoked = [];
   f.dom.window.URL.createObjectURL = blob => {created.push(blob); return `blob:synthetic-${created.length}`;};
   f.dom.window.URL.revokeObjectURL = url => revoked.push(url);
@@ -874,4 +874,116 @@ test('public Steam collage validates legacy limits and downloads exact returned 
   const download = f.container.querySelector('a[download]'); assert.equal(download.download, 'steam-career-01.png');
   assert.equal(download.getAttribute('href'), 'blob:synthetic-1'); f.close();
   assert.deepEqual(revoked, ['blob:synthetic-1']);
+});
+
+function cs2Response(platform, data, {kind = 'match', detail = 'player_summary'} = {}) {
+  const response = cacheResponse();
+  response.document.blocks = [
+    {kind: 'text', text: '来源保留的战报说明。'},
+    {kind: 'fields', fields: {cs2: {
+      schema_version: 'cs2.platform.v1', provider: platform === '5e' ? '5eplay' : 'perfect_world', platform, kind,
+      target: {id_type: platform === '5e' ? 'fivee_domain' : 'steam_id64', id: platform === '5e' ? 'example-domain' : '76561197960265851'},
+      season: null, fetched_at: '2026-10-24T00:00:00Z',
+      coverage: detail === 'full_match' ? 'platform_recorded' : 'recent_player_summary',
+      detail_level: detail, unavailable_reason: detail === 'full_match' ? null : 'full_match_detail_unavailable', data,
+    }}},
+  ];
+  return response;
+}
+
+test('CS2 full match and last display scores, focus KDA/rating and the actual player roster', async () => {
+  const focus = {account_id: '76561197960265851', nickname: '焦点选手', team: 1, kills: 23, deaths: 10, assists: 7, rating: 1.6, pw_rating: 1.7, adr: 88};
+  const other = {account_id: '76561197960265852', nickname: '<img src=x onerror=alert(1)>', team: 2, kills: 0, deaths: 13, assists: null, rating: null};
+  for (const action of ['match', 'last']) {
+    const f = fixture({moduleId: 'cs2', routeId: 'query', invoke: async (_id, parameters) => parameters.action ? cs2Response('perfect', {match_id: 'PVP@10001', map: 'de_mirage', scores: [13, 5], players: [focus, other], focus}, {detail: 'full_match'}) : cacheResponse()});
+    await settle(); f.input('account', focus.account_id); f.input('action', action);
+    if (action === 'match') { f.input('match_id', 'PVP@10001'); f.input('focus', focus.account_id); }
+    f.submit(); await settle();
+    const output = f.container.querySelector('.steam-dlc-public-result');
+    assert.match(output.textContent, /比分：13 : 5/); assert.match(output.textContent, /K\/D\/A：23\/10\/7 · rating：1.6/);
+    assert.match(output.textContent, /完整比赛/); assert.match(output.textContent, /2026-10-24T00:00:00Z/);
+    assert.match(output.textContent, /焦点选手/); assert.match(output.textContent, /76561197960265852/);
+    assert.match(output.textContent, /0\/13\/未知/); assert.match(output.textContent, /未知表示来源未提供/);
+    assert.equal(output.querySelectorAll('table tr').length, 3); assert.equal(output.querySelector('img'), null);
+    f.close();
+  }
+});
+
+for (const platform of ['official', '5e']) {
+  test(`CS2 ${platform} summary displays known scores/KDA, unknown rating and its bounded coverage`, async () => {
+    const response = cs2Response(platform, {match_id: 'summary-10001', map: null, scores: [0, null], kills: 7, deaths: 0, assists: null, rating: null, players: null, focus: {id: platform === '5e' ? 'example-domain' : '76561197960265851'}});
+    const f = fixture({moduleId: 'cs2', routeId: 'query', invoke: async (_id, parameters) => parameters.action ? response : cacheResponse()});
+    await settle(); f.input('account', response.document.blocks[1].fields.cs2.target.id); f.input('platform', platform); f.input('action', 'match'); f.input('match_id', 'summary-10001'); f.submit(); await settle();
+    const output = f.container.querySelector('.steam-dlc-public-result');
+    assert.match(output.textContent, /比分：0 : 未知/); assert.match(output.textContent, /K\/D\/A：7\/0\/未知 · rating：未知/);
+    assert.match(output.textContent, /有界近期玩家摘要/); assert.match(output.textContent, /不含完整比赛名单与详情/);
+    assert.equal(output.querySelector('table'), null); assert.doesNotMatch(output.textContent, /undefined|NaN|null/);
+    f.close();
+  });
+}
+
+test('CS2 empty full roster and empty recent list remain explicit source states with unknown fields', async () => {
+  for (const kind of ['match', 'recent']) {
+    const response = cs2Response('perfect', kind === 'match' ? {match_id: 'PVP@empty', map: null, scores: [null, null], players: [], focus: null} : {matches: [], available_matches: 0, limit: 5}, {kind, detail: kind === 'match' ? 'full_match' : 'player_summary'});
+    const f = fixture({moduleId: 'cs2', routeId: 'query', invoke: async (_id, parameters) => parameters.action ? response : cacheResponse()});
+    await settle(); f.input('account', '76561197960265851'); f.input('action', kind);
+    if (kind === 'match') f.input('match_id', 'PVP@empty');
+    f.submit(); await settle();
+    const output = f.container.querySelector('.steam-dlc-public-result');
+    assert.match(output.textContent, kind === 'match' ? /来源未提供可用玩家名单/ : /来源当前样本没有可展示的比赛/);
+    if (kind === 'match') assert.match(output.textContent, /比分：未知 : 未知/);
+    assert.match(output.textContent, /来源保留的战报说明/); assert.equal(output.querySelector('table'), null);
+    assert.doesNotMatch(f.text(), /未取得可确认结果/); f.close();
+  }
+});
+
+function textPreview(status, message) {
+  return {...cacheResponse(), status, image_state: 'none', images: [], document: {blocks: [{kind: 'text', text: message}]}};
+}
+
+for (const [status, message] of [
+  ['needs_selection', '缺少 Steam Key。请在可信管理页配置，或改选 games/recent。'],
+  ['success', '完整库已确认为空，没有可生成的作品。'],
+  ['partial_success', '当前样本的作品均为 0 时长或不符合筛选，没有可生成的作品。'],
+]) {
+  test(`Steam ${status} with image_state=none preserves actionable no-card feedback`, async () => {
+    const f = fixture({moduleId: 'steam', routeId: 'collage', preview: async () => textPreview(status, message)});
+    f.input('account', '76561197960265851'); f.submit(); await settle();
+    assert.ok(f.container.querySelector('.steam-dlc-public-result').textContent.includes(message));
+    assert.match(f.text(), status === 'needs_selection' ? /需要补充选择/ : /本次没有生成图片/);
+    assert.doesNotMatch(f.text(), /未取得可确认结果|拼图已生成/);
+    assert.equal(f.container.querySelector('a[download]'), null); assert.equal(f.page.navigationImpact().pending, false); f.close();
+  });
+}
+
+test('Steam preview rejects missing image state, contradictory images and corrupt PNGs rather than reporting success', async () => {
+  const valid = {media_type: 'image/png', base64: PNG};
+  const corrupt = Buffer.from(PNG, 'base64'); corrupt[45] ^= 1;
+  for (const wire of [
+    {image_state: 'ready', images: []}, {image_state: 'none', images: [valid]}, {images: []},
+    {image_state: 'ready', images: [{...valid, base64: 'not base64!'}]},
+    {image_state: 'ready', images: [{...valid, base64: Buffer.from('\x89PNG\r\n\x1a\n', 'binary').toString('base64')}]},
+    {image_state: 'ready', images: [{...valid, base64: corrupt.toString('base64')}]},
+    {image_state: 'ready', images: [{...valid, base64: Buffer.concat([Buffer.from(PNG, 'base64'), Buffer.from('trailing')]).toString('base64')}]},
+    {image_state: 'ready', images: Array(9).fill(valid)},
+    {image_state: 'ready', images: [{media_type: 'image/jpeg', base64: PNG}]},
+  ]) {
+    const f = fixture({moduleId: 'steam', routeId: 'collage', preview: async () => ({...cacheResponse(), ...wire})});
+    f.input('account', '76561197960265851'); f.submit(); await settle();
+    assert.match(f.text(), /未取得可确认结果/); assert.doesNotMatch(f.text(), /拼图已生成/);
+    assert.equal(f.container.querySelector('a[download]'), null); f.close();
+  }
+});
+
+test('Steam error keeps its source message and a late no-card response cannot overwrite a revoked view', async () => {
+  const failure = fixture({moduleId: 'steam', routeId: 'collage', preview: async () => ({...cacheResponse(), status: 'error', image_state: 'none', images: [], error: {message: '上游当前不可用，请稍后重试。'}})});
+  failure.input('account', '76561197960265851'); failure.submit(); await settle();
+  assert.match(failure.text(), /上游当前不可用，请稍后重试/); assert.doesNotMatch(failure.text(), /未取得可确认结果|拼图已生成/); failure.close();
+  const late = deferred();
+  const f = fixture({moduleId: 'steam', routeId: 'collage', preview: () => late.promise});
+  f.input('account', '76561197960265851'); f.submit();
+  f.page.update({...f.context, available: false});
+  const previous = f.container.innerHTML;
+  late.resolve(textPreview('success', 'LATE_EMPTY_LIBRARY')); await settle();
+  assert.equal(f.container.innerHTML, previous); assert.doesNotMatch(f.text(), /LATE_EMPTY_LIBRARY/); f.close();
 });

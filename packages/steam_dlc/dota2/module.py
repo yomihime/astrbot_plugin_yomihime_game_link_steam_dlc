@@ -135,21 +135,70 @@ class _Status:
     async def invoke(self, context: InvocationView, parameters: ygl.JsonObject):
         del parameters
         budget = None
+        budget_text = "OpenDota 每小时请求预算：未知；RPH 未知；已用 未知；剩余 未知；恢复时间 未知。"
         enabled, interval = True, 300
         try:
             config = await self.owner._services.config.current()
             enabled = config.values.get("subscription_enabled", True) is True
             interval = config.values.get("poll_interval_seconds", 300)
             scope = await self.owner._services.scopes.bind(context)
-            current = await scope.http.budget(_SOURCE)
-            budget = {
-                "requests_per_hour": current.requests_per_hour,
-                "used": current.used,
-                "remaining": current.remaining,
-                "next_available_at": current.next_available_at.isoformat()
-                if current.next_available_at
-                else None,
-            }
+            try:
+                current = await scope.http.budget(_SOURCE)
+            except ServiceUnavailable:
+                current = None
+            if current is not None:
+                limit, used, remaining = (
+                    current.requests_per_hour,
+                    current.used,
+                    current.remaining,
+                )
+                recovery = current.next_available_at
+                if (
+                    current.source_id != _SOURCE
+                    or (limit is not None and (type(limit) is not int or limit <= 0))
+                    or type(used) is not int
+                    or used < 0
+                    or (
+                        remaining is not None
+                        and (type(remaining) is not int or remaining < 0)
+                    )
+                    or (
+                        recovery is not None
+                        and (
+                            not isinstance(recovery, datetime)
+                            or recovery.tzinfo is None
+                            or recovery.utcoffset() is None
+                        )
+                    )
+                ):
+                    raise ValueError("unreadable OpenDota budget")
+                next_available = (
+                    recovery.astimezone(UTC).isoformat() if recovery else None
+                )
+                budget = {
+                    "requests_per_hour": limit,
+                    "used": used,
+                    "remaining": remaining,
+                    "next_available_at": next_available,
+                }
+                state = (
+                    "预算耗尽"
+                    if remaining == 0
+                    else "来源冷却"
+                    if recovery is not None
+                    else "正常"
+                    if remaining is not None
+                    else "未知"
+                )
+                recovery_text = next_available or (
+                    "无需等待" if remaining is not None and remaining > 0 else "未知"
+                )
+                budget_text = (
+                    f"OpenDota 每小时请求预算（{state}）："
+                    f"RPH {limit if limit is not None else '未知'}；已用 {used}；"
+                    f"剩余 {remaining if remaining is not None else '未知'}；"
+                    f"恢复时间 {recovery_text}。"
+                )
         except (InvalidInvocation, AccessDenied, OperationTimeout, ServiceUnavailable):
             raise
         except Exception:
@@ -160,6 +209,7 @@ class _Status:
             [
                 "最近战绩、近期样本统计、玩家资料、上一场和指定玩家战报已实现；使用 OpenDota 公开数据，不提交解析。",
                 f"自动订阅：{'开启' if enabled else '暂停'}；轮询间隔 {interval} 秒。",
+                budget_text,
                 "在目标会话使用 /ygl dota2 watch [账号]、watchlist、unwatch <账号或订阅编号> 管理自己的关注。",
             ],
             {
