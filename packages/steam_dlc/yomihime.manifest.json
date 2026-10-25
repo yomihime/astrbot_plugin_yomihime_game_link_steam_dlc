@@ -824,6 +824,18 @@
             "pages/steam/style.css"
           ],
           "access": "public_web"
+        },
+        {
+          "route_id": "wishlist",
+          "role": "aux",
+          "title": "愿望单",
+          "order": 20,
+          "capability_id": "wishlist_explicit",
+          "entry": "pages/steam/entry.js",
+          "styles": [
+            "pages/steam/style.css"
+          ],
+          "access": "public_web"
         }
       ],
       "resources": [
@@ -1741,6 +1753,18 @@
           "credential_fields": [
             "credential_opendota_key"
           ],
+          "entry": "pages/dota2/entry.js",
+          "styles": [
+            "pages/dota2/style.css"
+          ],
+          "access": "public_web"
+        },
+        {
+          "route_id": "analysis",
+          "role": "aux",
+          "title": "详细对局分析",
+          "order": 5,
+          "capability_id": "analyze_explicit",
           "entry": "pages/dota2/entry.js",
           "styles": [
             "pages/dota2/style.css"

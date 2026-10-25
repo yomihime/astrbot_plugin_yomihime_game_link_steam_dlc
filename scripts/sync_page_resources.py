@@ -134,6 +134,19 @@ def synchronize(root=ROOT, *, check=False):
                     **common,
                 }
             )
+        if module_id in {"steam", "dota2"}:
+            pages.append(
+                {
+                    "route_id": "wishlist" if module_id == "steam" else "analysis",
+                    "role": "aux",
+                    "title": "愿望单" if module_id == "steam" else "详细对局分析",
+                    "order": 20 if module_id == "steam" else 5,
+                    "capability_id": "wishlist_explicit"
+                    if module_id == "steam"
+                    else "analyze_explicit",
+                    **common,
+                }
+            )
         page_resource_paths = {f"{base}/{name}" for name in sources}
         resources = [
             resource
