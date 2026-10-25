@@ -3,6 +3,7 @@
 import {mountJobForm} from './job-controller.js';
 import {mountWishlistForm} from './wishlist-controller.js';
 import {mountAnalysisForm} from './analysis-controller.js';
+import {metric} from './metric.js';
 export const MODULES = Object.freeze({
   steam: {
     title: 'Steam',
@@ -175,12 +176,13 @@ export function mountController(container, options) {
   const partition = module ? partitionFor(options.context, initialIdentity, options.routeId === 'settings') : null;
   const partitionToken = partition?.token;
   let context = { ...options.context };
-  let disposed = false, revoked = false, generation = 0;
+  let disposed = false, revoked = false, scopeInvalid = false, generation = 0;
   let pending = false, ready = false, baseline = null;
   let credentialPending = false, authorizationPending = false, credentialSnapshot = null, credentialGeneration = 0;
   let credentialRoot, authorizationSession = null, authorizationTimer = null, cancelRequested = false;
   let previewGeneration = 0;
   let invalidatePublic = () => {};
+  let updatePublicAvailability = () => {};
   const previewURLs = [], publicInputs = [];
   const credentialControls = new Map();
   let credentialChanged = () => {};
@@ -209,9 +211,11 @@ export function mountController(container, options) {
   message.setAttribute('aria-live', 'polite');
   root.append(availability);
   container.replaceChildren(root);
-  const current = () => !disposed && !revoked && !options.scope.signal.aborted
-    && options.scope.isCurrent() && identity(context) === initialIdentity
-    && (!partition || (ordinaryPartitions.get(initialIdentity) === partition && partition.token === partitionToken));
+  const current = () => {
+    if (options.scope.signal.aborted || !options.scope.isCurrent()) scopeInvalid = true;
+    return !disposed && !revoked && !scopeInvalid && identity(context) === initialIdentity
+      && (!partition || (ordinaryPartitions.get(initialIdentity) === partition && partition.token === partitionToken));
+  };
   const active = () => current() && context.available;
   const impact = () => Object.freeze({
     ordinary: drafts.size > 0,
@@ -826,9 +830,8 @@ export function mountController(container, options) {
     publicInputs.push(input); return input;
   };
   const renderCS2 = (projection, target) => {
-    if (!['match', 'recent'].includes(projection.kind)) return;
+    if (!['profile', 'stats', 'match', 'recent'].includes(projection.kind)) return;
     const data = projection.data;
-    const metric = value => typeof value === 'number' && Number.isFinite(value) ? String(value) : '未知';
     const text = value => typeof value === 'string' && value ? value : '未知';
     const score = row => `${metric(row?.scores?.[0])} : ${metric(row?.scores?.[1])}`;
     const kda = row => `${metric(row?.kills)}/${metric(row?.deaths)}/${metric(row?.assists)}`;
@@ -842,6 +845,12 @@ export function mountController(container, options) {
     };
     const coverage = {platform_recorded: '平台收录', recorded_official: '完美收录官匹', recent_first_page: '近期首批样本', recent_player_summary: '有界近期玩家摘要'}[projection.coverage] || text(projection.coverage);
     const full = projection.detail_level === 'full_match';
+    if (['profile', 'stats'].includes(projection.kind)) {
+      const metrics = data.metrics || {};
+      table(['场次', 'K/D', 'rating', 'PW rating', 'ADR', 'RWS', '胜率'], [[...['matches', 'kd', 'rating', 'pw_rating', 'adr', 'rws', 'win_rate'].map(key => metric(metrics[key]))]]);
+      target.append(node('p', '未知表示来源未提供，不按 0 计算。', 'steam-dlc-hint'));
+      return;
+    }
     target.append(node('p', `来源：${CHOICE_LABELS[projection.platform] || text(projection.platform)} · 范围：${coverage} · 详情：${full ? '完整比赛' : '玩家摘要'}`, 'steam-dlc-hint'));
     if (!full) target.append(node('p', '该来源仅提供该玩家的有界近期摘要，不含完整比赛名单与详情。', 'steam-dlc-hint'));
     if (projection.unavailable_reason && projection.unavailable_reason !== 'full_match_detail_unavailable') target.append(node('p', `缺项说明：${text(projection.unavailable_reason)}`, 'steam-dlc-hint'));
@@ -850,15 +859,15 @@ export function mountController(container, options) {
       if (!Array.isArray(data.matches) || !data.matches.length) {
         target.append(node('p', '来源当前样本没有可展示的比赛。')); return;
       }
-      table(['比赛', '地图', '比分', 'K/D/A', 'rating'], data.matches.map(row => [text(row?.match_id), text(row?.map), score(row), kda(row), metric(row?.rating)]));
+      table(['比赛', '地图', '比分', 'K/D/A', 'rating', 'PW rating', 'ADR'], data.matches.map(row => [text(row?.match_id), text(row?.map), score(row), kda(row), metric(row?.rating), metric(row?.pw_rating), metric(row?.adr)]));
       return;
     }
     target.append(node('p', `比赛：${text(data.match_id)} · 地图：${text(data.map)} · 比分：${score(data)}`));
     if (!full) {
-      target.append(node('p', `玩家：${text(data.focus?.id || projection.target?.id)} · K/D/A：${kda(data)} · rating：${metric(data.rating)}`));
+      target.append(node('p', `玩家：${text(data.focus?.id || projection.target?.id)} · K/D/A：${kda(data)} · rating：${metric(data.rating)} · PW rating：${metric(data.pw_rating)} · ADR：${metric(data.adr)}`));
       return;
     }
-    if (data.focus && typeof data.focus === 'object') target.append(node('p', `焦点：${text(data.focus.nickname)} · ${text(data.focus.account_id)} · K/D/A：${kda(data.focus)} · rating：${metric(data.focus.rating)}`));
+    if (data.focus && typeof data.focus === 'object') target.append(node('p', `焦点：${text(data.focus.nickname)} · ${text(data.focus.account_id)} · K/D/A：${kda(data.focus)} · rating：${metric(data.focus.rating)} · PW rating：${metric(data.focus.pw_rating)} · ADR：${metric(data.focus.adr)}`));
     if (!Array.isArray(data.players) || !data.players.length) {
       target.append(node('p', '来源未提供可用玩家名单。')); return;
     }
@@ -1033,16 +1042,19 @@ export function mountController(container, options) {
   else if (moduleId === 'steam' && options.routeId === 'collage') {
     const job = mountJobForm(root, {options, active, field: publicField, parseLimit: parsePosterLimit, validatePNG: bytes => previewPNG(bytes, document.defaultView), say});
     invalidatePublic = job.dispose;
+    updatePublicAvailability = job.setAvailable;
     listeners.push(job.dispose);
   }
   else if (moduleId === 'steam' && options.routeId === 'wishlist') {
     const wishlist = mountWishlistForm(root, {options, active, field: publicField, say});
     invalidatePublic = wishlist.dispose;
+    updatePublicAvailability = wishlist.setAvailable;
     listeners.push(wishlist.dispose);
   }
   else if (moduleId === 'dota2' && options.routeId === 'analysis') {
     const analysis = mountAnalysisForm(root, {options, active, field: publicField, renderResult, say});
     invalidatePublic = analysis.dispose;
+    updatePublicAvailability = analysis.setAvailable;
     listeners.push(analysis.dispose);
   }
   else root.append(node('p', '该页面入口未声明，请返回模块列表重新进入。'));
@@ -1073,13 +1085,13 @@ export function mountController(container, options) {
       if (disposed || revoked) return;
       const wasAvailable = context.available;
       context = { ...next };
-      if (identity(context) !== initialIdentity) {
+      if (identity(context) !== initialIdentity || !current()) {
         invalidatePublic();
         previewGeneration += 1; revokePreviews(); publicInputs.forEach(input => { input.value = ''; });
         revokePartition();
         say('模块运行上下文已变化，请重新进入页面。', 'error');
       } else if (wasAvailable !== context.available) {
-        invalidatePublic();
+        updatePublicAvailability(context.available);
         previewGeneration += 1; revokePreviews();
         credentialGeneration += 1; stopAuthorization(); clearCredentialInputs(); authorizationSession = null; credentialPending = false; authorizationPending = false;
         cacheGeneration += 1;

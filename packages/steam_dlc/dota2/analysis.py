@@ -63,6 +63,24 @@ def _rows(value, limit, name, truncated):
     return value[:limit]
 
 
+def _timed_rows(value, limit, name, truncated, *, key="time"):
+    """Bound newly fetched events across their time span, never by item meaning."""
+    if not isinstance(value, (list, tuple)):
+        return None
+    rows = [row for row in value if isinstance(row, dict)]
+    if len(rows) != len(value):
+        truncated.append(name + ".invalid_rows")
+    rows.sort(
+        key=lambda row: (
+            number(row.get(key), signed=True) is None,
+            number(row.get(key), signed=True) or 0,
+        )
+    )
+    if len(rows) > limit:
+        truncated.append(name)
+    return _sample(rows, limit)
+
+
 def _series(value, name, truncated, *, signed=False, times=None):
     if not isinstance(value, (list, tuple)):
         return None
@@ -110,7 +128,7 @@ def normalize_analysis(payload, match_id):
                 raise ValueError("duplicate player account")
             identities.add(account)
         base["account_id32"] = str(account) if account is not None else None
-        purchases = _rows(row.get("purchase_log"), 80, "purchases", truncated)
+        purchases = _timed_rows(row.get("purchase_log"), 80, "purchases", truncated)
         purchases = (
             None
             if purchases is None
@@ -165,7 +183,9 @@ def normalize_analysis(payload, match_id):
                 else None,
             }
         )
-    fights = _rows(payload.get("teamfights"), 20, "teamfights", truncated)
+    fights = _timed_rows(
+        payload.get("teamfights"), 20, "teamfights", truncated, key="start"
+    )
     teamfights = None
     if fights is not None:
         teamfights = []
@@ -200,7 +220,7 @@ def normalize_analysis(payload, match_id):
                     ],
                 }
             )
-    objective_rows = _rows(payload.get("objectives"), 80, "objectives", truncated)
+    objective_rows = _timed_rows(payload.get("objectives"), 80, "objectives", truncated)
     objectives = (
         None
         if objective_rows is None
@@ -383,7 +403,70 @@ def valid_cached_analysis(value, match_id):
 def _sample(value, count=7):
     if value is None or len(value) <= count:
         return value
+    if count == 1:
+        return [value[(len(value) - 1) // 2]]
     return [value[round(i * (len(value) - 1) / (count - 1))] for i in range(count)]
+
+
+def _phases(rows, duration, *, time_key="time"):
+    timed = sorted(
+        (row for row in rows if row.get(time_key) is not None),
+        key=lambda row: row[time_key],
+    )
+    end = (
+        duration
+        if duration is not None and duration > 0
+        else max((row[time_key] for row in timed), default=1)
+    )
+    end = max(end, 1)
+    return [
+        [row for row in timed if min(2, max(0, int(row[time_key] * 3 / end))) == phase]
+        for phase in range(3)
+    ]
+
+
+def _advantage_samples(advantage):
+    # Keep both sides of a large adjacent change, plus start/end. Unlike uniform
+    # sampling this preserves a short-lived reversal. Values stay radiant-relative.
+    times = sorted(
+        {
+            row[0]
+            for points in advantage.values()
+            if points
+            for row in points
+            if row[0] is not None
+        }
+    )
+    selected = {times[0], times[-1]} if times else set()
+    changes = []
+    for metric in ("gold", "xp"):
+        points = advantage[metric]
+        ranked = sorted(
+            (
+                (abs(after[1] - before[1]), metric, before[0], after[0])
+                for before, after in zip(points or (), (points or ())[1:])
+                if None not in before and None not in after
+            ),
+            key=lambda row: (-row[0], row[2], row[3]),
+        )
+        # Reserve an opportunity for each supplied metric before filling more
+        # gold changes; the same reversal has two large neighboring deltas.
+        if ranked:
+            _, _, before, after = ranked[0]
+            if len(selected | {before, after}) <= 6:
+                selected.update((before, after))
+        changes.extend(ranked[1:])
+    for magnitude, _, before, after in sorted(changes, reverse=True):
+        if magnitude == 0:
+            continue
+        if len(selected | {before, after}) <= 6:
+            selected.update((before, after))
+    return {
+        metric: None
+        if points is None
+        else [row for row in points if row[0] in selected]
+        for metric, points in advantage.items()
+    }
 
 
 def compact_analysis(projection, focus):
@@ -406,11 +489,14 @@ def compact_analysis(projection, focus):
     if focus["benchmarks"] is None:
         missing.append("benchmarks")
     index = focus["fight_index"]
-    fight_values = []
+    fight_values, timed_fights = [], []
     for fight in projection["teamfights"] or ():
         values = fight["players"]
         if index is not None and values is not None and index < len(values):
             fight_values.append(values[index])
+            timed_fights.append(
+                {"start": fight["start"], "end": fight["end"], **values[index]}
+            )
     fight_totals = {
         key: sum(v[key] for v in fight_values if v.get(key) is not None)
         if any(v.get(key) is not None for v in fight_values)
@@ -421,11 +507,39 @@ def compact_analysis(projection, focus):
         "account_id32",
         "player_slot",
         "hero_id",
-        "kills",
-        "deaths",
-        "assists",
         "outcome",
     )
+    duration = projection["match"]["duration"]
+    purchases = [
+        row
+        for phase in _phases(focus["purchases"] or (), duration)
+        for row in _sample(phase, 3)
+    ]
+    fight_columns = ("start", "end", "deaths", "damage", "gold_delta")
+    fights = [
+        max(
+            phase,
+            key=lambda row: (
+                row.get("damage") or 0,
+                row.get("deaths") or 0,
+                abs(row.get("gold_delta") or 0),
+                row["start"],
+            ),
+        )
+        for phase in _phases(timed_fights, duration, time_key="start")
+        if phase
+    ]
+    objectives = projection["objectives"] or ()
+    objective_samples = [
+        row
+        for phase in _phases(objectives, duration)
+        for row in _sample(
+            [row for row in phase if row["player_slot"] == focus["base"]["player_slot"]]
+            or phase,
+            1,
+        )
+    ]
+    objective_columns = ("time", "type", "team", "player_slot")
     completeness = (
         "settlement_only"
         if len(missing) == len(SECTIONS)
@@ -434,7 +548,7 @@ def compact_analysis(projection, focus):
         else "supported_sections_complete"
     )
     facts = {
-        "version": 1,
+        "version": 2,
         "match": projection["match"],
         "focus": focus["base"],
         "focus_side": "radiant" if focus["base"]["player_slot"] < 5 else "dire",
@@ -447,10 +561,15 @@ def compact_analysis(projection, focus):
         if focus["purchases"] is None
         else {
             "available_count": len(focus["purchases"]),
-            "first_five": focus["purchases"][:5],
+            "columns": ("time", "item"),
+            "rows": [[row["time"], row["item"]] for row in purchases],
         },
         "lane": focus["lane"],
         "teamfight_totals": fight_totals,
+        "teamfights": {
+            "columns": fight_columns,
+            "rows": [[row.get(key) for key in fight_columns] for row in fights],
+        },
         "teamfight_coverage": {
             "focus_rows": len(fight_values),
             "provided_fights": len(projection["teamfights"])
@@ -458,6 +577,10 @@ def compact_analysis(projection, focus):
             else None,
         },
         "objectives": {
+            "columns": objective_columns,
+            "rows": [
+                [row[key] for key in objective_columns] for row in objective_samples
+            ],
             "provided_count": len(projection["objectives"])
             if projection["objectives"] is not None
             else None,
@@ -474,10 +597,7 @@ def compact_analysis(projection, focus):
             )
             else None,
         },
-        "team_advantage": {
-            key: _sample(value, 3)
-            for key, value in projection["team_advantage"].items()
-        },
+        "team_advantage": _advantage_samples(projection["team_advantage"]),
         "benchmarks": None
         if focus["benchmarks"] is None
         else dict(list(focus["benchmarks"].items())[:4]),
@@ -491,7 +611,11 @@ def compact_analysis(projection, focus):
         "fetched_at": projection.get("fetched_at"),
     }
     facts["sampling"] = (
-        "Timeline: up to 7 evenly selected points; team advantage: up to 3; purchases: first 5; benchmarks: first 4 keys. Full bounded projection retained separately."
+        "Source facts: sampled timeline (7/metric), purchases (first/middle/last per duration third, up to 9), "
+        "fights (highest supplied focal damage per third, up to 3), objectives (explicit focal slot preferred, "
+        "one per third, up to 3). Untimed events are not placed on a timeline. Calculations: available-row "
+        "counts/totals; radiant advantage (start/end and largest adjacent changes, up to 6/metric). "
+        "Totals cover retained parsed rows only; benchmarks first 4 sorted keys. No causal inference or item valuation."
     )
     facts["cached_at"] = projection.get("cached_at")
 
@@ -514,6 +638,10 @@ INSTRUCTIONS = (
     "按比赛与焦点概况、对线与发育、装备与节奏、团战与目标贡献、证据支持的优点与改进、缺失与边界六节组织。"
     "明确区分原始事实、计算结果和推断；胜负按焦点阵营解释。没有时间线/视野/团战依据时，不编造走位、眼位、沟通、死亡原因或指挥决策。"
     "这是公开结算及已有解析数据分析，并未观看第一视角录像。只分析焦点，不调用工具，不使用记忆或会话历史。"
+    "解析数据充分时正文约1000–1800汉字，每节1–2段；数据不足时缩短，避免复述空值。"
+    "引用中后期购买、发育、优势变化和带时间团战的具体秒数/数值，给出2–3项有证据的改进及验证办法。"
+    "物品标识只能证明购买，不猜价格、版本效果或关键大件；目标只有player_slot明确匹配焦点才可归因本人。"
+    "团队优势是天辉相对夜魇，不等于焦点个人表现；截取汇总不是全场总计；推断须标明不确定性。"
 )
 
 
@@ -614,10 +742,13 @@ def analysis_result(projection, focus, *, command):
         model_facts=FactDocument(facts, sources=("OpenDota",)),
         analysis_request=AnalysisRequest(
             "dota2.match_analysis",
-            1,
+            2,
             INSTRUCTIONS,
             f"{match['match_id']}:{player['account_id32']}",
-            max_output_chars=6000,
+            # Parsed facts require substantive prose. Core still caps this by
+            # the invocation's remaining total deadline, including prepare().
+            timeout_seconds=55.0,
+            max_output_chars=3600,
         )
         if command
         else None,

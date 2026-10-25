@@ -1,6 +1,6 @@
 # 架构与配对合同
 
-Core负责生命周期、权限、owner/epoch/CAS、存储、受控HTTP/秘密、资源、渲染与订阅投递。DLC只经canonical公开SDK提供游戏协议、归一化、时长规则及纯Evaluator/Composer，不导入Core私有代码或另开网络、数据库、发送通道。当前配对为Core0.1.11、DLC0.2.0-alpha.6、SDK0.1.0a22、ABI2.0、bridge1。
+Core负责生命周期、权限、owner/epoch/CAS、存储、受控HTTP/秘密、资源、渲染与订阅投递。DLC只经canonical公开SDK提供游戏协议、归一化、时长规则及纯Evaluator/Composer，不导入Core私有代码或另开网络、数据库、发送通道。当前兼容冻结Core0.1.11、DLC0.2.0-alpha.7、SDK0.1.0a22、ABI2.0、bridge1；普通DLC更新不重建或重装Core。
 
 Steam统一管理USER身份关联；默认查询仅可信命令根使用，显式子能力保持结构化账号，即使origin来自COMMAND也不重新解析祖先命令。所有默认身份结果抑制model_facts。平台登录主体独立于目标玩家，不更改共享Steam绑定。
 
@@ -16,6 +16,6 @@ SDK DenseCollage是通用整数格资源文档，Core不识别Steam小时。模�
 
 页面复用Core公开UI、共享runtime与scope生命周期。普通草稿隔离；凭据立即清空、不持久化；CAS冲突重读，未知写入不重试，迟到响应必须重新检查当前scope。实际部署固定单一SDK身份；独立扩展安装许可与内容摘要分开，普通版本/页面更新不重建Core。SDK或已加载Python变化使用正常进程重启。包内排除测试过程、私有证据、Key、运行缓存及项目记忆。离线、包、隔离Host、浏览器、线上API和真实IM分别验收，不互相替代。
 
-长作业采用Core持久Jobs与新JOB scope。DLC只提供规范参数、选集和声明文档；Core保存owner/CAS/期限/分页引用、渲染并保护RAW/DERIVED/OUTPUT缓存。命令结果按需单图，不自动刷群；页面轮询退出不取消作业。
+长作业采用Core持久Jobs与新JOB scope。DLC只提供规范参数、选集和声明文档；Core保存owner/CAS/期限/分页引用、渲染并保护RAW/DERIVED/OUTPUT缓存。页面操作标识只进入幂等元数据；命令无可靠重试身份时省略该键，仍由Core按规范输入合并活跃任务。完成后新动作重新检查业务来源与内容缓存，不永久绑定旧任务。命令结果按需单图，不自动刷群；页面轮询退出不取消作业。
 
-详细分析采用独立match_analysis v1完整有界投影与512节点内的compact FactDocument。命令通过AnalysisRequest调用Host当前模型，Tool只提供相同口径事实；不传历史、工具、私人会话或模块模型Key。缓存区分焦点、事实、模板、模型配置与权限，缺解析和模型失败均明确说明。
+详细分析采用独立match_analysis v1完整有界投影与512节点内的compact FactDocument v2。原始比赛缓存沿用v1，提示模板单独升版。证据选取覆盖早中后期及重要优势变化，未提供的时间线、团战和视野保持未知。命令通过AnalysisRequest调用Host当前模型，显式55秒分析上限仍受Core剩余总期限约束；Tool只提供相同口径事实。不传历史、工具、私人会话或模块模型Key。缓存区分焦点、事实、模板、模型配置与权限，缺解析和模型失败均明确说明。

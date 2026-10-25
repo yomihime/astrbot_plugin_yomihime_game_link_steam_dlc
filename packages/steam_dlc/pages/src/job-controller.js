@@ -2,6 +2,7 @@
 export function mountJobForm(root, {options, active, field, parseLimit, validatePNG, say}) {
   const document = root.ownerDocument, urls = [], cleanups = [];
   let disposed = false, timer = null, generation = 0, resultGeneration = 0, job = null, cursor = null, busy = false;
+  let operation = null;
   const current = ticket => !disposed && active() && ticket === generation;
   const problem = message => Object.assign(Error(message), {publicMessage: message});
   const message = error => error?.publicMessage || '任务操作未完成，请刷新任务并核对。';
@@ -27,8 +28,9 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
     const button = node('button', label); button.type = 'button'; button.className = 'ui-button'; button.dataset.action = id;
     on(button, 'click', () => {
       if (!active() || disposed) return;
-      const failed = error => {if (!disposed && active()) say(message(error), 'error');};
-      try {void Promise.resolve(callback()).catch(failed);} catch (error) {failed(error);}
+      let ticket = generation;
+      const failed = error => {if (current(ticket)) say(message(error), 'error');};
+      try {const pending = callback(); ticket = generation; void Promise.resolve(pending).catch(failed);} catch (error) {failed(error);}
     });
     actions.append(button); return button;
   };
@@ -40,6 +42,16 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
   const jobId = field(grid, 'job_id', '任务ID（刷新后自动恢复）');
   const status = node('p', '尚未提交任务。'); status.setAttribute('role', 'status');
   const results = node('section'); results.className = 'steam-dlc-public-result';
+  const sync = () => {
+    const disabled = disposed || !active();
+    form.setAttribute('aria-busy', String(busy));
+    for (const button of form.querySelectorAll('button')) button.disabled = disabled || busy;
+    for (const input of form.querySelectorAll('input,select')) input.disabled = disabled;
+    limit.disabled = disabled || controls.limit_mode.value === 'all';
+    cancel.disabled = disabled || busy || !['queued', 'running'].includes(job?.status);
+    retry.disabled = disabled || busy || !['failed', 'cancelled', 'interrupted'].includes(job?.status);
+    next.disabled = disabled || busy || !cursor;
+  };
   const storageKey = `ygl:job:${options.context.owner}:${options.routeId}`;
   const show = value => {
     if (!value || typeof value.job_id !== 'string' || !Number.isSafeInteger(value.revision) || !['queued', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted'].includes(value.status)) throw problem('任务状态无法验证。');
@@ -47,12 +59,13 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
     try {document.defaultView.sessionStorage.setItem(storageKey, job.job_id);} catch { /* Recovery storage is optional. */ }
     const progress = job.progress || {}, summary = job.summary || {};
     const reasons = {steam_key_required: '完整库需要在可信管理页配置Steam Key，可改选公开样本。', steam_source_unavailable: 'Steam来源暂不可用，未用其他来源替代。', steam_source_not_public: 'Steam库未公开或当前来源授权受限，未视为空库。', rate_limited: '来源限流，已停止后续批次；已完成页保留。', resource_budget: '资源预算不足，已停止后续批次；已完成页保留。', metadata_incomplete: '部分作品类型尚未验证，无法完成仅游戏筛选；请稍后重试，未视为空库。'};
-    status.textContent = `任务 ${job.job_id} · ${job.status} · 来源${summary.source_returned ?? progress.source_returned ?? '待确认'} · 符合${summary.eligible ?? '待确认'} · 已选${summary.selected ?? progress.selected ?? '待确认'} · 已生成${summary.generated ?? progress.generated ?? 0} · 待处理${summary.pending ?? progress.pending ?? '待确认'} · 缺图${summary.missing_images ?? progress.missing_images ?? 0}${job.error_code ? ` · 失败原因 ${job.error_code}` : ''}${reasons[progress.reason] ? ` · ${reasons[progress.reason]}` : ''}${summary.complete_source === false ? ' · 来源覆盖不完整' : ''}`;
+    status.textContent = `任务 ${job.job_id} · ${job.status} · 来源${summary.source_returned ?? progress.source_returned ?? '待确认'} · ${summary.eligible_complete === false ? '已确认符合' : '符合'}${summary.eligible ?? '待确认'} · 已选${summary.selected ?? progress.selected ?? '待确认'} · 已生成${summary.generated ?? progress.generated ?? 0} · 待处理${summary.pending ?? progress.pending ?? '待确认'} · 缺图${summary.missing_images ?? progress.missing_images ?? 0}${job.error_code ? ` · 失败原因 ${job.error_code}` : ''}${reasons[progress.reason] ? ` · ${reasons[progress.reason]}` : ''}${summary.complete_source === false ? ' · 来源覆盖不完整' : ''}`;
     const unknown = summary.metadata_unexamined ?? progress.metadata_unexamined ?? 0;
     const metadataFailures = summary.metadata_failures ?? summary.counters?.metadata_failed ?? progress.counters?.metadata_failed ?? 0;
-    if (unknown) status.textContent += ` · 类型尚未验证${unknown}项${summary.classification_complete === false && job.status === 'succeeded' ? '（已按全部应用设置入图）' : ''}`;
+    if (unknown) status.textContent += ` · 类型尚未验证${unknown}项${summary.all_apps === true && summary.classification_complete === false && job.status === 'succeeded' ? '（已按全部应用设置入图）' : ''}`;
+    if (summary.selection_exact === true && summary.all_apps === false && unknown) status.textContent += ' · 选集排序已验证，剩余未检查';
     if (metadataFailures) status.textContent += ` · 元数据请求失败${metadataFailures}次`;
-    cancel.disabled = !['queued', 'running'].includes(job.status); retry.disabled = !['failed', 'cancelled', 'interrupted'].includes(job.status);
+    sync();
   };
   const resultPage = async pageCursor => {
     if (!job || !active()) return;
@@ -75,7 +88,7 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
       figure.append(image, download); results.append(figure);
     }
     if (!page.entries.length) results.append(node('p', '当前没有已完成结果页。'));
-    next.disabled = !cursor;
+    sync();
   };
   const poll = async () => {
     stop(); if (!job || !active() || disposed) return;
@@ -108,18 +121,29 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
         try {parameters.limit = parameters.limit_mode === 'all' ? 500 : parseLimit(limit.value);}
         catch (error) {throw problem(error.message);}
         if (parameters.mode === 'legacy' && (parameters.limit > 200 || parameters.limit_mode === 'all')) throw problem('兼容旧布局最多200项。');
-        busy = true; submit.disabled = true;
-        const idempotency = JSON.stringify([parameters.account, ...Object.keys(controls).sort().map(key => parameters[key]), parameters.limit]);
-        if (idempotency.length > 256) throw problem('账号或参数过长，无法生成任务标识。');
-        const value = await api().submit({handler_id: 'steam_wall', parameters, idempotency_key: idempotency});
+        busy = true; sync();
+        const fingerprint = JSON.stringify(parameters);
+        if (!operation || operation.fingerprint !== fingerprint) operation = {fingerprint, key: document.defaultView.crypto.randomUUID()};
+        const value = await api().submit({handler_id: 'steam_wall', parameters, idempotency_key: operation.key});
         if (!current(ticket)) return;
-        show(value); say('任务已提交，关闭页面只停止轮询。', 'success'); await poll();
+        show(value); operation = null;
+        say('任务已提交，关闭页面只停止轮询。', 'success'); await poll();
       } catch (error) {if (current(ticket)) say(message(error), 'error');}
-      finally {busy = false; if (current(ticket)) submit.disabled = false;}
+      finally {if (current(ticket)) {busy = false; sync();}}
     })();
   });
   form.append(actions); root.append(node('p', '不限覆盖来源实际返回范围。每批有资源预算，已完成页保留；关闭页面只停止轮询，取消需明确点击。'), form, status, results);
   options.presentation?.actions(actions);
+  sync();
   try {const saved = document.defaultView.sessionStorage.getItem(storageKey); if (saved) {jobId.value = saved; job = {job_id: saved}; void poll();}} catch { /* Manual recovery remains available. */ }
-  return {dispose() {if (disposed) return; disposed = true; generation += 1; stop(); revoke(); results.replaceChildren(); status.textContent = '任务页面上下文已变化，请重新进入。'; cleanups.splice(0).forEach(remove => remove());}};
+  return {
+    setAvailable(available) {
+      if (disposed) return;
+      generation += 1; resultGeneration += 1; stop(); revoke(); results.replaceChildren();
+      busy = false; operation = null; job = null; cursor = null;
+      status.textContent = available ? '页面已恢复，请手动恢复 / 刷新任务，或提交新任务。' : '任务页面暂不可用，已停止轮询；任务ID保留供恢复后查询。';
+      sync();
+    },
+    dispose() {if (disposed) return; disposed = true; generation += 1; resultGeneration += 1; busy = false; operation = null; stop(); revoke(); results.replaceChildren(); status.textContent = '任务页面上下文已变化，请重新进入。'; sync(); cleanups.splice(0).forEach(remove => remove());},
+  };
 }

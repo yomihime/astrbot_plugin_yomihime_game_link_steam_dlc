@@ -14,11 +14,17 @@ export function mountWishlistForm(root, {options, active, field, say}) {
   for (const [button, name] of [[previous, 'wishlist-previous'], [next, 'wishlist-next']]) {button.type = 'button'; button.className = 'ui-button'; button.dataset.action = name; button.disabled = true;}
   actions.append(submit, previous, next); form.append(actions);
   const results = node('section'); results.className = 'steam-dlc-public-result'; results.setAttribute('aria-live', 'polite');
+  const sync = () => {
+    submit.disabled = disposed || !active() || pending;
+    previous.disabled = submit.disabled || page <= 1; next.disabled = submit.disabled || page >= pages;
+    form.setAttribute('aria-busy', String(pending));
+    for (const input of form.querySelectorAll('input,select')) input.disabled = disposed || !active();
+  };
   const run = async requested => {
     if (!active() || disposed || pending) return;
     const parameters = {account: account.value.trim(), country: country.value.trim().toUpperCase(), language: language.value.trim(), page: requested};
     if (!parameters.account) {say('请提供明确账号。', 'error'); return;}
-    const ticket = ++generation; pending = true; submit.disabled = true;
+    const ticket = ++generation; pending = true; sync();
     try {
       const response = await options.services.invoke('wishlist_explicit', parameters);
       if (disposed || !active() || ticket !== generation) return;
@@ -42,12 +48,16 @@ export function mountWishlistForm(root, {options, active, field, say}) {
       if (data.enrichment_failed) results.append(node('p', '愿望单已读取；当前页商店补全失败，未将缺失价格视为免费。'));
       previous.disabled = page <= 1; next.disabled = page >= pages;
     } catch (error) {if (!disposed && active() && ticket === generation) {results.replaceChildren(node('p', error.publicMessage || '愿望单请求未完成，请稍后重试。')); say('愿望单查询未完成。', 'error');}}
-    finally {pending = false; if (!disposed && active() && ticket === generation) submit.disabled = false;}
+    finally {if (!disposed && ticket === generation) {pending = false; sync();}}
   };
   listen(form, 'submit', event => {event.preventDefault(); void run(1);});
   listen(previous, 'click', () => {if (page > 1) void run(page - 1);});
   listen(next, 'click', () => {if (page < pages) void run(page + 1);});
   root.append(node('p', '匿名读取第一方公开愿望单，每页20项，仅补全当前页商店资料。私有、空单、限流与请求失败分别报告。'), form, results);
   options.presentation?.actions(actions);
-  return {dispose() {if (disposed) return; disposed = true; generation += 1; results.replaceChildren(); cleanups.splice(0).forEach(remove => remove());}};
+  sync();
+  return {
+    setAvailable() {if (disposed) return; generation += 1; pending = false; page = 1; pages = 1; results.replaceChildren(); sync();},
+    dispose() {if (disposed) return; disposed = true; generation += 1; pending = false; results.replaceChildren(); sync(); cleanups.splice(0).forEach(remove => remove());},
+  };
 }

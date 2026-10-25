@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "package_id": "steam_dlc",
-  "package_version": "0.2.0-alpha.6",
+  "package_version": "0.2.0-alpha.7",
   "contract_version": "2.0",
   "author": "yomihime",
   "license": "AGPL-3.0-only",
@@ -12,7 +12,7 @@
       "route": "steam",
       "category": "platform",
       "factory_entry": "steam.module:Factory",
-      "module_version": "0.2.0-alpha.6",
+      "module_version": "0.2.0-alpha.7",
       "capabilities": [
         {
           "capability_id": "bind",
@@ -841,7 +841,7 @@
       "resources": [
         {
           "path": "pages/steam/entry.js",
-          "sha256": "875218f5e12cda29bae627001a87872755adc1e9a7f2212c2f1f2d100f8193b4"
+          "sha256": "5e8dc6c571bc6d36798b1f18ace7e7cb4c5de32cb716b946584139d73db88826"
         },
         {
           "path": "pages/steam/style.css",
@@ -1105,7 +1105,7 @@
       "route": "dota2",
       "category": "game",
       "factory_entry": "dota2.module:Factory",
-      "module_version": "0.2.0-alpha.6",
+      "module_version": "0.2.0-alpha.7",
       "capabilities": [
         {
           "capability_id": "recent",
@@ -1775,7 +1775,7 @@
       "resources": [
         {
           "path": "pages/dota2/entry.js",
-          "sha256": "875218f5e12cda29bae627001a87872755adc1e9a7f2212c2f1f2d100f8193b4"
+          "sha256": "5e8dc6c571bc6d36798b1f18ace7e7cb4c5de32cb716b946584139d73db88826"
         },
         {
           "path": "pages/dota2/style.css",
@@ -1840,7 +1840,7 @@
       "route": "cs2",
       "category": "game",
       "factory_entry": "cs2.module:Factory",
-      "module_version": "0.2.0-alpha.6",
+      "module_version": "0.2.0-alpha.7",
       "capabilities": [
         {
           "capability_id": "status",
@@ -2453,7 +2453,7 @@
       "resources": [
         {
           "path": "pages/cs2/entry.js",
-          "sha256": "875218f5e12cda29bae627001a87872755adc1e9a7f2212c2f1f2d100f8193b4"
+          "sha256": "5e8dc6c571bc6d36798b1f18ace7e7cb4c5de32cb716b946584139d73db88826"
         },
         {
           "path": "pages/cs2/style.css",
@@ -2522,7 +2522,7 @@
       "route": "deadlock",
       "category": "game",
       "factory_entry": "deadlock.module:Factory",
-      "module_version": "0.2.0-alpha.6",
+      "module_version": "0.2.0-alpha.7",
       "capabilities": [
         {
           "capability_id": "status",
@@ -2948,7 +2948,7 @@
       "resources": [
         {
           "path": "pages/deadlock/entry.js",
-          "sha256": "875218f5e12cda29bae627001a87872755adc1e9a7f2212c2f1f2d100f8193b4"
+          "sha256": "5e8dc6c571bc6d36798b1f18ace7e7cb4c5de32cb716b946584139d73db88826"
         },
         {
           "path": "pages/deadlock/style.css",
