@@ -200,8 +200,16 @@ async def load_full(scope, target, *, credential_revision=0, cache=True, refresh
     request = webapi.request("games", target)
     response = await scope.http.fetch(request)
     if response.status_code == 429:
+        retry = _header(response, "retry-after")
+        retry = (
+            int(retry)
+            if retry.isascii() and retry.isdecimal() and len(retry) <= 5
+            else None
+        )
         raise QueryFailure(
-            ygl.ErrorCode.RATE_LIMITED, "Steam 完整库来源限流，请稍后重试。"
+            ygl.ErrorCode.RATE_LIMITED,
+            "Steam 完整库来源限流，请稍后重试。",
+            retry if retry is not None and 0 <= retry <= 86400 else None,
         )
     if response.status_code in (401, 403):
         raise QueryFailure(

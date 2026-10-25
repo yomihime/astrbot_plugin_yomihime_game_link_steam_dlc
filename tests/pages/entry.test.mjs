@@ -1139,7 +1139,7 @@ test('CS2 consumes actual frozen-Core Gateway serialized profile/recent/stats/la
   assert.deepEqual(fixtures.map(row => row.action).sort(), ['last', 'match', 'profile', 'recent', 'stats']);
   for (const {name, action, response} of fixtures) {
     const projection = response.document.blocks.find(block => block.kind === 'fields' && block.fields?.cs2).fields.cs2;
-    const f = fixture({moduleId: 'cs2', routeId: 'query', invoke: async (_id, parameters) => parameters.action ? clone(response) : cacheResponse()});
+    const f = fixture({moduleId: 'cs2', routeId: 'query', invoke: async (_id, parameters) => parameters.action ? clone(response) : cacheResponse(), preview: async () => ({...clone(response), image_state: 'none', images: []})});
     try {
       await settle(); f.input('account', projection.target?.id || '76561197960265851'); f.input('action', action);
       if (action === 'match') f.input('match_id', projection.data.match_id);

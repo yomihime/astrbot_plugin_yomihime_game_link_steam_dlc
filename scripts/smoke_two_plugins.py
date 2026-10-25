@@ -6,10 +6,14 @@ command ingress and management HTTP routes are real. Events use an official
 AstrMessageEvent subclass with an in-memory delivery sink. Only outbound HTTPS
 response bytes are fixtures; this is neither real IM nor a live OpenDota check.
 Run each installation order in a separate process and a new --work-root.
+For current final ZIPs, --install-smoke installs core-first and approves the
+exact manifest through Dashboard; rerun with --restart-check in another process
+to verify cold activation. Its protected private data stays under .local-dev.
 """
 
 import argparse
 import asyncio
+import base64
 import builtins
 import hashlib
 import importlib.metadata
@@ -58,6 +62,11 @@ parser.add_argument(
     help="Optional canonical offline NotoSansCJKsc-Regular.otf fixture",
 )
 parser.add_argument(
+    "--install-smoke",
+    action="store_true",
+    help="Narrow final-ZIP core-first install/approval, then separate-process restart check",
+)
+parser.add_argument(
     "--restart-check",
     action="store_true",
     help="Reopen only a root carrying this harness's exact marker and archive hashes",
@@ -97,6 +106,15 @@ if (
 ):
     parser.error("Offline font hash is not canonical")
 root = args.work_root.absolute()
+if args.install_smoke:
+    if args.order != "core-first" or args.cleanup_private_storage:
+        parser.error("Install smoke requires core-first and retained private storage")
+    try:
+        root.resolve().relative_to(Path(__file__).resolve().parents[1] / ".local-dev")
+    except ValueError:
+        parser.error(
+            "Install smoke work-root must remain under this checkout's .local-dev"
+        )
 if not args.restart_check and (root.exists() or root.is_symlink()):
     parser.error("--work-root must be a new nonexistent disposable directory")
 if root.is_symlink():
@@ -106,7 +124,9 @@ archive_hashes = {
     for name, path in archives.items()
 }
 marker = {
-    "harness": "steam-two-plugins-v1",
+    "harness": "steam-two-plugins-install-v1"
+    if args.install_smoke
+    else "steam-two-plugins-v1",
     "root": str(root),
     "archives": archive_hashes,
 }
@@ -117,10 +137,26 @@ if args.restart_check:
         )
     except (OSError, ValueError):
         parser.error("Restart is restricted to a marked synthetic Host root")
+    mutable_marker_fields = {"private_base"}
+    if args.install_smoke:
+        mutable_marker_fields |= {
+            "install_pid",
+            "install_completed",
+            "approval_revision",
+        }
     if {
-        key: value for key, value in previous_marker.items() if key != "private_base"
+        key: value
+        for key, value in previous_marker.items()
+        if key not in mutable_marker_fields
     } != marker:
         parser.error("Restart marker/root/archive hashes do not match")
+    if args.install_smoke and (
+        previous_marker.get("install_completed") is not True
+        or previous_marker.get("install_pid") == os.getpid()
+    ):
+        parser.error(
+            "Install smoke restart requires a completed install in a different process"
+        )
     marker = previous_marker
 if not (host_source / "astrbot/dashboard/server.py").is_file():
     parser.error("--host-source must be an official AstrBot checkout")
@@ -189,6 +225,8 @@ result = {
     "executable": sys.executable,
     "dependency_sites": [str(path) for path in dependency_sites],
     "order": args.order,
+    "mode": "install-smoke" if args.install_smoke else "historical-matrix",
+    "pid": os.getpid(),
     "root": str(root),
     "archives": {
         name: {
@@ -227,20 +265,44 @@ def isolated_core_import(name, globals=None, locals=None, fromlist=(), level=0):
         native = importlib.import_module(
             "data.plugins." + CORE + ".infrastructure.windows.private_storage"
         )
-        identity_base = native.identity_private_base()
+        identity_base = root if args.install_smoke else native.identity_private_base()
         if synthetic_private_base is None:
-            storage_name = "ygl-host-acceptance-" + uuid.uuid4().hex
-            synthetic_private_base = native.create_private_directory(
-                identity_base, storage_name
+            storage_name = (
+                "install-smoke-private"
+                if args.install_smoke
+                else "ygl-host-acceptance-" + uuid.uuid4().hex
             )
+            try:
+                synthetic_private_base = native.create_private_directory(
+                    identity_base, storage_name
+                )
+            except Exception as error:
+                result["private_storage_blocker"] = {
+                    "parent": str(identity_base),
+                    "new_child": storage_name,
+                    "type": type(error).__name__,
+                    "message": str(error),
+                    "existing_acl_changes": False,
+                    "fallback_used": False,
+                }
+                raise
             marker["private_base"] = str(synthetic_private_base)
             (root / "synthetic-root.json").write_text(
                 json.dumps(marker), encoding="utf-8"
             )
-        assert (
-            synthetic_private_base.parent == identity_base
-            and synthetic_private_base.name.startswith("ygl-host-acceptance-")
+        assert synthetic_private_base.parent == identity_base and (
+            synthetic_private_base.name == "install-smoke-private"
+            if args.install_smoke
+            else synthetic_private_base.name.startswith("ygl-host-acceptance-")
         )
+        if args.install_smoke:
+            # Reopen through the same production guard; never repair an existing ACL.
+            assert (
+                native.create_private_directory(
+                    identity_base, synthetic_private_base.name
+                )
+                == synthetic_private_base
+            )
         original_resolver = module.resolve_private_storage
         module.resolve_private_storage = lambda path: original_resolver(
             path, private_base=synthetic_private_base
@@ -615,6 +677,246 @@ async def command(runtime, text, **identity):
         }
     )
     return rendered, event
+
+
+async def install_smoke():
+    """Exact current ZIPs and normal trusted approval, without historical fixtures."""
+    astrbot_config["disable_metrics"] = True
+    astrbot_config["provider"] = []
+    astrbot_config["provider_sources"] = []
+    astrbot_config["platform"] = []
+    astrbot_config["dashboard"]["jwt_secret"] = (
+        "synthetic-two-plugin-acceptance-key-over-32-bytes"
+    )
+    astrbot_config.save_config()
+    host = AstrBotCoreLifecycle(LogBroker(), db_helper)
+    try:
+        await host.initialize()
+
+        async def synthetic_context_send(session, chain):
+            result.setdefault("private_im_sink", []).append(
+                {"session": str(session), "components": len(chain.chain)}
+            )
+            return True
+
+        host.star_context.send_message = synthetic_context_send
+
+        def star(name):
+            metadata = host.star_context.get_registered_star(name)
+            assert metadata is not None and metadata.activated, name
+            assert metadata.star_cls is not None, name
+            return metadata.star_cls
+
+        if not args.restart_check:
+            marker["install_pid"] = os.getpid()
+            for name in (CORE, DLC):
+                disposable = root / (name + ".zip")
+                shutil.copy2(archives[name], disposable)
+                installed = await host.plugin_manager.install_plugin_from_file(
+                    str(disposable), ignore_version_check=False
+                )
+                result.setdefault("install", {})[name] = installed
+                star(name)
+            passed("install-smoke-real-plugin-manager-core-first")
+
+        # Prove every shipped source/resource byte in both installs is the ZIP byte.
+        for name, archive in archives.items():
+            destination = root / "data/plugins" / name
+            with zipfile.ZipFile(archive) as bundle:
+                for member in bundle.infolist():
+                    if member.is_dir():
+                        continue
+                    installed_path = (destination / member.filename).resolve(
+                        strict=True
+                    )
+                    installed_path.relative_to(destination.resolve())
+                    assert installed_path.read_bytes() == bundle.read(member), (
+                        member.filename
+                    )
+        passed("install-smoke-installed-archive-members-exact")
+        runtime, dlc = star(CORE)._runtime, star(DLC)
+        assert runtime.ready, result.get("private_storage_blocker")
+        sdk = sys.modules["yomihime_game_link_sdk"]
+        sdk_root = Path(sdk.__file__).resolve().parent
+        sdk_root.relative_to((root / "data/plugins" / CORE).resolve())
+        assert sdk.__version__ == "0.1.0a22"
+        for name, module in tuple(sys.modules.items()):
+            if name == "yomihime_game_link_sdk" or name.startswith(
+                "yomihime_game_link_sdk."
+            ):
+                Path(module.__file__).resolve().relative_to(sdk_root)
+        result["sdk_version"], result["sdk_origin"] = sdk.__version__, str(sdk_root)
+        passed("install-smoke-canonical-sdk-a22")
+
+        with zipfile.ZipFile(archives[DLC]) as bundle:
+            manifest_raw = bundle.read("packages/steam_dlc/yomihime.manifest.json")
+            manifest = json.loads(manifest_raw)
+            policy = json.loads(
+                bundle.read("packages/steam_dlc/yomihime.source-policy.json")
+            )
+            package_files = {
+                item.filename.removeprefix("packages/steam_dlc/"): bundle.read(item)
+                for item in bundle.infolist()
+                if item.filename.startswith("packages/steam_dlc/") and not item.is_dir()
+            }
+        manifest_digest = hashlib.sha256(manifest_raw).hexdigest()
+        dashboard = AstrBotDashboard(host, db_helper, asyncio.Event())
+        token = dashboard.asgi_app.state.services.auth.generate_jwt("synthetic-admin")
+        headers = {"Authorization": "Bearer " + token, "Origin": "https://test.invalid"}
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(dashboard.asgi_app),
+            base_url="https://test.invalid",
+            follow_redirects=True,
+        ) as client:
+            base = "/api/v1/plugins/extensions/" + CORE + "/"
+
+            async def api(endpoint, body=None, *, public=False):
+                path = base + ("" if public else "admin/") + endpoint
+                response = (
+                    await client.get(path, headers=headers)
+                    if public
+                    else await client.post(path, headers=headers, json=body or {})
+                )
+                assert response.status_code == 200, (
+                    path,
+                    response.status_code,
+                    response.text,
+                )
+                value = response.json()
+                assert value.get("status") == "ok", (path, value)
+                result.setdefault("management_paths", []).append(path)
+                return value["data"]
+
+            identity = {"plugin_name": DLC, "package_id": "steam_dlc"}
+            plan = await api("module-install-plan", identity)
+            assert plan["manifest_digest"] == manifest_digest, plan
+            assert plan["plugin_name"] == DLC and plan["package_id"] == "steam_dlc"
+            assert re.fullmatch(r"[0-9a-f]{64}", plan["plan_id"]), plan
+            assert plan["source_policy"] == {
+                key: value for key, value in policy.items() if key != "schema_version"
+            }, plan
+            avatar = plan["permissions"]["cs2"]["sources"]["perfect_avatar"]
+            assert (
+                avatar["host"] == "img.wmpvp.com" and avatar["credential_ref"] is None
+            ), avatar
+            assert not any(
+                item.get("source") == "perfect_avatar"
+                for item in plan["source_policy"].get("credentials", [])
+            ), plan
+            result["installation_plan"] = plan
+            if not args.restart_check:
+                assert plan["expected_revision"] == 0, plan
+                approval = await api(
+                    "module-install-approve",
+                    identity
+                    | {
+                        "plan_id": plan["plan_id"],
+                        "expected_revision": plan["expected_revision"],
+                    },
+                )
+                assert approval["revision"] == plan["expected_revision"] + 1
+                assert approval["restart_required"] is True
+                result["installation_approval"] = approval
+                marker["approval_revision"] = approval["revision"]
+                marker["install_completed"] = True
+                passed("install-smoke-trusted-exact-manifest-plan-cas-approved")
+                return  # Real Host stops below; only a new OS process may validate activation.
+
+            assert plan["expected_revision"] == marker["approval_revision"], plan
+            assert dlc.connection_state == "connected", dlc.connection_state
+            assert all(
+                runtime.core_runtime.registry.is_active(name)
+                for name in (*MODULES, "ff14/ff14")
+            ), health_snapshot(runtime)
+            passed("install-smoke-cold-process-approved-five-modules")
+            attach_transport(runtime)
+            for route in ("steam", "dota2", "cs2", "deadlock", "ff14"):
+                output, _ = await command(runtime, "/ygl " + route + " help")
+                assert output and "未找到模块" not in output, (route, output)
+            passed("install-smoke-five-module-help")
+            for text, expected in (
+                (
+                    "/ygl steam wall 76561197960265729 --source full",
+                    ("Steam Key", "可信"),
+                ),
+                (
+                    "/ygl cs2 profile 76561197960265729 --platform perfect",
+                    ("此来源需要授权", "管理员", "请勿在聊天中发送凭据"),
+                ),
+                (
+                    "/ygl cs2 profile fixture-domain --platform 5e",
+                    ("此来源需要授权", "管理员", "请勿在聊天中发送凭据"),
+                ),
+            ):
+                before = len(transport_calls)
+                output, _ = await command(runtime, text)
+                assert all(part in output for part in expected), (text, output)
+                assert len(transport_calls) == before, text
+            passed("install-smoke-missing-steam-perfect-fivee-credentials-no-http")
+            for endpoint in ("modules", "catalog", "read"):
+                result.setdefault("management", {})[endpoint] = await api(endpoint)
+            catalog = await api("catalog", public=True)
+            result["management"]["public_catalog"] = catalog
+            modules = [row for row in catalog["modules"] if row["module_id"] in MODULES]
+            assert {row["module_id"] for row in modules} == set(MODULES)
+            page_records = []
+            for module in modules:
+                declared = next(
+                    row
+                    for row in manifest["modules"]
+                    if "steam_dlc/" + row["module_id"] == module["module_id"]
+                )
+                for page in module["pages"]:
+                    route = page.get("route_id", page.get("id"))
+                    binding = {
+                        "owner": module["module_id"],
+                        "page": route,
+                        "runtime_id": module["runtime_id"],
+                        "module_epoch": module["module_epoch"],
+                    }
+                    assets = await api("module-page-assets", binding)
+                    declaration = next(
+                        row for row in declared["pages"] if row["route_id"] == route
+                    )
+                    assert assets["entry"] == declaration["entry"]
+                    assert assets["asset_version"] == manifest_digest
+                    assert {
+                        row["path"]: row["sha256"] for row in assets["resources"]
+                    } == {row["path"]: row["sha256"] for row in declared["resources"]}
+                    for item in assets["resources"]:
+                        raw = base64.b64decode(item["base64"], validate=True)
+                        assert raw == package_files[item["path"]]
+                        assert hashlib.sha256(raw).hexdigest() == item["sha256"]
+                    session = await api("module-page-session", binding)
+                    assert (
+                        isinstance(session["page_session"], str)
+                        and session["page_session"]
+                    )
+                    await api(
+                        "module-page-session-close",
+                        {"page_session": session["page_session"]},
+                    )
+                    page_records.append(
+                        {
+                            "owner": binding["owner"],
+                            "page": route,
+                            "entry": assets["entry"],
+                            "resources": len(assets["resources"]),
+                        }
+                    )
+            result["management"]["pages"] = page_records
+            passed(
+                "install-smoke-real-management-page-sessions-and-exact-zip-resources"
+            )
+            assert not transport_calls, transport_calls
+            passed("install-smoke-no-live-network-model-or-im")
+    finally:
+        await host.stop()
+        result["host_stopped"] = True
+        if not args.restart_check and marker.get("install_completed") is True:
+            (root / "synthetic-root.json").write_text(
+                json.dumps(marker), encoding="utf-8"
+            )
 
 
 async def main():
@@ -1089,7 +1391,7 @@ async def main():
 
 if __name__ == "__main__":
     try:
-        runner.run(main())
+        runner.run(install_smoke() if args.install_smoke else main())
     except BaseException as error:
         checks.append(
             {
@@ -1139,6 +1441,30 @@ if __name__ == "__main__":
                 "no-post-no-live-network",
             ]
         )
+        if args.install_smoke:
+            expected_checks = [
+                "install-smoke-installed-archive-members-exact",
+                "install-smoke-canonical-sdk-a22",
+            ] + (
+                [
+                    "install-smoke-cold-process-approved-five-modules",
+                    "install-smoke-five-module-help",
+                    "install-smoke-missing-steam-perfect-fivee-credentials-no-http",
+                    "install-smoke-real-management-page-sessions-and-exact-zip-resources",
+                    "install-smoke-no-live-network-model-or-im",
+                ]
+                if args.restart_check
+                else [
+                    "install-smoke-real-plugin-manager-core-first",
+                    "install-smoke-trusted-exact-manifest-plan-cas-approved",
+                ]
+            )
+            result["unrun"] += [
+                "real model generation",
+                "OS reboot",
+                "production disk recovery",
+                "synthetic binding persistence across cold processes",
+            ]
         if args.order == "dlc-first" and not args.restart_check:
             expected_checks.append("dlc-first-waiting-without-sdk-or-poll")
         for expected in expected_checks:

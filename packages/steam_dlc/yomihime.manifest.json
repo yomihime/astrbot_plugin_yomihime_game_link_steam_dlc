@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "package_id": "steam_dlc",
-  "package_version": "0.2.0-alpha.7",
+  "package_version": "0.2.0-beta.1",
   "contract_version": "2.0",
   "author": "yomihime",
   "license": "AGPL-3.0-only",
@@ -12,7 +12,7 @@
       "route": "steam",
       "category": "platform",
       "factory_entry": "steam.module:Factory",
-      "module_version": "0.2.0-alpha.7",
+      "module_version": "0.2.0-beta.1",
       "capabilities": [
         {
           "capability_id": "bind",
@@ -841,7 +841,7 @@
       "resources": [
         {
           "path": "pages/steam/entry.js",
-          "sha256": "e23a30b09bb545149ff5f08744e934dda5d7c929e3fbd9f200e6fe68af53f430"
+          "sha256": "357f0de7eb07384aaebbda5e8016cd154ec10df1d92d380da1529637b761cebb"
         },
         {
           "path": "pages/steam/style.css",
@@ -1105,7 +1105,7 @@
       "route": "dota2",
       "category": "game",
       "factory_entry": "dota2.module:Factory",
-      "module_version": "0.2.0-alpha.7",
+      "module_version": "0.2.0-beta.1",
       "capabilities": [
         {
           "capability_id": "recent",
@@ -1775,7 +1775,7 @@
       "resources": [
         {
           "path": "pages/dota2/entry.js",
-          "sha256": "e23a30b09bb545149ff5f08744e934dda5d7c929e3fbd9f200e6fe68af53f430"
+          "sha256": "357f0de7eb07384aaebbda5e8016cd154ec10df1d92d380da1529637b761cebb"
         },
         {
           "path": "pages/dota2/style.css",
@@ -1840,7 +1840,7 @@
       "route": "cs2",
       "category": "game",
       "factory_entry": "cs2.module:Factory",
-      "module_version": "0.2.0-alpha.7",
+      "module_version": "0.2.0-beta.1",
       "capabilities": [
         {
           "capability_id": "status",
@@ -1886,7 +1886,8 @@
           "effect": "read_only",
           "required_sources": [
             "perfect_api",
-            "fivee_api"
+            "fivee_api",
+            "perfect_avatar"
           ],
           "required_capabilities": [
             {
@@ -1928,7 +1929,8 @@
           "effect": "read_only",
           "required_sources": [
             "perfect_api",
-            "fivee_api"
+            "fivee_api",
+            "perfect_avatar"
           ]
         },
         {
@@ -2296,7 +2298,8 @@
           "effect": "read_only",
           "required_sources": [
             "perfect_api",
-            "fivee_api"
+            "fivee_api",
+            "perfect_avatar"
           ]
         }
       ],
@@ -2453,7 +2456,7 @@
       "resources": [
         {
           "path": "pages/cs2/entry.js",
-          "sha256": "e23a30b09bb545149ff5f08744e934dda5d7c929e3fbd9f200e6fe68af53f430"
+          "sha256": "357f0de7eb07384aaebbda5e8016cd154ec10df1d92d380da1529637b761cebb"
         },
         {
           "path": "pages/cs2/style.css",
@@ -2483,6 +2486,12 @@
         {
           "source_id": "fivee_account",
           "host": "app.5eplay.com",
+          "timeout_seconds": 8,
+          "requests_per_minute": 30
+        },
+        {
+          "source_id": "perfect_avatar",
+          "host": "img.wmpvp.com",
           "timeout_seconds": 8,
           "requests_per_minute": 30
         }
@@ -2522,7 +2531,7 @@
       "route": "deadlock",
       "category": "game",
       "factory_entry": "deadlock.module:Factory",
-      "module_version": "0.2.0-alpha.7",
+      "module_version": "0.2.0-beta.1",
       "capabilities": [
         {
           "capability_id": "status",
@@ -2948,7 +2957,7 @@
       "resources": [
         {
           "path": "pages/deadlock/entry.js",
-          "sha256": "e23a30b09bb545149ff5f08744e934dda5d7c929e3fbd9f200e6fe68af53f430"
+          "sha256": "357f0de7eb07384aaebbda5e8016cd154ec10df1d92d380da1529637b761cebb"
         },
         {
           "path": "pages/deadlock/style.css",

@@ -5,6 +5,7 @@ import shlex
 from collections.abc import Mapping
 
 import yomihime_game_link_sdk as ygl
+from yomihime_game_link_sdk import cards
 from yomihime_game_link_sdk.contexts import InvocationOrigin
 from yomihime_game_link_sdk.declarations import CapabilityReference
 from yomihime_game_link_sdk.errors import (
@@ -17,6 +18,7 @@ from yomihime_game_link_sdk.storage import SecretMetadataState
 
 from ..shared.output import failure
 from ..shared.steam_ids import account_id32
+from .avatar import avatar_asset
 from .contracts import (
     PLATFORMS,
     PROVIDERS,
@@ -206,12 +208,20 @@ class _Query:
                 projection = await provider.last(target)
             else:
                 projection = await provider.match(match_id, target=target, focus=focus)
+            avatar = (
+                await avatar_asset(
+                    scope, projection["data"].get("avatar_url"), platform=platform
+                )
+                if self.operation == "profile"
+                else None
+            )
             return _result(
                 _LABELS[platform],
                 projection,
                 _lines(projection),
                 model_facts=not default_target,
                 private=default_target,
+                avatar=avatar,
             )
         except _IdentityFailure as error:
             return failure(error.code, error.message, privacy=ygl.Privacy.PRIVATE)
@@ -505,8 +515,20 @@ def _display_projection(value):
     return value
 
 
-def _result(title, projection, lines, *, model_facts=True, private=False):
+def _result(title, projection, lines, *, model_facts=True, private=False, avatar=None):
     privacy = ygl.Privacy.PRIVATE if private else ygl.Privacy.PUBLIC
+    lines = tuple(lines)
+    card = None
+    if projection.get("kind") == "profile":
+        panels: tuple[cards.Block, ...] = tuple(cards.Text(line) for line in lines)
+        if avatar is not None:
+            panels = (cards.Image(avatar, width=96, height=96),) + panels
+        card = cards.Document(
+            f"CS2 · {title}",
+            panels,
+            brand="游戏连结 · CS2",
+            sources=(f"来源：{title}",),
+        )
     return ygl.CapabilityResult(
         result_id="steam-dlc-cs2",
         status=ygl.ResultStatus.SUCCESS,
@@ -518,6 +540,7 @@ def _result(title, projection, lines, *, model_facts=True, private=False):
                 ygl.FieldsBlock({"cs2": _display_projection(projection)}),
             ),
             privacy=privacy,
+            card=card,
         ),
         model_facts=ygl.FactDocument(compact_facts(projection))
         if model_facts

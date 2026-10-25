@@ -16,7 +16,9 @@ Steam主页最多两次匿名同源GET跳转，仅允许profiles/id路径；最�
 
 CS2数据保留provider/platform/target/season/fetched_at/coverage/detail_level/field_availability。官方与5E单场可能只覆盖近期摘要；缺项不从其他平台拼凑。旧Leetify DTO/UUID/gate已退休，旧配置和绑定不清空，不通过其他来源绕过旧供应方限制。正常家庭出站、切换出口后的会话、IPv6-only须分别实测，不给统一线上保证。
 
-OpenDota滚动RPH由Core按受信host共享并持久化，默认100，可配置正整数；空值恢复默认、0非法。RPM与429 Retry-After同时生效，缓存命中不计、实际重试计数。Key配置不自动放大额度。源码默认不代表线上商业套餐承诺。
+CS2资料头像为可选公开素材，仅使用已观察并限制到指定 CDN host/path 的 Perfect 图片来源，不发送 Perfect 或 5E 凭据；缺失、来源拒绝或图片无效时仍显示文字资料。未验证 5E 头像来源，不猜测其图床。
+
+OpenDota滚动RPH由Core按受信host共享并持久化，默认100，可配置正整数；空值恢复默认、0非法。以每个唯一玩家每5分钟轮询一次估算，约12次列表请求/小时；8个唯一玩家约96次，尚未包括详情、手动查询与重试。跨群同玩家共享采集。这只是预算示例，不是吞吐保证或硬上限。RPM与429 Retry-After同时生效，缓存命中不计、实际重试计数。Key配置不自动放大额度。源码默认不代表线上商业套餐承诺。
 
 来源合同：
 

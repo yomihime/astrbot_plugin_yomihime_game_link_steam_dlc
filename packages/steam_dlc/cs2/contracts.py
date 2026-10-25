@@ -14,10 +14,6 @@ from ..shared.steam_ids import parse_steam_id
 SCHEMA_VERSION = "cs2.platform.v1"
 PLATFORMS = ("perfect", "official", "5e")
 PROVIDERS = {"perfect": "perfect_world", "official": "perfect_world", "5e": "5eplay"}
-REFERENCE = "https://github.com/Agnes4m/CS2UID"
-# Temporary imports for module.py until its secure adapter is integrated.
-ATTRIBUTION = "CS2UID protocol reference (GPL-3.0)"
-GUIDELINES = REFERENCE
 _DOMAIN = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 _MATCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9_@.-]{0,127}\Z")
 _UUID = re.compile(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\Z")
