@@ -229,6 +229,7 @@
             "status"
           ],
           "pending_values": [
+            0,
             1
           ],
           "success_values": [

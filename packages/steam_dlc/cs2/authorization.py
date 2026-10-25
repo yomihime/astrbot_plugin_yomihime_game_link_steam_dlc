@@ -28,7 +28,7 @@ PERFECT_QR_FLOW = {
         "url_query": "accessToken",
     },
     "state_path": ["result", "status"],
-    "pending_values": [1],
+    "pending_values": [0, 1],
     "success_values": [2],
     "expired_values": [3],
     "success_captures": [
