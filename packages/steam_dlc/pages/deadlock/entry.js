@@ -348,6 +348,7 @@ function m(e, { options: t, active: n, field: r, renderResult: i, say: a }) {
 			a("请提供有效比赛ID和明确焦点玩家。", "error");
 			return;
 		}
+		a("");
 		let o = ++l;
 		u = !0, _.disabled = !0, y.replaceChildren(d("p", "正在读取公开结算与可用时间线。"));
 		try {

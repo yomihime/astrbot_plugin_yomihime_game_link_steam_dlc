@@ -15,6 +15,7 @@ export function mountAnalysisForm(root, {options, active, field, renderResult, s
     event.preventDefault(); if (!active() || disposed || busy) return;
     const parameters = {match_id: match.value.trim(), account: account.value.trim(), refresh: refresh.value === 'true'};
     if (!/^[1-9][0-9]{0,19}$/u.test(parameters.match_id) || !parameters.account) {say('请提供有效比赛ID和明确焦点玩家。', 'error'); return;}
+    say('');
     const ticket = ++generation; busy = true; submit.disabled = true; result.replaceChildren(node('p', '正在读取公开结算与可用时间线。'));
     try {
       const response = await options.services.invoke('analyze_explicit', parameters);

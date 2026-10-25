@@ -1202,6 +1202,69 @@ test('job previews are immediately revoked on owner boundary change', async () =
   } finally {f.close();}
 });
 
+function analysisResponse(status) {
+  if (status === 'error') return {...cacheResponse(), status, document: null,
+    error: {code: 'module_unavailable', message: '查询未完成，请检查输入或稍后重试。'}};
+  return {...cacheResponse(), status, document: {blocks: [{kind: 'text', text: '来源未提供团战时间线。'}]},
+    model_facts: {data_completeness: 'settlement_only', focus: {account_id32: '456', name: 'Focus'},
+      missing_sections: ['teamfights'], source: 'opendota', fetched_at: '2026-01-01T00:00:00Z'}};
+}
+
+for (const status of ['error', 'partial_success']) {
+  test(`Dota analysis clears stale validation before pending ${status}, renders the result and permits retry`, async () => {
+    let pending = deferred();
+    const response = analysisResponse(status);
+    const f = fixture({moduleId: 'dota2', routeId: 'analysis', invoke: () => pending.promise});
+    try {
+      f.submit(); await settle();
+      assert.match(f.text(), /请提供有效比赛ID和明确焦点玩家/);
+      assert.equal(f.calls.length, 0, 'empty input must not query a source');
+      f.input('match_id', '0'); f.input('account', 'Focus'); f.submit(); await settle();
+      assert.match(f.text(), /请提供有效比赛ID和明确焦点玩家/);
+      assert.equal(f.calls.length, 0, 'invalid input must not query a source');
+      f.input('match_id', '12345'); f.submit(); await settle();
+      assert.deepEqual(f.calls, [['invoke', 'analyze_explicit', {match_id: '12345', account: 'Focus', refresh: false}]]);
+      assert.doesNotMatch(f.text(), /请提供有效比赛ID和明确焦点玩家/);
+      const result = f.container.querySelector('.steam-dlc-public-result');
+      const button = f.container.querySelector('[data-action=analysis-query]');
+      assert.match(result.textContent, /正在读取公开结算与可用时间线/);
+      assert.equal(button.disabled, true);
+      f.submit(); assert.equal(f.calls.length, 1, 'pending requests remain single flight');
+      pending.resolve(response); await settle();
+      assert.doesNotMatch(f.text(), /请提供有效比赛ID和明确焦点玩家|正在读取公开结算与可用时间线/);
+      assert.match(result.textContent, status === 'error' ? /查询未完成/ : /仅基础结算.*来源未提供团战时间线/);
+      assert.equal(button.disabled, false);
+      pending = deferred(); f.input('match_id', '67890'); f.submit(); await settle();
+      assert.deepEqual(f.calls.at(-1), ['invoke', 'analyze_explicit', {match_id: '67890', account: 'Focus', refresh: false}]);
+      assert.equal(f.calls.length, 2);
+      assert.match(result.textContent, /正在读取公开结算与可用时间线/);
+      pending.resolve(response); await settle();
+      assert.doesNotMatch(f.text(), /请提供有效比赛ID和明确焦点玩家/);
+      assert.equal(button.disabled, false);
+    } finally {pending.resolve(response); f.close();}
+  });
+}
+
+for (const key of ['owner', 'runtimeId']) {
+  test(`Dota analysis fences late results and retry after ${key} revocation`, async () => {
+    const pending = deferred();
+    const f = fixture({moduleId: 'dota2', routeId: 'analysis', invoke: () => pending.promise});
+    try {
+      f.input('match_id', '12345'); f.input('account', 'Focus'); f.submit(); await settle();
+      assert.equal(f.calls.length, 1);
+      f.page.update({...f.context, [key]: 'revoked-analysis-context'});
+      const before = f.container.innerHTML;
+      const response = analysisResponse('partial_success');
+      response.document.blocks.push({kind: 'text', text: 'Late analysis must not appear'});
+      pending.resolve(response); await settle();
+      assert.equal(f.container.innerHTML, before);
+      assert.doesNotMatch(f.text(), /Late analysis must not appear|ID32 456/);
+      f.submit(); await settle();
+      assert.equal(f.calls.length, 1, 'revoked context cannot start another query');
+    } finally {pending.resolve(analysisResponse('error')); f.close();}
+  });
+}
+
 test('Dota analysis page shows focus, settlement-only completeness and missing sections without inventing values', async () => {
   const f = fixture({moduleId: 'dota2', routeId: 'analysis', invoke: async (id, parameters) => {
     assert.equal(id, 'analyze_explicit'); assert.deepEqual(parameters, {match_id: '12345', account: 'Focus', refresh: false});
