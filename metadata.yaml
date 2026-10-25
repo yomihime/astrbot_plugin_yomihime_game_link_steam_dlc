@@ -1,0 +1,7 @@
+name: astrbot_plugin_yomihime_game_link_steam_dlc
+display_name: 如月怜的游戏连结：Steam DLC
+desc: Steam 完整库与生涯拼图、Dota 比赛订阅、CS2 完美/官匹/5E 查询；可选安全凭据。
+version: v0.2.0-alpha.6
+author: yomihime
+repo: https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc
+astrbot_version: ">=4.29.1"

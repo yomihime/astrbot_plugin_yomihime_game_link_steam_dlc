@@ -1,0 +1,281 @@
+{
+  "schema_version": 1,
+  "credentials": [
+    {
+      "owner": "steam_dlc/steam",
+      "source": "steam_api",
+      "field": "credential_steam_key",
+      "group": "steam_key",
+      "description": "部署者Steam Web API Key",
+      "optional": false,
+      "injections": [
+        {
+          "path": "/ISteamUser/GetPlayerSummaries/v2/",
+          "method": "GET",
+          "location": "header",
+          "name": "x-webapi-key",
+          "field": "token",
+          "prefix": ""
+        },
+        {
+          "path": "/IPlayerService/GetSteamLevel/v1/",
+          "method": "GET",
+          "location": "header",
+          "name": "x-webapi-key",
+          "field": "token",
+          "prefix": ""
+        },
+        {
+          "path": "/IPlayerService/GetRecentlyPlayedGames/v1/",
+          "method": "GET",
+          "location": "header",
+          "name": "x-webapi-key",
+          "field": "token",
+          "prefix": ""
+        },
+        {
+          "path": "/IPlayerService/GetOwnedGames/v1/",
+          "method": "GET",
+          "location": "header",
+          "name": "x-webapi-key",
+          "field": "token",
+          "prefix": ""
+        }
+      ]
+    },
+    {
+      "owner": "steam_dlc/dota2",
+      "source": "opendota",
+      "field": "credential_opendota_key",
+      "group": "opendota_key",
+      "description": "可选OpenDota Key",
+      "optional": true,
+      "injections": [
+        {
+          "path": "/api/players/*",
+          "method": "GET",
+          "location": "header",
+          "name": "Authorization",
+          "field": "token",
+          "prefix": "Bearer "
+        },
+        {
+          "path": "/api/players/*/matches",
+          "method": "GET",
+          "location": "header",
+          "name": "Authorization",
+          "field": "token",
+          "prefix": "Bearer "
+        },
+        {
+          "path": "/api/matches/*",
+          "method": "GET",
+          "location": "header",
+          "name": "Authorization",
+          "field": "token",
+          "prefix": "Bearer "
+        }
+      ]
+    },
+    {
+      "owner": "steam_dlc/cs2",
+      "source": "perfect_api",
+      "field": "credential_perfect",
+      "group": "perfect_authorization",
+      "description": "扫码完美Token与授权主体",
+      "optional": false,
+      "injections": [
+        {
+          "path": "/api/csgo/home/pvp/detailStats",
+          "method": "POST",
+          "location": "json",
+          "name": "accessToken",
+          "field": "token",
+          "prefix": ""
+        },
+        {
+          "path": "/api/csgo/home/pvp/detailStats",
+          "method": "POST",
+          "location": "json",
+          "name": "mySteamId",
+          "field": "subject",
+          "prefix": ""
+        },
+        {
+          "path": "/api/csgo/home/official/detailStats",
+          "method": "POST",
+          "location": "json",
+          "name": "accessToken",
+          "field": "token",
+          "prefix": ""
+        },
+        {
+          "path": "/api/csgo/home/official/detailStats",
+          "method": "POST",
+          "location": "json",
+          "name": "mySteamId",
+          "field": "subject",
+          "prefix": ""
+        },
+        {
+          "path": "/api/csgo/home/official/detailStats",
+          "method": "POST",
+          "location": "header",
+          "name": "token",
+          "field": "token",
+          "prefix": ""
+        },
+        {
+          "path": "/api/csgo/home/match/list",
+          "method": "POST",
+          "location": "header",
+          "name": "token",
+          "field": "token",
+          "prefix": ""
+        },
+        {
+          "path": "/api/csgo/home/match/list",
+          "method": "POST",
+          "location": "json",
+          "name": "mySteamId",
+          "field": "subject",
+          "prefix": ""
+        },
+        {
+          "path": "/api/v1/csgo/match",
+          "method": "POST",
+          "location": "header",
+          "name": "accesstoken",
+          "field": "token",
+          "prefix": ""
+        }
+      ]
+    },
+    {
+      "owner": "steam_dlc/cs2",
+      "source": "fivee_api",
+      "field": "credential_fivee",
+      "group": "fivee_authorization",
+      "description": "5E App会话Token",
+      "optional": false,
+      "injections": [
+        {
+          "path": "/v0/mars/api/csgo/data/player_home/*",
+          "method": "GET",
+          "location": "header",
+          "name": "token",
+          "field": "token",
+          "prefix": ""
+        },
+        {
+          "path": "/v0/mars/api/csgo/data/player_match_v1/*",
+          "method": "GET",
+          "location": "header",
+          "name": "token",
+          "field": "token",
+          "prefix": ""
+        }
+      ]
+    }
+  ],
+  "authorizations": {
+    "steam_dlc/cs2": {
+      "perfect_qr": {
+        "credential_field": "credential_perfect",
+        "descriptor": {
+          "flow_id": "perfect_qr",
+          "apply": {
+            "source_id": "perfect_auth",
+            "path": "/qrAuth/applyToken",
+            "method": "POST",
+            "json_body": {
+              "appId": "5",
+              "qrType": "1",
+              "redirect": false,
+              "website": "pvp"
+            },
+            "headers": {
+              "Content-Type": "application/json"
+            }
+          },
+          "poll": {
+            "source_id": "perfect_auth",
+            "path": "/qrAuth/check",
+            "method": "POST",
+            "json_body": {
+              "appId": "5"
+            },
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "secret_json_fields": {
+              "accessToken": "ticket"
+            }
+          },
+          "qr_url_path": [
+            "result",
+            "accessUrl"
+          ],
+          "ticket_capture": {
+            "slot": "ticket",
+            "path": [
+              "result",
+              "accessUrl"
+            ],
+            "url_query": "accessToken"
+          },
+          "state_path": [
+            "result",
+            "status"
+          ],
+          "pending_values": [
+            0,
+            1
+          ],
+          "success_values": [
+            2
+          ],
+          "expired_values": [
+            3
+          ],
+          "success_captures": [
+            {
+              "slot": "token",
+              "path": [
+                "result",
+                "token"
+              ]
+            },
+            {
+              "slot": "subject",
+              "path": [
+                "result",
+                "accountItem",
+                "steamId"
+              ],
+              "pattern": "[0-9]{17}"
+            }
+          ],
+          "subject_slot": "subject",
+          "poll_interval_seconds": 2,
+          "ttl_seconds": 60,
+          "max_polls": 30
+        }
+      }
+    }
+  },
+  "capability_timeouts": {
+    "steam_dlc/steam": {
+      "wall_preview": 90
+    }
+  },
+  "config_migrations": [
+    {
+      "owner": "steam_dlc/steam",
+      "field": "poster_limit",
+      "kind": "integer_floor",
+      "from_minimum": 1,
+      "to_minimum": 20
+    }
+  ]
+}

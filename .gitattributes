@@ -1,0 +1,2 @@
+# Release source hashes use the exact reviewed bytes on every platform.
+* -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

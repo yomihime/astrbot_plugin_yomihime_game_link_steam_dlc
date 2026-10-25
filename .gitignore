@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+node_modules/
+/.local-dev/
+/AGENTS.md
+/docs/plan.md
+/docs/collaboration.md

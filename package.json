@@ -1,0 +1,13 @@
+{
+  "name": "steam-dlc-page-checks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:pages": "node scripts/build_pages.mjs",
+    "check:pages": "node scripts/build_pages.mjs --check",
+    "test:pages": "node --test tests/pages/*.test.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "30.1.2"
+  }
+}

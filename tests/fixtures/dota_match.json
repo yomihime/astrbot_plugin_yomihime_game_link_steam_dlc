@@ -1,0 +1,11 @@
+{
+  "start_time": 0,
+  "duration": 0,
+  "game_mode": 23,
+  "radiant_win": false,
+  "players": [
+    {"account_id": 123, "player_slot": 0, "hero_id": 1, "kills": 0, "deaths": 0, "assists": 0},
+    {"account_id": null, "player_slot": 128, "hero_id": 2, "kills": 2, "deaths": 1, "assists": 4},
+    {"account_id": 999, "player_slot": 5, "hero_id": 3, "kills": 1}
+  ]
+}

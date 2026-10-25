@@ -1,0 +1,7 @@
+[
+  {"match_id": 800000001, "start_time": 0, "hero_id": 0, "game_mode": 23, "player_slot": 0, "radiant_win": true, "kills": 0, "deaths": 2, "assists": 5, "duration": 1800},
+  {"match_id": 800000002, "player_slot": 128, "radiant_win": false, "kills": 3},
+  {"match_id": 800000003, "player_slot": 7, "radiant_win": true, "kills": 1},
+  {"match_id": 800000004, "player_slot": 1, "radiant_win": "true", "kills": 0},
+  {"match_id": 800000005, "player_slot": 132, "radiant_win": true, "kills": 2}
+]
