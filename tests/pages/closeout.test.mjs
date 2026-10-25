@@ -94,17 +94,45 @@ test('CS2 whole preview failure requires explicit retry or text-only query and e
   } finally {f.close();}
 });
 
-test('CS2 frozen Gateway error envelope from failed rendering offers explicit text-only recovery', async () => {
-  const f = fixture({preview: async () => ({...preview(), status: 'error', document: null, error: {code: 'module_unavailable', message: '查询未完成，请检查输入或稍后重试。'}, image_state: 'none', images: []})});
-  try {
-    await settle(); f.calls.length = 0; f.input('account', '76561197960265851'); f.submit(); await settle();
-    assert.equal(f.calls.length, 1); assert.equal(f.calls[0][0], 'preview');
-    assert.match(f.text(), /未取得可确认的文字或图片/);
-    assert.equal(f.container.querySelector('[data-action="query-text-only"]').parentElement.hidden, false);
-    assert.equal(f.created.length, 0);
-    f.click('query-text-only'); await settle();
-    assert.equal(f.calls.length, 2); assert.equal(f.calls[1][0], 'invoke'); assert.match(f.text(), /来源保留的原始资料说明/);
-  } finally {f.close();}
+test('CS2 known source error codes retain actionable guidance without echoing messages or automatically invoking again', async () => {
+  for (const [code, expected] of [
+    ['auth_required', /可信设置页完成完美扫码授权或配置 5E Token/],
+    ['auth_expired', /可信设置页重新授权/],
+    ['rate_limited', /来源请求限流，请稍后再查询/],
+    ['parameter_error', /核对玩家账号、所选来源、赛季和比赛 ID/],
+    ['not_public', /核对公开设置与来源授权/],
+    ['not_found', /核对玩家账号与所选来源/],
+    ['no_records', /不代表该玩家没有比赛历史/],
+    ['unparsed', /等待来源解析/],
+    ['upstream_error', /所选来源暂时不可用/],
+  ]) {
+    const f = fixture({preview: async () => ({...preview(), status: 'error', document: null, error: {code, message: 'arbitrary upstream secret body'}, image_state: 'none', images: []})});
+    try {
+      await settle(); f.calls.length = 0; f.input('account', '76561197960265851'); f.submit(); await settle();
+      assert.equal(f.calls.length, 1); assert.equal(f.calls[0][0], 'preview');
+      assert.match(f.text(), expected); assert.doesNotMatch(f.text(), /arbitrary upstream secret body|资料卡预览未完成|未取得可确认的文字或图片/);
+      assert.equal(f.container.querySelector('[data-action="query-text-only"]').parentElement.hidden, true);
+      assert.equal(f.created.length, 0);
+      f.click('query-text-only'); f.click('query-preview-retry'); await settle(); assert.equal(f.calls.length, 1);
+      assert.equal(f.container.querySelector('form').getAttribute('aria-busy'), 'false');
+    } finally {f.close();}
+  }
+});
+
+test('CS2 ambiguous module-unavailable and unknown error envelopes preserve explicit preview/text-only recovery', async () => {
+  for (const code of ['module_unavailable', 'unknown private code', 'toString']) {
+    const f = fixture({preview: async () => ({...preview(), status: 'error', document: null, error: {code, message: 'arbitrary upstream secret body'}, image_state: 'none', images: []})});
+    try {
+      await settle(); f.calls.length = 0; f.input('account', '76561197960265851'); f.submit(); await settle();
+      assert.equal(f.calls.length, 1); assert.equal(f.calls[0][0], 'preview');
+      assert.match(f.text(), /未取得可确认的文字或图片/);
+      assert.doesNotMatch(f.text(), /arbitrary upstream secret body|unknown private code/);
+      assert.equal(f.container.querySelector('[data-action="query-text-only"]').parentElement.hidden, false);
+      assert.equal(f.created.length, 0);
+      f.click('query-text-only'); await settle();
+      assert.equal(f.calls.length, 2); assert.equal(f.calls[1][0], 'invoke'); assert.match(f.text(), /来源保留的原始资料说明/);
+    } finally {f.close();}
+  }
 });
 
 test('CS2 profile fences busy and late replies across availability, identity, abort and disposal', async () => {

@@ -1385,7 +1385,22 @@ function M(e, t) {
 			try {
 				let e = await t.services[g ? "preview" : "invoke"]("query", p);
 				if (!Y() || _ !== V) return;
-				if (g && e?.status === "error") throw Error("preview_unavailable");
+				if (g && e?.status === "error") {
+					let t = (/* @__PURE__ */ new Map([
+						["auth_required", "所选来源需要授权。请在可信设置页完成完美扫码授权或配置 5E Token，核对来源后重新查询。"],
+						["auth_expired", "所选来源的授权已过期。请在可信设置页重新授权后查询。"],
+						["rate_limited", "来源请求限流，请稍后再查询；页面不会自动重试。"],
+						["parameter_error", "查询参数不符合要求，请核对玩家账号、所选来源、赛季和比赛 ID 后重新查询。"],
+						["not_public", "玩家资料未公开或来源访问受限，请核对公开设置与来源授权后重新查询。"],
+						["not_found", "来源未找到对应玩家或记录，请核对玩家账号与所选来源后重新查询。"],
+						["no_records", "来源当前没有可用记录，可稍后查询；这不代表该玩家没有比赛历史。"],
+						["unparsed", "来源尚未解析对应记录，请等待来源解析后再查询。"],
+						["upstream_error", "所选来源暂时不可用，请稍后再查询。"]
+					])).get(e.schema_version === 1 ? e.error?.code : null);
+					if (!t) throw Error("preview_unavailable");
+					m = null, n.replaceChildren(G("p", t, "steam-dlc-field-error")), X("查询未完成，请按来源提示处理后重新查询。", "warning");
+					return;
+				}
 				let r = g ? Qe(e, n) : Ze(e, n);
 				m = null, e.status === "needs_selection" ? X("需要补充选择，请按来源提示配置或改选。", "warning") : X(r ? "来源结果已更新。" : "查询未完成，请查看来源反馈。", r ? "success" : "warning");
 			} catch (e) {

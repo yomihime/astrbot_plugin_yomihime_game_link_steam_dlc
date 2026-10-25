@@ -1009,9 +1009,27 @@ export function mountController(container, options) {
       try {
         const response = await options.services[withPreview ? 'preview' : 'invoke']('query', parameters);
         if (!active() || ticket !== previewGeneration) return;
-        // The frozen Gateway can convert a render exception into a normal
-        // serialized error envelope, with no original provider document.
-        if (withPreview && response?.status === 'error') throw Error('preview_unavailable');
+        if (withPreview && response?.status === 'error') {
+          // Core preserves error.code while replacing the provider message.
+          // Known source errors have actionable guidance; module_unavailable
+          // can also mean rendering failed and needs explicit preview recovery.
+          const guidance = new Map([
+            ['auth_required', '所选来源需要授权。请在可信设置页完成完美扫码授权或配置 5E Token，核对来源后重新查询。'],
+            ['auth_expired', '所选来源的授权已过期。请在可信设置页重新授权后查询。'],
+            ['rate_limited', '来源请求限流，请稍后再查询；页面不会自动重试。'],
+            ['parameter_error', '查询参数不符合要求，请核对玩家账号、所选来源、赛季和比赛 ID 后重新查询。'],
+            ['not_public', '玩家资料未公开或来源访问受限，请核对公开设置与来源授权后重新查询。'],
+            ['not_found', '来源未找到对应玩家或记录，请核对玩家账号与所选来源后重新查询。'],
+            ['no_records', '来源当前没有可用记录，可稍后查询；这不代表该玩家没有比赛历史。'],
+            ['unparsed', '来源尚未解析对应记录，请等待来源解析后再查询。'],
+            ['upstream_error', '所选来源暂时不可用，请稍后再查询。'],
+          ]).get(response.schema_version === 1 ? response.error?.code : null);
+          if (!guidance) throw Error('preview_unavailable');
+          failedPreview = null;
+          result.replaceChildren(node('p', guidance, 'steam-dlc-field-error'));
+          say('查询未完成，请按来源提示处理后重新查询。', 'warning');
+          return;
+        }
         const success = withPreview ? renderPreview(response, result) : renderResult(response, result);
         failedPreview = null;
         if (response.status === 'needs_selection') say('需要补充选择，请按来源提示配置或改选。', 'warning');
