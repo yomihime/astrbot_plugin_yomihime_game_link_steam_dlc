@@ -70,6 +70,19 @@ class ReleaseResourcesTest(unittest.TestCase):
             files["packages/steam_dlc/pages/steam/entry.js"], self.asset.read_bytes()
         )
 
+    def test_matching_public_versions_are_accepted(self):
+        files = release.inventory(self.root)
+        release.validate_version_declarations(files)
+
+    def test_mismatched_register_version_is_rejected(self):
+        main = self.root / "main.py"
+        main.write_text(
+            main.read_text(encoding="utf-8").replace("0.2.0-beta.1", "0.2.0-alpha.6"),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "register version"):
+            release.inventory(self.root)
+
     def test_local_process_paths_cannot_reenter_public_inputs(self):
         for path in (
             "AGENTS.md",

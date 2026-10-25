@@ -846,6 +846,12 @@ export function mountController(container, options) {
     const coverage = {platform_recorded: '平台收录', recorded_official: '完美收录官匹', recent_first_page: '近期首批样本', recent_player_summary: '有界近期玩家摘要'}[projection.coverage] || text(projection.coverage);
     const full = projection.detail_level === 'full_match';
     if (['profile', 'stats'].includes(projection.kind)) {
+      target.append(node('p', `来源：${CHOICE_LABELS[projection.platform] || text(projection.platform)} · 范围：${coverage}`, 'steam-dlc-hint'));
+      if (projection.kind === 'profile') {
+        const rank = data.rank || {};
+        const rankValue = typeof rank.value === 'string' && rank.value.trim() && !/^[+-]?[\d.]+$/u.test(rank.value) ? rank.value : metric(rank.value);
+        target.append(node('p', `玩家：${text(data.nickname)} · 账号：${text(data.account_id || projection.target?.id)} · 段位：${rankValue} · 积分：${metric(rank.score)}`));
+      }
       const metrics = data.metrics || {};
       table(['场次', 'K/D', 'rating', 'PW rating', 'ADR', 'RWS', '胜率'], [[...['matches', 'kd', 'rating', 'pw_rating', 'adr', 'rws', 'win_rate'].map(key => metric(metrics[key]))]]);
       target.append(node('p', '未知表示来源未提供，不按 0 计算。', 'steam-dlc-hint'));
@@ -916,6 +922,35 @@ export function mountController(container, options) {
     for (const warning of response.warnings || []) if (typeof warning === 'string') target.append(node('p', warning, 'steam-dlc-hint'));
     return response.status !== 'needs_selection';
   };
+  const renderPreview = (response, target) => {
+    // Core's invoke-images envelope contains the serialized result itself. Text
+    // validation is independent of its optional image fields.
+    const success = renderResult(response, target);
+    if (!success) return false;
+    try {
+      if (!Array.isArray(response.images) || response.images.length > 8 || !['ready', 'none'].includes(response.image_state)
+          || (response.image_state === 'ready') !== Boolean(response.images.length)) throw Error('invalid_images');
+      if (response.images.reduce((total, page) => total + (typeof page?.base64 === 'string' ? page.base64.length : Infinity), 0) > 4 * Math.ceil((16 * 1024 * 1024) / 3) + 32) throw Error('invalid_images');
+      const pages = response.images.map(page => {
+        if (page?.media_type !== 'image/png') throw Error('invalid_images');
+        return previewPNG(page.base64, document.defaultView);
+      });
+      if (pages.reduce((total, bytes) => total + bytes.length, 0) > 16 * 1024 * 1024) throw Error('invalid_images');
+      for (const [index, bytes] of pages.entries()) {
+        const url = document.defaultView.URL.createObjectURL(new document.defaultView.Blob([bytes], {type: 'image/png'}));
+        previewURLs.push(url);
+        const figure = node('figure', undefined, 'steam-dlc-preview'), image = node('img');
+        image.src = url; image.alt = `CS2 资料卡 ${index + 1}`;
+        figure.append(image); target.append(figure);
+      }
+      if (!pages.length) target.append(node('p', '本次未提供资料卡，文字资料仍可查看。', 'steam-dlc-hint'));
+    } catch {
+      revokePreviews();
+      target.querySelectorAll('figure.steam-dlc-preview').forEach(figure => figure.remove());
+      target.append(node('p', '资料卡图片无法验证，已保留文字资料。', 'steam-dlc-hint'));
+    }
+    return success;
+  };
   const buildPublicForm = () => {
     const queryForm = node('form', undefined, 'steam-dlc-public-form');
     const result = node('section', undefined, 'steam-dlc-public-result'); result.setAttribute('aria-live', 'polite');
@@ -937,37 +972,72 @@ export function mountController(container, options) {
       root.append(node('p', '页面查询始终需要明确账号，不读取本人默认绑定。5E 使用 domain；官匹与 5E 单场仅限来源近期玩家摘要。', 'steam-dlc-hint'));
     const submit = node('button', '查询', 'ui-button'); submit.type = 'submit'; submit.dataset.variant = 'primary'; submit.dataset.action = 'query';
     const actions = node('div', undefined, 'steam-dlc-actions'); actions.append(submit); queryForm.append(actions);
-    const run = async statusOnly => {
+    let failedPreview = null;
+    const recovery = node('div', undefined, 'steam-dlc-actions'); recovery.hidden = true;
+    const retry = node('button', '重试资料卡预览', 'ui-button'); retry.type = 'button'; retry.dataset.action = 'query-preview-retry';
+    const textOnly = node('button', '仅查询文字资料', 'ui-button'); textOnly.type = 'button'; textOnly.dataset.action = 'query-text-only';
+    recovery.append(retry, textOnly);
+    const clearRecovery = () => {failedPreview = null; recovery.hidden = true;};
+    listen(queryForm, 'input', clearRecovery); listen(queryForm, 'change', clearRecovery);
+    const syncQuery = () => {
+      queryForm.setAttribute('aria-busy', String(pending));
+      for (const button of [...actions.querySelectorAll('button'), retry, textOnly]) button.setAttribute('aria-disabled', String(!active() || pending));
+      for (const input of queryForm.querySelectorAll('input,select')) input.disabled = !active();
+      if (active()) fields();
+    };
+    const clearQuery = () => {
+      failedPreview = null; recovery.hidden = true; pending = false;
+      previewGeneration += 1; revokePreviews(); result.replaceChildren(); syncQuery();
+    };
+    invalidatePublic = clearQuery;
+    updatePublicAvailability = clearQuery;
+    const run = async (statusOnly, mode = 'normal') => {
       if (!active() || pending) return;
-      const parameters = statusOnly ? {} : {account: account.value.trim()};
-      if (!statusOnly && (!parameters.account || !queryForm.checkValidity())) { say('请填写明确账号并检查输入范围。', 'error'); return; }
-      if (!statusOnly) {
+      const explicitRecovery = mode !== 'normal';
+      if (explicitRecovery && !failedPreview) return;
+      const parameters = explicitRecovery ? {...failedPreview} : statusOnly ? {} : {account: account.value.trim()};
+      if (!statusOnly && !explicitRecovery && (!parameters.account || !queryForm.checkValidity())) { say('请填写明确账号并检查输入范围。', 'error'); return; }
+      if (!statusOnly && !explicitRecovery) {
         Object.assign(parameters, {action: action.value, platform: platform.value});
         if (!season.disabled && season.value.trim()) parameters.season = season.value.trim();
         if (!limit.disabled) parameters.limit = Number(limit.value);
         if (!matchId.disabled) parameters.match_id = matchId.value.trim();
         if (!focus.disabled && focus.value.trim()) parameters.focus = focus.value.trim();
       }
-      const ticket = ++previewGeneration; pending = true; revokePreviews(); result.replaceChildren(node('p', '正在查询来源。')); sync();
-      submit.setAttribute('aria-disabled', 'true');
+      const withPreview = parameters.action === 'profile' && mode !== 'text';
+      const ticket = ++previewGeneration; pending = true; recovery.hidden = true; revokePreviews(); result.replaceChildren(node('p', '正在查询来源。')); sync(); syncQuery();
       try {
-        const response = await options.services.invoke('query', parameters);
+        const response = await options.services[withPreview ? 'preview' : 'invoke']('query', parameters);
         if (!active() || ticket !== previewGeneration) return;
-        const success = renderResult(response, result);
+        // The frozen Gateway can convert a render exception into a normal
+        // serialized error envelope, with no original provider document.
+        if (withPreview && response?.status === 'error') throw Error('preview_unavailable');
+        const success = withPreview ? renderPreview(response, result) : renderResult(response, result);
+        failedPreview = null;
         if (response.status === 'needs_selection') say('需要补充选择，请按来源提示配置或改选。', 'warning');
         else say(success ? '来源结果已更新。' : '查询未完成，请查看来源反馈。', success ? 'success' : 'warning');
-      } catch {
+      } catch (error) {
         if (!active() || ticket !== previewGeneration) return;
-        revokePreviews(); result.replaceChildren(node('p', '请求未完成，或返回内容不完整。请核对来源设置后重试。', 'steam-dlc-field-error'));
+        revokePreviews();
+        if (authorityErrors.has(errorCode(error))) {
+          clearQuery(); revokePartition(); sync();
+          publicInputs.forEach(input => { input.value = ''; }); syncQuery();
+          say('页面授权或运行上下文已变化，请重新进入页面。', 'error'); return;
+        }
+        failedPreview = withPreview ? {...parameters} : null;
+        recovery.hidden = !withPreview;
+        result.replaceChildren(node('p', withPreview ? '资料卡预览未完成，未取得可确认的文字或图片。可主动重试预览，或仅查询文字资料；每次操作会重新查询来源。' : '请求未完成，或返回内容不完整。请核对来源设置后重试。', 'steam-dlc-field-error'));
         say('未取得可确认结果。', 'error');
       } finally {
-        if (current() && ticket === previewGeneration) { pending = false; submit.setAttribute('aria-disabled', String(!active())); sync(); }
+        if (current() && ticket === previewGeneration) { pending = false; sync(); syncQuery(); }
       }
     };
+    listen(retry, 'click', () => { void run(false, 'preview'); });
+    listen(textOnly, 'click', () => { void run(false, 'text'); });
     listen(queryForm, 'submit', event => { event.preventDefault(); void run(false); });
       const status = node('button', '刷新来源状态', 'ui-button'); status.type = 'button'; status.dataset.action = 'query-status';
       listen(status, 'click', () => { void run(true); }); actions.append(status);
-    root.append(queryForm, result);
+    root.append(queryForm, recovery, result);
     options.presentation?.actions(actions);
     void run(true);
   };

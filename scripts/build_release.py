@@ -77,6 +77,47 @@ def validate_tracked_paths(root):
     validate_public_paths(tracked.decode("utf-8").split("\0"))
 
 
+def validate_version_declarations(files):
+    """Check public version declarations without importing the plugin."""
+    manifest = json.loads(files["packages/steam_dlc/yomihime.manifest.json"])
+    version = manifest.get("package_version")
+    if not isinstance(version, str) or not re.fullmatch(
+        r"0\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", version
+    ):
+        raise ValueError("manifest package version is invalid")
+    module_versions = [module.get("module_version") for module in manifest["modules"]]
+    if not module_versions or any(item != version for item in module_versions):
+        raise ValueError("manifest module versions differ from package version")
+
+    main = ast.parse(files["main.py"], filename="main.py")
+    registrations = []
+    for node in ast.walk(main):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        for decorator in node.decorator_list:
+            if (
+                isinstance(decorator, ast.Call)
+                and isinstance(decorator.func, ast.Name)
+                and decorator.func.id == "register"
+            ):
+                if len(decorator.args) >= 4 and isinstance(
+                    decorator.args[3], ast.Constant
+                ):
+                    registrations.append(decorator.args[3].value)
+    if registrations != [version]:
+        raise ValueError(
+            "plugin register version differs from manifest package version"
+        )
+
+    metadata = files["metadata.yaml"].decode("utf-8")
+    metadata_versions = re.findall(r"(?m)^version:\s*['\"]?v?([^'\"\s]+)", metadata)
+    if metadata_versions != [version]:
+        raise ValueError("metadata version differs from manifest package version")
+    readme = files["README.md"].decode("utf-8")
+    if f"当前版本 `{version}`" not in readme:
+        raise ValueError("README version differs from manifest package version")
+
+
 def source_bytes(path, root):
     relative = path.relative_to(root).as_posix()
     validate_public_paths((relative,))
@@ -171,6 +212,7 @@ def inventory(root):
         validate_query_tools(module)
     if any(name.startswith("yomihime_game_link_sdk/") for name in result):
         raise ValueError("release must reuse the canonical Core SDK")
+    validate_version_declarations(result)
     return result
 
 
@@ -212,6 +254,10 @@ def build(root=ROOT, output=None, *, allow_dirty=False):
     version = json.loads(files["packages/steam_dlc/yomihime.manifest.json"])[
         "package_version"
     ]
+    if not output:
+        output = (
+            root / f"dist/astrbot_plugin_yomihime_game_link_steam_dlc-v{version}.zip"
+        )
     revision = subprocess.check_output(
         ["git", "-C", str(root), "rev-parse", "HEAD"], text=True
     ).strip()
@@ -222,6 +268,7 @@ def build(root=ROOT, output=None, *, allow_dirty=False):
     if dirty and not allow_dirty:
         raise ValueError("commit the reviewed source before a final release build")
     receipt = {
+        "package_version": version,
         "source_commit": revision,
         "dirty": bool(dirty),
         "sdk_version": SDK_VERSION,
@@ -245,11 +292,7 @@ def build(root=ROOT, output=None, *, allow_dirty=False):
             entry.external_attr = (stat.S_IFREG | 0o644) << 16
             archive.writestr(entry, payload)
     payload = stream.getvalue()
-    output = (
-        Path(output)
-        if output
-        else root / f"dist/astrbot_plugin_yomihime_game_link_steam_dlc-v{version}.zip"
-    )
+    output = Path(output)
     output = output.absolute()
     if output.is_symlink() or output.exists() and output.read_bytes() != payload:
         raise ValueError("output already exists with different bytes")

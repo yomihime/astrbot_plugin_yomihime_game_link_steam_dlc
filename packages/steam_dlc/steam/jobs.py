@@ -21,6 +21,50 @@ from .wall_presentation import result
 BATCH_SIZE = 128
 
 
+def _retry_seconds(value):
+    return value if type(value) is int and 0 <= value <= 86400 else None
+
+
+def _feedback(job):
+    """Safe recovery instructions based on Core's persisted job projection."""
+    states = {
+        "queued": "排队中",
+        "running": "运行中",
+        "succeeded": "已完成",
+        "failed": "失败",
+        "cancelled": "已取消",
+        "interrupted": "已中断",
+    }
+    reasons = {
+        "steam_key_required": "完整库需要在可信管理页配置 Steam Key，也可改选公开样本。",
+        "steam_source_unavailable": "Steam 来源暂不可用，未用其他来源替代，请稍后重试。",
+        "steam_source_not_public": "Steam 库未公开或来源授权受限，请检查公开设置和可信配置；未视为空库。",
+        "rate_limited": "来源限流，请等待后再操作；已发布结果保留。",
+        "resource_budget": "资源预算不足，已停止后续批次；可减少数量后重新执行，已发布结果保留。",
+        "metadata_incomplete": "部分作品类型尚未验证，无法完成仅游戏筛选；请稍后重试，未视为空库。",
+    }
+    status = job.status.value
+    counts = {**job.progress, **job.summary}
+    text = f"任务{job.job_id} · {states.get(status, '状态待确认')}（{status}） · 修订{job.revision}。"
+    reason = counts.get("reason")
+    if reason in reasons:
+        text += reasons[reason]
+    elif reason or status == "failed":
+        text += "任务暂时无法完成，请查询状态并稍后重新执行；详细原因未确认。"
+    wait = _retry_seconds(counts.get("retry_after"))
+    if reason == "rate_limited" and wait is not None:
+        text += f"来源建议等待{wait}秒后再操作（非自动重试倒计时）。"
+    text += f"状态查询：/ygl steam wall status {job.job_id}。"
+    if status in ("queued", "running"):
+        text += f"可取消：/ygl steam wall cancel {job.job_id}；当前不可重试。"
+    elif status in ("failed", "cancelled", "interrupted"):
+        text += f"显式重新执行：/ygl steam wall retry {job.job_id}；重新计算并复用有效缓存，不从最后一项自动续跑。"
+    published = counts.get("result_entries")
+    if type(published) is int and published > 0:
+        text += f"已发布{published}项图片资源，可查看：/ygl steam wall result {job.job_id}。"
+    return text
+
+
 class SteamWallJob:
     def __init__(self, owner):
         self.owner = owner
@@ -41,12 +85,20 @@ class SteamWallJob:
                 "rate_limited"
                 if code is ygl.ErrorCode.RATE_LIMITED
                 or isinstance(exc, ygl.SourceHttpError)
-                and exc.status_code == 429
+                and (exc.status_code == 429 or exc.code == "rate_limited")
                 else "steam_source_not_public"
                 if code is ygl.ErrorCode.NOT_PUBLIC or isinstance(exc, PermissionError)
                 else "steam_source_unavailable"
             )
-            await control.update({"phase": "blocked", "reason": reason})
+            progress: dict[str, str | int] = {"phase": "blocked", "reason": reason}
+            retry = _retry_seconds(
+                exc.retry_after
+                if isinstance(exc, QueryFailure)
+                else getattr(exc, "retry_after_seconds", None)
+            )
+            if reason == "rate_limited" and retry is not None:
+                progress["retry_after"] = retry
+            await control.update(progress)
 
         if value["source"] == "full":
             metadata = next(
@@ -116,7 +168,12 @@ class SteamWallJob:
                         "pending": None
                         if selected_count is None
                         else selected_count - generated,
-                        "retry_after": values.get("retry_after", 0),
+                        **(
+                            {"retry_after": values["retry_after"]}
+                            if _retry_seconds(values.get("retry_after")) is not None
+                            and values["retry_after"] > 0
+                            else {}
+                        ),
                         "counters": dict(counters),
                     }
                 )
@@ -403,12 +460,20 @@ class JobHandler:
                 image_number = int(args[index])
             index += 1
         job = await scope.jobs.status(job_id)
+        if action == "retry" and job.status.value not in (
+            "failed",
+            "cancelled",
+            "interrupted",
+        ):
+            raise ValueError(
+                "只有失败、取消或中断的任务可以显式重新执行，请先查询状态。"
+            )
         if action in ("cancel", "retry"):
             job = await getattr(scope.jobs, action)(
                 job_id, expected_revision=job.revision
             )
         facts = job_projection(job)
-        text = f"任务{job.job_id} · {job.status.value} · 修订{job.revision}。"
+        text = _feedback(job)
         blocks = []
         if action == "result":
             cursor = None
@@ -444,7 +509,7 @@ class JobHandler:
                     text += f"下一张：/ygl steam wall result {job_id} --page {page_number} --image {image_number + 1}。"
                 if page.next_cursor is not None:
                     text += f"下一页：/ygl steam wall result {job_id} --page {page_number + 1}。"
-        counts = job.summary or job.progress
+        counts = {**job.progress, **job.summary}
         text += f"已选{counts.get('selected', '待确认')}，已生成{counts.get('generated', 0)}，待处理{counts.get('pending', '待确认')}，缺图{counts.get('missing_images', 0)}。已发布图片资源{counts.get('result_entries', '待确认')}项，来源完整性{counts.get('complete_source', '待确认')}。"
         return ygl.CapabilityResult(
             "steam-wall-job",
@@ -535,7 +600,7 @@ class JobHandler:
                 # action must be able to create a new job after completion.
                 job = await scope.jobs.submit(JobRequest("steam_wall", value))
                 payload = {"job": job_projection(job)}
-                message = f"拼图任务已提交：{job.job_id}。/ygl steam wall status {job.job_id} 查看状态；/ygl steam wall result {job.job_id} 按索引逐图查看。不会自动发送多张图片。"
+                message = "拼图任务已提交。" + _feedback(job)
             else:
                 job_id = parameters.get("job_id")
                 if not isinstance(job_id, str) or not 1 <= len(job_id) <= 256:
@@ -561,7 +626,7 @@ class JobHandler:
                     else:
                         job = await scope.jobs.status(job_id)
                     payload = {"job": job_projection(job)}
-                    message = f"任务状态：{job.status.value}。"
+                    message = _feedback(job)
             return ygl.CapabilityResult(
                 "steam-wall-job",
                 ygl.ResultStatus.SUCCESS,

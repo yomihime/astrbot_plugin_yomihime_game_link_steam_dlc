@@ -77,6 +77,152 @@ class HandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(request.idempotency_key is None for request in requests))
         self.assertNotIn("idempotency_key", requests[0].parameters)
 
+    async def test_command_status_feedback_is_safe_and_actionable(self):
+        command = SimpleNamespace(
+            origin=ygl.InvocationOrigin.COMMAND, parent_id=None, actor_id="owner"
+        )
+        cases = (
+            (JobStatus.QUEUED, {}, "排队中"),
+            (JobStatus.RUNNING, {"generated": 20}, "运行中"),
+            (JobStatus.SUCCEEDED, {"result_entries": 1}, "已完成"),
+            (JobStatus.FAILED, {"reason": "steam_key_required"}, "Steam Key"),
+            (JobStatus.FAILED, {"reason": "steam_source_unavailable"}, "暂不可用"),
+            (JobStatus.FAILED, {"reason": "steam_source_not_public"}, "未视为空库"),
+            (
+                JobStatus.FAILED,
+                {"reason": "rate_limited", "retry_after": 60},
+                "等待60秒",
+            ),
+            (JobStatus.FAILED, {"reason": "rate_limited"}, "来源限流"),
+            (JobStatus.FAILED, {"reason": "resource_budget"}, "资源预算不足"),
+            (JobStatus.FAILED, {"reason": "metadata_incomplete"}, "类型尚未验证"),
+            (JobStatus.FAILED, {"reason": "unknown-upstream-trace"}, "原因未确认"),
+            (JobStatus.CANCELLED, {}, "已取消"),
+            (JobStatus.INTERRUPTED, {}, "已中断"),
+        )
+        for state, progress, expected in cases:
+            with self.subTest(state=state, progress=progress):
+                job = JobView("job", 3, "steam_wall", state, progress=progress)
+                self.scope.jobs.status = AsyncMock(return_value=job)
+                result = await JobHandler(self.module, "submit").command(
+                    command, self.scope, "status job"
+                )
+                text = result.document.ordered_blocks[0].text
+                self.assertIn(expected, text)
+                self.assertNotIn("unknown-upstream-trace", text)
+                self.assertIn("/ygl steam wall status job", text)
+                self.assertEqual(
+                    "/ygl steam wall result job" in text,
+                    bool(progress.get("result_entries")),
+                )
+                self.assertEqual(
+                    "/ygl steam wall retry job" in text,
+                    state
+                    in (JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.INTERRUPTED),
+                )
+                if state in (
+                    JobStatus.FAILED,
+                    JobStatus.CANCELLED,
+                    JobStatus.INTERRUPTED,
+                ):
+                    self.assertIn("复用有效缓存", text)
+                    self.assertIn("不从最后一项自动续跑", text)
+                if (
+                    progress.get("reason") == "rate_limited"
+                    and "retry_after" not in progress
+                ):
+                    self.assertNotIn("秒", text)
+                self.assertIsNone(result.model_facts)
+                self.assertIs(result.privacy, ygl.Privacy.PRIVATE)
+
+    async def test_running_partial_result_requires_persisted_result_count(self):
+        command = SimpleNamespace(
+            origin=ygl.InvocationOrigin.COMMAND, parent_id=None, actor_id="owner"
+        )
+        self.scope.jobs.status = AsyncMock(
+            return_value=JobView(
+                "job",
+                4,
+                "steam_wall",
+                JobStatus.RUNNING,
+                progress={"generated": 128, "result_entries": 2},
+                summary={"selected": 400},
+            )
+        )
+        result = await JobHandler(self.module, "submit").command(
+            command, self.scope, "status job"
+        )
+        self.assertIn(
+            "/ygl steam wall result job", result.document.ordered_blocks[0].text
+        )
+        self.assertNotIn(
+            "/ygl steam wall retry job", result.document.ordered_blocks[0].text
+        )
+
+    async def test_queued_retry_is_rejected_before_mutating_gateway(self):
+        command = SimpleNamespace(
+            origin=ygl.InvocationOrigin.COMMAND, parent_id=None, actor_id="owner"
+        )
+        self.scope.jobs.status = AsyncMock(
+            return_value=JobView("job", 1, "steam_wall", JobStatus.QUEUED)
+        )
+        self.scope.jobs.retry = AsyncMock()
+        response = await JobHandler(self.module, "submit").invoke(
+            command, {"command": "retry job"}
+        )
+        self.assertIs(response.status, ygl.ResultStatus.ERROR)
+        self.scope.jobs.retry.assert_not_awaited()
+
+    async def test_source_rate_limit_retains_valid_wait_through_job_progress(self):
+        for error, expected in (
+            (QueryFailure(ygl.ErrorCode.RATE_LIMITED, "raw hidden", 23), 23),
+            (QueryFailure(ygl.ErrorCode.RATE_LIMITED, "raw hidden"), None),
+            (ygl.SourceHttpError("rate_limited", retry_after_seconds=31), 31),
+        ):
+            with self.subTest(error=type(error).__name__, wait=expected):
+                with patch(
+                    "packages.steam_dlc.steam.jobs.load", AsyncMock(side_effect=error)
+                ):
+                    with self.assertRaises(type(error)):
+                        await SteamWallJob(self.module).run(
+                            self.context, {"account": "1", "limit": 20}, self.control
+                        )
+                progress = self.control.update.await_args.args[0]
+                self.assertEqual(progress["reason"], "rate_limited")
+                self.assertEqual(progress.get("retry_after"), expected)
+                self.assertNotIn("raw hidden", str(progress))
+
+    async def test_full_http_retry_after_reaches_job_progress(self):
+        from yomihime_game_link_sdk.storage import SecretMetadataState
+
+        self.services.config.current.return_value = SimpleNamespace(
+            values={},
+            secret_metadata=(
+                SimpleNamespace(
+                    field="credential_steam_key",
+                    state=SecretMetadataState.ACTIVE,
+                    revision=1,
+                ),
+            ),
+        )
+        self.scope.http = SimpleNamespace(
+            fetch=AsyncMock(
+                return_value=SimpleNamespace(
+                    status_code=429, headers={"Retry-After": "47"}
+                )
+            )
+        )
+        with self.assertRaises(QueryFailure):
+            await SteamWallJob(self.module).run(
+                self.context,
+                {"account": "1", "source": "full", "refresh": True, "limit": 20},
+                self.control,
+            )
+        self.assertEqual(
+            self.control.update.await_args.args[0],
+            {"phase": "blocked", "reason": "rate_limited", "retry_after": 47},
+        )
+
     async def test_finite_1001_1500_and_all_split_without_total_truncation(self):
         for count, limit, mode in (
             (1001, 1001, "top"),
