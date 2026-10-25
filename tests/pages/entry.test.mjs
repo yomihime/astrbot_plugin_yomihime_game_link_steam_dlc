@@ -1202,23 +1202,51 @@ test('Steam job distinguishes unverified classification from a verified empty se
   } finally {f.close();}
 });
 
-test('Steam all-app output shows classification coverage separately from library coverage', async () => {
+test('Steam legacy all-app output keeps unverified coverage generic without claiming those rows were included', async () => {
   const f = jobFixture();
   try {
     Object.assign(f.view.summary, {selected: 20, generated: 20, all_apps: true, complete_source: true, classification_complete: false, metadata_unexamined: 20, metadata_failures: 1});
     f.input('account', '123'); f.submit(); await settle(); await settle();
-    assert.match(f.text(), /已按全部应用设置入图/); assert.match(f.text(), /元数据请求失败1次/);
+    assert.match(f.text(), /类型尚未验证20项（未区分未检查与已检查但类型未知）/u); assert.match(f.text(), /元数据请求失败1次/);
+    assert.doesNotMatch(f.text(), /已按全部应用设置入图|已检查20项|未检查20项/u);
     assert.doesNotMatch(f.text(), /来源覆盖不完整/);
+  } finally {f.close();}
+});
+
+test('Steam live top20 summary distinguishes the unselected tail from examined rows with unknown classification', async () => {
+  const f = jobFixture();
+  try {
+    Object.assign(f.view.summary, {
+      source_returned: 383, eligible: 267, selected: 20, generated: 20, pending: 0,
+      examined: 20, unexamined: 247, classification_unknown: 0, metadata_unexamined: 247,
+      all_apps: true, classification_complete: false,
+    });
+    f.input('account', '123'); f.submit(); await settle(); await settle();
+    assert.match(f.text(), /已选20 · 已生成20/u);
+    assert.match(f.text(), /已检查20项 · 未检查247项 · 已检查中类型未知0项/u);
+    assert.doesNotMatch(f.text(), /类型尚未验证247项|已按全部应用设置入图/u);
   } finally {f.close();}
 });
 
 test('Steam exact games selection qualifies known eligibility without claiming unexamined rows were included', async () => {
   const f = jobFixture();
   try {
-    Object.assign(f.view.summary, {selected: 20, eligible: 20, eligible_complete: false, selection_exact: true, all_apps: false, classification_complete: false, metadata_unexamined: 80});
+    Object.assign(f.view.summary, {selected: 20, eligible: 20, eligible_complete: false, selection_exact: true, all_apps: false, classification_complete: false, examined: 20, unexamined: 80, classification_unknown: 0, metadata_unexamined: 80});
     f.input('account', '123'); f.submit(); await settle(); await settle();
     assert.match(f.text(), /已确认符合20/); assert.match(f.text(), /选集排序已验证，剩余未检查/);
     assert.doesNotMatch(f.text(), /已按全部应用设置入图/);
+  } finally {f.close();}
+});
+
+test('Steam classification coverage distinguishes checked unknown rows from the unchecked tail in progress', async () => {
+  const f = jobFixture({jobs: {async result() {return {entries: [], next_cursor: null};}}});
+  try {
+    f.view.summary = {}; f.view.status = 'failed';
+    f.view.progress = {examined: 20, unexamined: 247, classification_unknown: 2, metadata_unexamined: 249, selected: null};
+    f.input('account', '123'); f.submit(); await settle(); await settle();
+    assert.match(f.text(), /已检查20项 · 未检查247项 · 已检查中类型未知2项/u);
+    assert.match(f.text(), /已选待确认/u);
+    assert.doesNotMatch(f.text(), /类型尚未验证249项|已按全部应用设置入图/u);
   } finally {f.close();}
 });
 

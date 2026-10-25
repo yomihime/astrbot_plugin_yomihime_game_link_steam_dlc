@@ -151,8 +151,12 @@ function f(e, { options: t, active: n, field: r, parseLimit: i, validatePNG: a, 
 			metadata_incomplete: "部分作品类型尚未验证，无法完成仅游戏筛选；请稍后重试，未视为空库。"
 		};
 		N.textContent = `任务 ${m.job_id} · ${m.status} · 来源${n.source_returned ?? t.source_returned ?? "待确认"} · ${n.eligible_complete === !1 ? "已确认符合" : "符合"}${n.eligible ?? "待确认"} · 已选${n.selected ?? t.selected ?? "待确认"} · 已生成${n.generated ?? t.generated ?? 0} · 待处理${n.pending ?? t.pending ?? "待确认"} · 缺图${n.missing_images ?? t.missing_images ?? 0}${m.error_code ? ` · 失败原因 ${m.error_code}` : ""}${r[t.reason] ? ` · ${r[t.reason]}` : ""}${n.complete_source === !1 ? " · 来源覆盖不完整" : ""}`;
-		let i = n.metadata_unexamined ?? t.metadata_unexamined ?? 0, a = n.metadata_failures ?? n.counters?.metadata_failed ?? t.counters?.metadata_failed ?? 0;
-		i && (N.textContent += ` · 类型尚未验证${i}项${n.all_apps === !0 && n.classification_complete === !1 && m.status === "succeeded" ? "（已按全部应用设置入图）" : ""}`), n.selection_exact === !0 && n.all_apps === !1 && i && (N.textContent += " · 选集排序已验证，剩余未检查"), a && (N.textContent += ` · 元数据请求失败${a}次`), F();
+		let i = n.metadata_unexamined ?? t.metadata_unexamined ?? 0, a = [
+			"examined",
+			"unexamined",
+			"classification_unknown"
+		].map((e) => n[e] ?? t[e]), o = (e) => Number.isSafeInteger(e) && e >= 0 ? String(e) : "待确认", c = n.metadata_failures ?? n.counters?.metadata_failed ?? t.counters?.metadata_failed ?? 0;
+		a.some((e) => e !== void 0) ? N.textContent += ` · 已检查${o(a[0])}项 · 未检查${o(a[1])}项 · 已检查中类型未知${o(a[2])}项` : i && (N.textContent += ` · 类型尚未验证${i}项（未区分未检查与已检查但类型未知）`), n.selection_exact === !0 && n.all_apps === !1 && (N.textContent += ` · 选集排序已验证${Number.isSafeInteger(a[1]) && a[1] > 0 ? "，剩余未检查" : ""}`), c && (N.textContent += ` · 元数据请求失败${c}次`), F();
 	}, L = async (e) => {
 		if (!m || !n()) return;
 		let t = f, r = ++p, i = m.job_id, o = await T().result(i, {

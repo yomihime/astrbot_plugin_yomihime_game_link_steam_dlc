@@ -60,10 +60,13 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
     const progress = job.progress || {}, summary = job.summary || {};
     const reasons = {steam_key_required: '完整库需要在可信管理页配置Steam Key，可改选公开样本。', steam_source_unavailable: 'Steam来源暂不可用，未用其他来源替代。', steam_source_not_public: 'Steam库未公开或当前来源授权受限，未视为空库。', rate_limited: '来源限流，已停止后续批次；已完成页保留。', resource_budget: '资源预算不足，已停止后续批次；已完成页保留。', metadata_incomplete: '部分作品类型尚未验证，无法完成仅游戏筛选；请稍后重试，未视为空库。'};
     status.textContent = `任务 ${job.job_id} · ${job.status} · 来源${summary.source_returned ?? progress.source_returned ?? '待确认'} · ${summary.eligible_complete === false ? '已确认符合' : '符合'}${summary.eligible ?? '待确认'} · 已选${summary.selected ?? progress.selected ?? '待确认'} · 已生成${summary.generated ?? progress.generated ?? 0} · 待处理${summary.pending ?? progress.pending ?? '待确认'} · 缺图${summary.missing_images ?? progress.missing_images ?? 0}${job.error_code ? ` · 失败原因 ${job.error_code}` : ''}${reasons[progress.reason] ? ` · ${reasons[progress.reason]}` : ''}${summary.complete_source === false ? ' · 来源覆盖不完整' : ''}`;
-    const unknown = summary.metadata_unexamined ?? progress.metadata_unexamined ?? 0;
+    const legacyUnknown = summary.metadata_unexamined ?? progress.metadata_unexamined ?? 0;
+    const coverage = ['examined', 'unexamined', 'classification_unknown'].map(key => summary[key] ?? progress[key]);
+    const count = value => Number.isSafeInteger(value) && value >= 0 ? String(value) : '待确认';
     const metadataFailures = summary.metadata_failures ?? summary.counters?.metadata_failed ?? progress.counters?.metadata_failed ?? 0;
-    if (unknown) status.textContent += ` · 类型尚未验证${unknown}项${summary.all_apps === true && summary.classification_complete === false && job.status === 'succeeded' ? '（已按全部应用设置入图）' : ''}`;
-    if (summary.selection_exact === true && summary.all_apps === false && unknown) status.textContent += ' · 选集排序已验证，剩余未检查';
+    if (coverage.some(value => value !== undefined)) status.textContent += ` · 已检查${count(coverage[0])}项 · 未检查${count(coverage[1])}项 · 已检查中类型未知${count(coverage[2])}项`;
+    else if (legacyUnknown) status.textContent += ` · 类型尚未验证${legacyUnknown}项（未区分未检查与已检查但类型未知）`;
+    if (summary.selection_exact === true && summary.all_apps === false) status.textContent += ` · 选集排序已验证${Number.isSafeInteger(coverage[1]) && coverage[1] > 0 ? '，剩余未检查' : ''}`;
     if (metadataFailures) status.textContent += ` · 元数据请求失败${metadataFailures}次`;
     sync();
   };
