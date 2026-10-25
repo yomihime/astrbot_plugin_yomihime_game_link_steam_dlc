@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 import shlex
 from collections.abc import Mapping
@@ -89,6 +87,11 @@ class SteamWallJob:
             for row in rows
             if row["minutes"] is not None and Decimal(row["minutes"]) > 0
         ]
+        candidates = (
+            positive[: value["limit"]]
+            if value["all_apps"] and value["limit_mode"] == "top"
+            else positive
+        )
         metadata_items = []
         counters: dict[str, int] = {}
         generated, missing, batches, selected_count = 0, 0, 0, None
@@ -140,23 +143,47 @@ class SteamWallJob:
         await control.update(
             {"phase": "metadata", "source_returned": len(rows), "examined": 0}
         )
-        for start in range(0, len(positive), 100):
+        examined, verified_games, prefix_unknown = 0, 0, 0
+        while examined < len(candidates):
+            remaining = (
+                value["limit"] - verified_games
+                if not value["all_apps"] and value["limit_mode"] == "top"
+                else 100
+            )
+            chunk = candidates[examined : examined + min(100, remaining)]
             payload = await self.owner._materials.prepare(
                 scope,
-                positive[start : start + 100],
+                chunk,
                 refresh=value["refresh"],
                 phase="metadata",
             )
             metadata_items.extend(payload["items"])
+            by_id = {item["app_id"]: item for item in payload["items"]}
+            verified_games += sum(
+                by_id.get(appid, {}).get("app_type") == "game" for appid in chunk
+            )
+            prefix_unknown += sum(
+                by_id.get(appid, {}).get("app_type", "unknown") == "unknown"
+                for appid in chunk
+            )
+            examined += len(chunk)
             count(payload)
             await require_budget(payload)
             await control.update(
                 {
                     "phase": "metadata",
                     "source_returned": len(rows),
-                    "examined": min(start + 100, len(positive)),
+                    "examined": examined,
+                    "unexamined": len(positive) - examined,
+                    "verified_eligible": verified_games,
+                    "classification_unknown": prefix_unknown,
                 }
             )
+            if not value["all_apps"] and value["limit_mode"] == "top":
+                # An unresolved higher-ranked app could displace a known game.
+                # Do not skip it and mislabel lower games as the exact top N.
+                if prefix_unknown or verified_games >= value["limit"]:
+                    break
         policy = {
             key: value[key]
             for key in (
@@ -172,7 +199,7 @@ class SteamWallJob:
         }
         selection = select(projection, {"items": metadata_items}, **policy)
         unclassified = selection["counts"]["metadata_unexamined"]
-        if unclassified and not value["all_apps"]:
+        if prefix_unknown and not value["all_apps"]:
             # Complete library coverage does not prove unknown app types.
             await control.update(
                 {
@@ -180,6 +207,9 @@ class SteamWallJob:
                     "reason": "metadata_incomplete",
                     "source_returned": len(rows),
                     "metadata_unexamined": unclassified,
+                    "examined": examined,
+                    "unexamined": len(positive) - examined,
+                    "classification_unknown": prefix_unknown,
                     "verified_eligible": selection["counts"]["eligible"],
                     "generated": 0,
                     "selected": None,
@@ -249,6 +279,7 @@ class SteamWallJob:
                 )
                 batch["all_eligible_included"] = (
                     len(batch_rows) == selection["counts"]["eligible"]
+                    and selection["all_eligible_included"]
                 )
                 preflight(batch)
                 document = result(batch, private=True, theme=theme).document
@@ -303,6 +334,14 @@ class SteamWallJob:
             "counters": counters,
             "all_eligible_included": selection["all_eligible_included"],
             "classification_complete": unclassified == 0,
+            "all_apps": value["all_apps"],
+            "selection_exact": True,
+            "eligible_complete": selection["eligible_complete"],
+            "examined": examined,
+            "unexamined": len(positive) - examined,
+            "classification_unknown": prefix_unknown,
+            "render_submissions": batches,
+            "derived_processing": None,
             "metadata_unexamined": unclassified,
             "metadata_failures": counters.get("metadata_failed", 0),
             "unknown_duration": selection["counts"]["unknown_duration"],
@@ -491,12 +530,10 @@ class JobHandler:
                         if self.explicit
                         else None,
                     )
-                fingerprint = hashlib.sha256(
-                    json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
-                ).hexdigest()
-                job = await scope.jobs.submit(
-                    JobRequest("steam_wall", value, fingerprint)
-                )
+                # No stable transport-retry identity is issued to this handler.
+                # Core still joins equivalent active inputs; a later manual
+                # action must be able to create a new job after completion.
+                job = await scope.jobs.submit(JobRequest("steam_wall", value))
                 payload = {"job": job_projection(job)}
                 message = f"拼图任务已提交：{job.job_id}。/ygl steam wall status {job.job_id} 查看状态；/ygl steam wall result {job.job_id} 按索引逐图查看。不会自动发送多张图片。"
             else:

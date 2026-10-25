@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { JSDOM } from 'jsdom';
 import { readFileSync } from 'node:fs';
 import { mount, installDOM, runtime } from './source-build.mjs';
+import {metric} from '../../packages/steam_dlc/pages/src/metric.js';
 
 const clone = value => structuredClone(value);
 const settle = async () => { for (let i = 0; i < 16; i++) await Promise.resolve(); };
@@ -117,6 +118,7 @@ function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, s
     get state() { return state; }, set state(next) { state = next; },
     get notifications() { return notifications; },
     revokeScope() { scopeCurrent = false; },
+    restoreScope() { scopeCurrent = true; },
     abort() { abort.abort(); },
     disposeScope() { for (const callback of disposal) callback(); },
     text: () => container.textContent,
@@ -926,6 +928,31 @@ test('cancel during an in-flight poll queues cancellation and stale QR responses
   late.resolve({qr_png: PNG}); await settle(); assert.equal(image.hasAttribute('src'), false);
 });
 
+test('same-identity settings pause clears credential drafts and QR session without replaying authorization', async () => {
+  const mock = credentialMock(['credential_perfect', 'credential_fivee']);
+  const late = deferred();
+  mock.services.authorize = async (revision, flow, step) => {
+    mock.calls.push(step);
+    return step === 'qr' ? late.promise : {session: authSession(), receipt: null};
+  };
+  const f = fixture({moduleId: 'cs2', credentials: mock.services}); mock.bind(f); await settle();
+  try {
+    f.input('credential_fivee', 'synthetic-ephemeral-token');
+    f.click('perfect-begin'); await settle();
+    assert.deepEqual(mock.calls, ['begin', 'qr']);
+    f.page.update({...f.context, available: false});
+    assert.equal(f.container.querySelector('[name=credential_fivee]').value, '');
+    assert.equal(f.page.navigationImpact().credentials, false);
+    f.page.update({...f.context, available: true});
+    late.resolve({qr_png: PNG}); await settle();
+    assert.equal(f.container.querySelector('.steam-dlc-qr').hasAttribute('src'), false);
+    assert.deepEqual(mock.calls, ['begin', 'qr']);
+    assert.doesNotMatch(f.text(), /synthetic-ephemeral-token/);
+    f.click('refresh'); await settle(); f.click('perfect-begin'); await settle();
+    assert.deepEqual(mock.calls, ['begin', 'qr', 'begin', 'qr']);
+  } finally {late.resolve({qr_png: PNG}); f.close();}
+});
+
 test('real revoke DTO clears QR/session and confirms the atomic CAS receipt before reporting success', async () => {
   const mock = credentialMock(['credential_perfect']); let f;
   mock.configured.credential_perfect = true;
@@ -997,6 +1024,157 @@ function jobFixture(options = {}) {
   return {...f, submissions, changes, created, revoked, jobs, view};
 }
 
+test('new completed page actions have fresh metadata keys while an ambiguous submission retry retains its key', async () => {
+  const requests = [];
+  let fail = true;
+  const f = jobFixture({jobs: {async submit(request) {
+    requests.push(clone(request));
+    if (fail) {fail = false; throw Error('transport_lost');}
+    return clone(f.view);
+  }}});
+  try {
+    f.input('account', '123'); f.submit(); await settle();
+    f.submit(); await settle(); await settle();
+    f.submit(); await settle(); await settle();
+    assert.equal(requests.length, 3);
+    assert.equal(requests[0].idempotency_key, requests[1].idempotency_key);
+    assert.notEqual(requests[1].idempotency_key, requests[2].idempotency_key);
+    assert.deepEqual(requests[0].parameters, requests[2].parameters);
+    assert.ok(requests.every(request => /^[a-zA-Z0-9:-]{16,128}$/u.test(request.idempotency_key)));
+  } finally {f.close();}
+});
+
+for (const routeId of ['collage', 'wishlist', 'analysis']) {
+  test(`${routeId} pauses same-identity in-flight work, resumes only fresh manual requests and permanently fences identity changes`, async () => {
+    const old = deferred(), fresh = deferred();
+    let requests = 0;
+    const call = () => (++requests === 1 ? old.promise : fresh.promise);
+    const f = routeId === 'collage' ? jobFixture({jobs: {submit: call}})
+      : fixture({moduleId: routeId === 'analysis' ? 'dota2' : 'steam', routeId, invoke: call});
+    try {
+      f.input('account', '123'); if (routeId === 'analysis') f.input('match_id', '100');
+      f.submit(); await settle(); assert.equal(requests, 1);
+      f.page.update({...f.context, available: false});
+      assert.equal(f.container.querySelector('button[type=submit]').disabled, true);
+      f.page.update({...f.context, available: true}); await settle();
+      assert.equal(requests, 1, 'resume never replays a submission');
+      assert.equal(f.container.querySelector('button[type=submit]').disabled, false);
+      assert.equal(f.container.querySelector('[name=account]').value, '123');
+      f.submit(); await settle(); assert.equal(requests, 2);
+      old.resolve(routeId === 'collage' ? f.view : analysisResponse('partial_success'));
+      await settle(); assert.equal(f.container.querySelector('button[type=submit]').disabled, true, 'stale finally cannot unlock new work');
+      f.page.update({...f.context, available: false});
+      f.page.update({...f.context, available: true});
+      f.page.update({...f.context, boundary: 'permanent-boundary'});
+      f.page.update({...f.context, available: true});
+      fresh.resolve(routeId === 'collage' ? f.view : analysisResponse('partial_success'));
+      await settle(); f.submit(); await settle(); assert.equal(requests, 2);
+      assert.doesNotMatch(f.text(), /ID32 456|任务 job-1/);
+    } finally {old.resolve(null); fresh.resolve(null); f.close();}
+  });
+
+  test(`${routeId} supports initially unavailable and repeated idle/result pause-resume without replay`, async () => {
+    let requests = 0;
+    const response = routeId === 'wishlist' ? {...cacheResponse(), document: {blocks: [{kind: 'fields', fields: {wishlist: {
+      items: [], page: 1, pages: 1, total: 0, region: 'CN', fetched_at: '2026-10-25', state: 'empty',
+    }}}]}} : analysisResponse('partial_success');
+    const f = routeId === 'collage' ? jobFixture({available: false, jobs: {async submit() {requests++; return clone(f.view);}, async result() {return {entries: [], next_cursor: null};}}})
+      : fixture({moduleId: routeId === 'analysis' ? 'dota2' : 'steam', routeId, available: false, invoke: async () => {requests++; return response;}});
+    try {
+      f.input('account', '123'); if (routeId === 'analysis') f.input('match_id', '100');
+      f.submit(); await settle(); assert.equal(requests, 0);
+      for (let index = 0; index < 3; index++) {
+        f.page.update({...f.context, available: true}); await settle();
+        assert.equal(requests, index);
+        f.submit(); await settle(); await settle();
+        assert.equal(requests, index + 1, 'one listener and one request per fresh action');
+        assert.equal(f.container.querySelector('button[type=submit]').disabled, false);
+        f.page.update({...f.context, available: false});
+        assert.equal(f.container.querySelector('.steam-dlc-public-result').textContent, '');
+      }
+    } finally {f.close();}
+  });
+
+  test(`${routeId} cannot revive an observed stale scope with an old available context`, async () => {
+    let requests = 0;
+    const f = routeId === 'collage' ? jobFixture({jobs: {async submit() {requests++; return clone(f.view);}}})
+      : fixture({moduleId: routeId === 'analysis' ? 'dota2' : 'steam', routeId, invoke: async () => {requests++; return analysisResponse('error');}});
+    try {
+      f.input('account', '123'); if (routeId === 'analysis') f.input('match_id', '100');
+      f.revokeScope(); f.submit(); await settle();
+      f.restoreScope(); f.page.update({...f.context, available: true}); f.submit(); await settle();
+      assert.equal(requests, 0);
+      assert.equal(f.container.querySelector('button[type=submit]').disabled, true);
+    } finally {f.close();}
+  });
+}
+
+test('numeric display accepts complete finite decimal values and preserves zero without parsing invalid prefixes', () => {
+  for (const [value, expected] of [[1.2, '1.2'], ['1.2', '1.2'], ['88.5', '88.5'], [0, '0'], ['0', '0'], ['-0.0', '-0.0'], ['1e-07', '1e-07']]) assert.equal(metric(value), expected);
+  for (const value of [null, undefined, '', ' ', ' 1.2', '1.2 ', true, false, NaN, Infinity, -Infinity, 'NaN', 'Infinity', '1.2bad', '0x10', '1,2', '+1', '.5', '01.2', '1e999']) assert.equal(metric(value), '未知', String(value));
+});
+
+test('Steam pause cancels scheduled polling and resume only permits an explicit status refresh', async () => {
+  const originalSetTimeout = globalThis.setTimeout, originalClearTimeout = globalThis.clearTimeout;
+  const scheduled = new Set(); let polls = 0;
+  globalThis.setTimeout = (callback, delay, ...args) => {
+    if (delay !== 1500) return originalSetTimeout(callback, delay, ...args);
+    const timer = {callback}; scheduled.add(timer); return timer;
+  };
+  globalThis.clearTimeout = timer => {if (!scheduled.delete(timer)) originalClearTimeout(timer);};
+  const f = jobFixture({jobs: {async status() {polls++; return {...f.view, status: 'running'};}}});
+  try {
+    f.input('account', '123'); f.submit(); await settle();
+    assert.equal(polls, 1); assert.equal(scheduled.size, 1);
+    f.page.update({...f.context, available: false}); assert.equal(scheduled.size, 0);
+    f.page.update({...f.context, available: true}); await settle();
+    assert.equal(polls, 1); assert.equal(scheduled.size, 0);
+    f.click('job-refresh'); await settle(); assert.equal(polls, 2); assert.equal(scheduled.size, 1);
+    assert.equal(f.submissions.length, 1, 'status refresh never generates');
+  } finally {f.close(); globalThis.setTimeout = originalSetTimeout; globalThis.clearTimeout = originalClearTimeout;}
+});
+
+test('CS2 consumes actual frozen-Core Gateway serialized profile/recent/stats/last/match results', {skip: !process.env.CS2_GATEWAY_FIXTURE}, async () => {
+  const fixtures = JSON.parse(readFileSync(process.env.CS2_GATEWAY_FIXTURE, 'utf8'));
+  assert.deepEqual(fixtures.map(row => row.action).sort(), ['last', 'match', 'profile', 'recent', 'stats']);
+  for (const {name, action, response} of fixtures) {
+    const projection = response.document.blocks.find(block => block.kind === 'fields' && block.fields?.cs2).fields.cs2;
+    const f = fixture({moduleId: 'cs2', routeId: 'query', invoke: async (_id, parameters) => parameters.action ? clone(response) : cacheResponse()});
+    try {
+      await settle(); f.input('account', projection.target?.id || '76561197960265851'); f.input('action', action);
+      if (action === 'match') f.input('match_id', projection.data.match_id);
+      f.submit(); await settle();
+      const output = f.container.querySelector('.steam-dlc-public-result');
+      assert.match(output.textContent, /1\.2/u, name);
+      assert.match(output.textContent, /0\.0/u, name);
+      if (action !== 'recent') assert.match(output.textContent, /88\.5/u, name);
+      assert.doesNotMatch(output.textContent, /NaN|undefined|Infinity/u, name);
+      assert.ok(output.querySelector('table'), name);
+      if (['last', 'match'].includes(action)) {
+        const bad = projection.data.players.find(row => row.nickname === 'Synthetic missing metrics');
+        assert.ok(bad, `${name}: fixture must retain its actually normalized invalid row`);
+        assert.deepEqual([bad.rating, bad.pw_rating, bad.adr], [null, null, null]);
+        const row = [...output.querySelectorAll('table tr')].find(row => row.textContent.includes(bad.nickname));
+        assert.deepEqual([...row.querySelectorAll('td')].slice(-3).map(cell => cell.textContent), ['未知', '未知', '未知']);
+      }
+    } finally {f.close();}
+  }
+});
+
+test('CS2 canonical decimal statistics display across recent, focus and roster without coercing invalid values', async () => {
+  const focus = {account_id: '76561197960265851', nickname: 'Decimals', team: 0, kills: 0, deaths: null, assists: false, rating: '1.2', pw_rating: '0', adr: '88.5'};
+  const bad = {account_id: '76561197960265852', nickname: 'Invalid', rating: '1.2bad', pw_rating: ' ', adr: 'Infinity'};
+  const response = cs2Response('perfect', {match_id: 'PVP@decimal', players: [focus, bad], focus}, {detail: 'full_match'});
+  const f = fixture({moduleId: 'cs2', routeId: 'query', invoke: async (_id, parameters) => parameters.action ? response : cacheResponse()});
+  try {
+    await settle(); f.input('account', focus.account_id); f.input('action', 'match'); f.input('match_id', 'PVP@decimal'); f.submit(); await settle();
+    const rows = [...f.container.querySelectorAll('.steam-dlc-public-result table tr')].map(row => [...row.querySelectorAll('td')].map(cell => cell.textContent));
+    assert.deepEqual(rows[1].slice(-3), ['1.2', '0', '88.5']);
+    assert.deepEqual(rows[2].slice(-3), ['未知', '未知', '未知']);
+    assert.match(f.text(), /K\/D\/A：0\/未知\/未知 · rating：1.2/);
+  } finally {f.close();}
+});
+
 test('Steam durable job validates legacy then publishes exact PNG and revokes preview on close', async () => {
   const f = jobFixture();
   try {
@@ -1024,13 +1202,51 @@ test('Steam job distinguishes unverified classification from a verified empty se
   } finally {f.close();}
 });
 
-test('Steam all-app output shows classification coverage separately from library coverage', async () => {
+test('Steam legacy all-app output keeps unverified coverage generic without claiming those rows were included', async () => {
   const f = jobFixture();
   try {
-    Object.assign(f.view.summary, {selected: 20, generated: 20, complete_source: true, classification_complete: false, metadata_unexamined: 20, metadata_failures: 1});
+    Object.assign(f.view.summary, {selected: 20, generated: 20, all_apps: true, complete_source: true, classification_complete: false, metadata_unexamined: 20, metadata_failures: 1});
     f.input('account', '123'); f.submit(); await settle(); await settle();
-    assert.match(f.text(), /已按全部应用设置入图/); assert.match(f.text(), /元数据请求失败1次/);
+    assert.match(f.text(), /类型尚未验证20项（未区分未检查与已检查但类型未知）/u); assert.match(f.text(), /元数据请求失败1次/);
+    assert.doesNotMatch(f.text(), /已按全部应用设置入图|已检查20项|未检查20项/u);
     assert.doesNotMatch(f.text(), /来源覆盖不完整/);
+  } finally {f.close();}
+});
+
+test('Steam live top20 summary distinguishes the unselected tail from examined rows with unknown classification', async () => {
+  const f = jobFixture();
+  try {
+    Object.assign(f.view.summary, {
+      source_returned: 383, eligible: 267, selected: 20, generated: 20, pending: 0,
+      examined: 20, unexamined: 247, classification_unknown: 0, metadata_unexamined: 247,
+      all_apps: true, classification_complete: false,
+    });
+    f.input('account', '123'); f.submit(); await settle(); await settle();
+    assert.match(f.text(), /已选20 · 已生成20/u);
+    assert.match(f.text(), /已检查20项 · 未检查247项 · 已检查中类型未知0项/u);
+    assert.doesNotMatch(f.text(), /类型尚未验证247项|已按全部应用设置入图/u);
+  } finally {f.close();}
+});
+
+test('Steam exact games selection qualifies known eligibility without claiming unexamined rows were included', async () => {
+  const f = jobFixture();
+  try {
+    Object.assign(f.view.summary, {selected: 20, eligible: 20, eligible_complete: false, selection_exact: true, all_apps: false, classification_complete: false, examined: 20, unexamined: 80, classification_unknown: 0, metadata_unexamined: 80});
+    f.input('account', '123'); f.submit(); await settle(); await settle();
+    assert.match(f.text(), /已确认符合20/); assert.match(f.text(), /选集排序已验证，剩余未检查/);
+    assert.doesNotMatch(f.text(), /已按全部应用设置入图/);
+  } finally {f.close();}
+});
+
+test('Steam classification coverage distinguishes checked unknown rows from the unchecked tail in progress', async () => {
+  const f = jobFixture({jobs: {async result() {return {entries: [], next_cursor: null};}}});
+  try {
+    f.view.summary = {}; f.view.status = 'failed';
+    f.view.progress = {examined: 20, unexamined: 247, classification_unknown: 2, metadata_unexamined: 249, selected: null};
+    f.input('account', '123'); f.submit(); await settle(); await settle();
+    assert.match(f.text(), /已检查20项 · 未检查247项 · 已检查中类型未知2项/u);
+    assert.match(f.text(), /已选待确认/u);
+    assert.doesNotMatch(f.text(), /类型尚未验证249项|已按全部应用设置入图/u);
   } finally {f.close();}
 });
 

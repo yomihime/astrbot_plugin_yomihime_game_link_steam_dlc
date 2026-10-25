@@ -11,6 +11,9 @@ permissions:
 jobs:
   offline:
     runs-on: ubuntu-latest
+    env:
+      YGL_CORE_ROOT: .ci-core
+      CS2_GATEWAY_FIXTURE: .local-dev/ci/cs2-gateway-fixture.json
     strategy:
       matrix:
         python: ["3.11", "3.13"]
@@ -30,16 +33,6 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-      - name: Verify page lifetime and configuration behavior
-        if: matrix.python == '3.13'
-        env:
-          YGL_CORE_ROOT: .ci-core
-        run: |
-          npm ci --ignore-scripts
-          npm ci --prefix .ci-core/pages/frontend --ignore-scripts
-          npm run test:pages
-          node scripts/build_pages.mjs --core-root=.ci-core --check
-          python scripts/sync_page_resources.py --check
       - name: Install pinned validation tools
         run: python -m pip install setuptools==80.9.0 wheel==0.45.1 ruff==0.12.0 mypy==1.17.1
       - name: Install canonical SDK wheel from reviewed Core source
@@ -56,5 +49,13 @@ jobs:
           ruff check main.py packages tests scripts
           ruff format --check main.py packages tests scripts
           mypy packages/steam_dlc
+      - name: Verify page lifetime and serialized Core results
+        if: matrix.python == '3.13'
+        run: |
+          npm ci --ignore-scripts
+          npm ci --prefix .ci-core/pages/frontend --ignore-scripts
+          npm run test:pages
+          node scripts/build_pages.mjs --core-root=.ci-core --check
+          python scripts/sync_page_resources.py --check
       - name: Build and inspect installable plugin ZIP
         run: python scripts/build_release.py

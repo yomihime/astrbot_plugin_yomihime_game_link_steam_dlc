@@ -8,6 +8,9 @@ from yomihime_game_link_sdk.storage import CacheVisibility
 def _legacy_result(selection, *, private=True, theme="warm_paper"):
     privacy = ygl.Privacy.PRIVATE if private else ygl.Privacy.PUBLIC
     counts = selection["counts"]
+    eligible_label = (
+        "符合" if selection.get("eligible_complete", True) else "已确认符合"
+    )
     full = selection.get("complete_library", False)
     owned = selection["scope"] == "webapi_owned_games"
     title = (
@@ -37,7 +40,7 @@ def _legacy_result(selection, *, private=True, theme="warm_paper"):
         f"{coverage}；{kind}。",
         f"来源原始时间：{selection['fetched_at']}",
         "按累计时长平方根分配面积；同面积分档可能并列，等时长按AppID排序；等比cover可裁边，不拉伸。",
-        f"来源{counts['source_rows']}项，去重后{counts['unique']}项，符合{counts['eligible']}项，筛除{counts['filtered']}项，本次{counts['included']}项，limit截取{counts['limited']}项。",
+        f"来源{counts['source_rows']}项，去重后{counts['unique']}项，{eligible_label}{counts['eligible']}项，已确认筛除{counts['filtered']}项，本次{counts['included']}项，已知limit截取{counts['limited']}项。",
         f"精度：网页显示小时{counts['displayed_hours']}项、API原始分钟{counts['api_minutes']}项；网页小时换算分钟仅用于权重，不提升来源精度。",
         f"未知类型{counts['unknown_type']}项，非游戏{counts['non_game']}项，未知时长{counts['unknown_duration']}项，未游玩{counts['zero_duration']}项；这些计数可交叉。",
         f"重复{counts['duplicates']}项，冲突{counts['duplicate_conflicts']}项；缺图{counts['missing_images']}项使用备用块。",
@@ -88,7 +91,7 @@ def _legacy_result(selection, *, private=True, theme="warm_paper"):
     visible_sources = [
         coverage
         + ("；入图数量与来源完整性分别计数。" if full else "；不是完整游戏库。"),
-        f"来源{counts['source_rows']}项 · 去重后{counts['unique']}项 · 符合{counts['eligible']}项 · 本次纳入{counts['included']}项 · 筛除{counts['filtered']}项 · limit截取{counts['limited']}项",
+        f"来源{counts['source_rows']}项 · 去重后{counts['unique']}项 · {eligible_label}{counts['eligible']}项 · 本次纳入{counts['included']}项 · 已确认筛除{counts['filtered']}项 · 已知limit截取{counts['limited']}项",
         f"未知类型{counts['unknown_type']}项 · 未知时长{counts['unknown_duration']}项 · 未游玩{counts['zero_duration']}项；分类计数可交叉。",
         f"缺图{counts['missing_images']}项使用备用块。",
         "权重=sqrt(累计分钟)；比例受限、尺寸分档，面积非递减，非精确比例。",
@@ -176,7 +179,11 @@ def result(selection, *, private=True, theme="warm_paper", avatar=None):
         or profile.get("nickname")
         or "Steam 玩家（昵称未提供）"
     )
-    summary = f"requested {counts['requested']} · eligible {counts['eligible']} · included {counts['included']} · omitted {counts['omitted']}"
+    eligible_label = (
+        "eligible" if selection.get("eligible_complete", True) else "known eligible"
+    )
+    summary = f"requested {counts['requested']} · {eligible_label} {counts['eligible']} · included {counts['included']} · known omitted {counts['omitted']}"
+    classification = f"已检查类型{counts.get('examined', 0)}项 · 未检查{counts.get('unexamined', 0)}项 · 已查仍未知{counts.get('classification_unknown', 0)}项。"
     rule = f"预设{selection['preset']} · {selection['aspect']} · {selection['quality']} · 整数倍率1–8，锚点间插值面积后量化；物理密排补空，逻辑同分按数值AppID。"
     fit_note = (
         "等比cover会裁剪封面；不拉伸。"
@@ -186,6 +193,7 @@ def result(selection, *, private=True, theme="warm_paper", avatar=None):
     lines = [
         coverage + "；" + kind + "。",
         summary,
+        classification,
         f"入图作品{counts['included']}项 · 入图累计{hours:.1f}小时（仅本次筛选口径）。",
         f"来源时间：{selection['fetched_at']}",
         rule,
@@ -241,6 +249,7 @@ def result(selection, *, private=True, theme="warm_paper", avatar=None):
             sources=(
                 coverage + "；" + kind,
                 summary,
+                classification,
                 rule,
                 fit_note,
                 f"来源时间：{selection['fetched_at']} · 缺图{counts['missing_images']}项备用块",

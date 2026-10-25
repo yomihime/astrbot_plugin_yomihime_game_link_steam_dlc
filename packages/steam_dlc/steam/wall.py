@@ -310,6 +310,24 @@ def select(
         and Decimal(row["minutes"]) > 0
         for row in rows
     )
+    counts["examined"] = sum(
+        row["app_id"] in metadata
+        and row["minutes"] is not None
+        and Decimal(row["minutes"]) > 0
+        for row in rows
+    )
+    counts["unexamined"] = sum(
+        row["app_id"] not in metadata
+        and row["minutes"] is not None
+        and Decimal(row["minutes"]) > 0
+        for row in rows
+    )
+    counts["classification_unknown"] = (
+        counts["metadata_unexamined"] - counts["unexamined"]
+    )
+    if not all_apps:
+        # Unknown types remain unresolved, rather than counted as filtered out.
+        counts["filtered"] -= counts["metadata_unexamined"]
     counts["requested"] = "all" if limit_mode == "all" else limit
     counts["omitted"] = counts["limited"]
     return {
@@ -321,6 +339,7 @@ def select(
         "complete_library": projection.get("data", {}).get("complete_library") is True,
         "all_eligible_included": counts["limited"] == 0
         and (all_apps or counts["metadata_unexamined"] == 0),
+        "eligible_complete": all_apps or counts["metadata_unexamined"] == 0,
         "mode": mode,
         "preset": preset,
         "aspect": aspect,

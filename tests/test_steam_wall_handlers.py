@@ -64,6 +64,19 @@ class HandlerTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.module.stop()
 
+    async def test_command_submissions_do_not_permanently_key_business_parameters(self):
+        command = SimpleNamespace(
+            origin=ygl.InvocationOrigin.COMMAND, parent_id=None, actor_id="owner"
+        )
+        handler = JobHandler(self.module, "submit")
+        for _ in range(2):
+            response = await handler.invoke(command, {"account": "1", "limit": 20})
+            self.assertEqual(response.status, ygl.ResultStatus.SUCCESS)
+        requests = [call.args[0] for call in self.scope.jobs.submit.await_args_list]
+        self.assertEqual(requests[0].parameters, requests[1].parameters)
+        self.assertTrue(all(request.idempotency_key is None for request in requests))
+        self.assertNotIn("idempotency_key", requests[0].parameters)
+
     async def test_finite_1001_1500_and_all_split_without_total_truncation(self):
         for count, limit, mode in (
             (1001, 1001, "top"),
@@ -125,6 +138,80 @@ class HandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [ids for phase, ids in self.calls if phase == "images"],
             [[str(index) for index in range(1, 21)]],
+        )
+
+    async def test_finite_all_apps_metadata_only_visits_selected_sorted_prefix(self):
+        data = projection([row(index, "1") for index in range(1500, 0, -1)])
+        with patch("packages.steam_dlc.steam.jobs.load", AsyncMock(return_value=data)):
+            summary = await SteamWallJob(self.module).run(
+                self.context, {"account": "2", "limit": 20}, self.control
+            )
+        self.assertEqual(
+            [ids for phase, ids in self.calls if phase == "metadata"],
+            [[str(index) for index in range(1, 21)]],
+        )
+        self.assertEqual((summary["eligible"], summary["selected"]), (1500, 20))
+        self.assertEqual((summary["examined"], summary["unexamined"]), (20, 1480))
+
+    async def test_games_only_progresses_until_exact_prefix_and_leaves_tail_unknown(
+        self,
+    ):
+        data = projection([row(index, "1") for index in range(1, 1501)])
+        original = self.module._materials.prepare.side_effect
+
+        async def prepare(scope, appids, **kwargs):
+            payload = await original(scope, appids, **kwargs)
+            for item in payload["items"]:
+                if int(item["app_id"]) <= 10:
+                    item["app_type"] = "software"
+            return payload
+
+        self.module._materials.prepare.side_effect = prepare
+        with patch("packages.steam_dlc.steam.jobs.load", AsyncMock(return_value=data)):
+            summary = await SteamWallJob(self.module).run(
+                self.context,
+                {"account": "2", "limit": 20, "all_apps": False},
+                self.control,
+            )
+        metadata_ids = [
+            item for phase, ids in self.calls if phase == "metadata" for item in ids
+        ]
+        image_ids = [
+            item for phase, ids in self.calls if phase == "images" for item in ids
+        ]
+        self.assertEqual(metadata_ids, [str(index) for index in range(1, 31)])
+        self.assertEqual(image_ids, [str(index) for index in range(11, 31)])
+        self.assertEqual(
+            (summary["eligible"], summary["examined"], summary["unexamined"]),
+            (20, 30, 1470),
+        )
+        self.assertFalse(summary["eligible_complete"])
+        self.assertFalse(summary["classification_complete"])
+        self.assertTrue(summary["selection_exact"])
+
+    async def test_games_only_unknown_high_rank_blocks_instead_of_skipping_it(self):
+        data = projection([row(index, "1") for index in range(1, 1501)])
+        original = self.module._materials.prepare.side_effect
+
+        async def prepare(scope, appids, **kwargs):
+            payload = await original(scope, appids, **kwargs)
+            payload["items"][0]["app_type"] = "unknown"
+            return payload
+
+        self.module._materials.prepare.side_effect = prepare
+        with patch("packages.steam_dlc.steam.jobs.load", AsyncMock(return_value=data)):
+            with self.assertRaises(QueryFailure):
+                await SteamWallJob(self.module).run(
+                    self.context,
+                    {"account": "2", "limit": 20, "all_apps": False},
+                    self.control,
+                )
+        self.assertEqual(
+            sum(len(ids) for phase, ids in self.calls if phase == "metadata"), 20
+        )
+        self.assertFalse(any(phase == "images" for phase, ids in self.calls))
+        self.assertEqual(
+            self.control.update.await_args.args[0]["reason"], "metadata_incomplete"
         )
 
     async def test_failed_later_batch_keeps_checkpoint_and_unpins(self):
