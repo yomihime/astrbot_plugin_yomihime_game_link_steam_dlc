@@ -972,12 +972,14 @@ export function mountController(container, options) {
       root.append(node('p', '页面查询始终需要明确账号，不读取本人默认绑定。5E 使用 domain；官匹与 5E 单场仅限来源近期玩家摘要。', 'steam-dlc-hint'));
     const submit = node('button', '查询', 'ui-button'); submit.type = 'submit'; submit.dataset.variant = 'primary'; submit.dataset.action = 'query';
     const actions = node('div', undefined, 'steam-dlc-actions'); actions.append(submit); queryForm.append(actions);
-    let failedPreview = null;
+    let failedPreview = null, formRevision = 0;
     const recovery = node('div', undefined, 'steam-dlc-actions'); recovery.hidden = true;
     const retry = node('button', '重试资料卡预览', 'ui-button'); retry.type = 'button'; retry.dataset.action = 'query-preview-retry';
     const textOnly = node('button', '仅查询文字资料', 'ui-button'); textOnly.type = 'button'; textOnly.dataset.action = 'query-text-only';
     recovery.append(retry, textOnly);
-    const clearRecovery = () => {failedPreview = null; recovery.hidden = true;};
+    // Form edits do not cancel the in-flight request: its finally still owns
+    // releasing pending. They only invalidate recovery of its captured target.
+    const clearRecovery = () => {formRevision += 1; failedPreview = null; recovery.hidden = true;};
     listen(queryForm, 'input', clearRecovery); listen(queryForm, 'change', clearRecovery);
     const syncQuery = () => {
       queryForm.setAttribute('aria-busy', String(pending));
@@ -986,7 +988,7 @@ export function mountController(container, options) {
       if (active()) fields();
     };
     const clearQuery = () => {
-      failedPreview = null; recovery.hidden = true; pending = false;
+      clearRecovery(); pending = false;
       previewGeneration += 1; revokePreviews(); result.replaceChildren(); syncQuery();
     };
     invalidatePublic = clearQuery;
@@ -994,8 +996,8 @@ export function mountController(container, options) {
     const run = async (statusOnly, mode = 'normal') => {
       if (!active() || pending) return;
       const explicitRecovery = mode !== 'normal';
-      if (explicitRecovery && !failedPreview) return;
-      const parameters = explicitRecovery ? {...failedPreview} : statusOnly ? {} : {account: account.value.trim()};
+      if (explicitRecovery && (!failedPreview || failedPreview.formRevision !== formRevision)) return;
+      const parameters = explicitRecovery ? {...failedPreview.parameters} : statusOnly ? {} : {account: account.value.trim()};
       if (!statusOnly && !explicitRecovery && (!parameters.account || !queryForm.checkValidity())) { say('请填写明确账号并检查输入范围。', 'error'); return; }
       if (!statusOnly && !explicitRecovery) {
         Object.assign(parameters, {action: action.value, platform: platform.value});
@@ -1005,6 +1007,7 @@ export function mountController(container, options) {
         if (!focus.disabled && focus.value.trim()) parameters.focus = focus.value.trim();
       }
       const withPreview = parameters.action === 'profile' && mode !== 'text';
+      const submittedRevision = formRevision;
       const ticket = ++previewGeneration; pending = true; recovery.hidden = true; revokePreviews(); result.replaceChildren(node('p', '正在查询来源。')); sync(); syncQuery();
       try {
         const response = await options.services[withPreview ? 'preview' : 'invoke']('query', parameters);
@@ -1042,9 +1045,10 @@ export function mountController(container, options) {
           publicInputs.forEach(input => { input.value = ''; }); syncQuery();
           say('页面授权或运行上下文已变化，请重新进入页面。', 'error'); return;
         }
-        failedPreview = withPreview ? {...parameters} : null;
-        recovery.hidden = !withPreview;
-        result.replaceChildren(node('p', withPreview ? '资料卡预览未完成，未取得可确认的文字或图片。可主动重试预览，或仅查询文字资料；每次操作会重新查询来源。' : '请求未完成，或返回内容不完整。请核对来源设置后重试。', 'steam-dlc-field-error'));
+        const canRecover = withPreview && submittedRevision === formRevision;
+        failedPreview = canRecover ? {parameters: {...parameters}, formRevision: submittedRevision} : null;
+        recovery.hidden = !canRecover;
+        result.replaceChildren(node('p', canRecover ? '资料卡预览未完成，未取得可确认的文字或图片。可主动重试预览，或仅查询文字资料；每次操作会重新查询来源。' : '请求未完成，或返回内容不完整。请核对当前账号与来源后重新查询。', 'steam-dlc-field-error'));
         say('未取得可确认结果。', 'error');
       } finally {
         if (current() && ticket === previewGeneration) { pending = false; sync(); syncQuery(); }

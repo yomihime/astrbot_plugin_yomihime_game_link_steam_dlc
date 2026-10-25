@@ -36,6 +36,20 @@ class _GridTile(NamedTuple):
     span: int
 
 
+def _raise_rate_limited(response):
+    retry = _header(response, "retry-after")
+    retry = (
+        int(retry)
+        if retry.isascii() and retry.isdecimal() and len(retry) <= 5
+        else None
+    )
+    raise QueryFailure(
+        ygl.ErrorCode.RATE_LIMITED,
+        "Steam 完整库来源限流，请稍后重试。",
+        retry if retry is not None and 0 <= retry <= 86400 else None,
+    )
+
+
 def span_for_minutes(minutes, preset="standard"):
     """Interpolate target area between fixed hour anchors, then quantize side.
 
@@ -200,21 +214,11 @@ async def load_full(scope, target, *, credential_revision=0, cache=True, refresh
     request = webapi.request("games", target)
     response = await scope.http.fetch(request)
     if response.status_code == 429:
-        retry = _header(response, "retry-after")
-        retry = (
-            int(retry)
-            if retry.isascii() and retry.isdecimal() and len(retry) <= 5
-            else None
-        )
-        raise QueryFailure(
-            ygl.ErrorCode.RATE_LIMITED,
-            "Steam 完整库来源限流，请稍后重试。",
-            retry if retry is not None and 0 <= retry <= 86400 else None,
-        )
+        _raise_rate_limited(response)
     if response.status_code in (401, 403):
         raise QueryFailure(
             ygl.ErrorCode.NOT_PUBLIC,
-            "Steam Key无效或游戏详情未公开；Key不能绕过隐私，未用公开样本替代。",
+            "Steam 来源授权或访问受限，请检查可信配置和目标账号的公开设置；未用公开样本替代。",
         )
     if response.status_code != 200:
         raise QueryFailure(
@@ -239,10 +243,12 @@ async def load_full(scope, target, *, credential_revision=0, cache=True, refresh
     try:
         requests += 1
         profile_response = await scope.http.fetch(profile_request)
+        if profile_response.status_code == 429:
+            _raise_rate_limited(profile_response)
         if profile_response.status_code in (401, 403):
             raise QueryFailure(
                 ygl.ErrorCode.NOT_PUBLIC,
-                "Steam Key或资料授权失效，请检查可信配置；未用公开样本替代。",
+                "Steam 资料授权或访问受限，请检查可信配置和目标账号的公开设置；未用公开样本替代。",
             )
         if (
             profile_response.status_code == 200
@@ -264,10 +270,11 @@ async def load_full(scope, target, *, credential_revision=0, cache=True, refresh
                 "avatar_url": avatar if avatar_source(avatar) is not None else None,
             }
     except ygl.SourceHttpError as exc:
-        if exc.code in (
+        if exc.status_code in (401, 403, 429) or exc.code in (
             "credentials_unavailable",
             "request_rejected",
             "source_not_declared",
+            "rate_limited",
         ):
             raise
     except (ygl.OperationTimeout, ValueError, TypeError):

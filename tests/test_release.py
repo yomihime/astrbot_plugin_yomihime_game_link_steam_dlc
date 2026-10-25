@@ -76,8 +76,13 @@ class ReleaseResourcesTest(unittest.TestCase):
 
     def test_mismatched_register_version_is_rejected(self):
         main = self.root / "main.py"
+        original = main.read_text(encoding="utf-8")
+        version = self.manifest["package_version"]
+        self.assertIn(version, original)
+        mismatched = original.replace(version, f"{version}-mismatch")
+        self.assertNotEqual(original, mismatched)
         main.write_text(
-            main.read_text(encoding="utf-8").replace("0.2.0-beta.1", "0.2.0-alpha.6"),
+            mismatched,
             encoding="utf-8",
         )
         with self.assertRaisesRegex(ValueError, "register version"):

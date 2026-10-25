@@ -39,6 +39,7 @@ def _feedback(job):
         "steam_key_required": "完整库需要在可信管理页配置 Steam Key，也可改选公开样本。",
         "steam_source_unavailable": "Steam 来源暂不可用，未用其他来源替代，请稍后重试。",
         "steam_source_not_public": "Steam 库未公开或来源授权受限，请检查公开设置和可信配置；未视为空库。",
+        "steam_source_access_denied": "Steam 来源授权或访问受限，请检查可信配置和目标账号的公开设置；未视为空库，也未用公开样本替代。",
         "rate_limited": "来源限流，请等待后再操作；已发布结果保留。",
         "resource_budget": "资源预算不足，已停止后续批次；可减少数量后重新执行，已发布结果保留。",
         "metadata_incomplete": "部分作品类型尚未验证，无法完成仅游戏筛选；请稍后重试，未视为空库。",
@@ -78,6 +79,13 @@ class SteamWallJob:
         target = _account(value["account"])
         scope = await self.owner._services.scopes.bind(invocation)
         config = await self.owner._services.config.current()
+        progress_snapshot = {}
+
+        async def update(progress, *, checkpoint=None):
+            # Core replaces progress rather than merging it. Keep the complete
+            # observed snapshot, including counts from already published batches.
+            progress_snapshot.update(progress)
+            await control.update(dict(progress_snapshot), checkpoint=checkpoint)
 
         async def source_failed(exc):
             code = exc.code if isinstance(exc, QueryFailure) else None
@@ -86,6 +94,9 @@ class SteamWallJob:
                 if code is ygl.ErrorCode.RATE_LIMITED
                 or isinstance(exc, ygl.SourceHttpError)
                 and (exc.status_code == 429 or exc.code == "rate_limited")
+                else "steam_source_access_denied"
+                if isinstance(exc, ygl.SourceHttpError)
+                and exc.status_code in (401, 403)
                 else "steam_source_not_public"
                 if code is ygl.ErrorCode.NOT_PUBLIC or isinstance(exc, PermissionError)
                 else "steam_source_unavailable"
@@ -98,7 +109,7 @@ class SteamWallJob:
             )
             if reason == "rate_limited" and retry is not None:
                 progress["retry_after"] = retry
-            await control.update(progress)
+            await update(progress)
 
         if value["source"] == "full":
             metadata = next(
@@ -111,9 +122,7 @@ class SteamWallJob:
                 None,
             )
             if metadata is None:
-                await control.update(
-                    {"phase": "blocked", "reason": "steam_key_required"}
-                )
+                await update({"phase": "blocked", "reason": "steam_key_required"})
                 raise ValueError(
                     "完整库需要可信设置页配置Steam Key，未使用公开样本替代。"
                 )
@@ -159,7 +168,7 @@ class SteamWallJob:
         async def require_budget(payload):
             values = payload["counters"]
             if values.get("rate_limited", 0):
-                await control.update(
+                await update(
                     {
                         "phase": "blocked",
                         "reason": "rate_limited",
@@ -183,7 +192,7 @@ class SteamWallJob:
                     values.get("retry_after") or None,
                 )
             if values.get("budget_skipped", 0):
-                await control.update(
+                await update(
                     {
                         "phase": "blocked",
                         "reason": "resource_budget",
@@ -197,8 +206,17 @@ class SteamWallJob:
                 )
                 raise ygl.ServiceUnavailable()
 
-        await control.update(
-            {"phase": "metadata", "source_returned": len(rows), "examined": 0}
+        await update(
+            {
+                "phase": "metadata",
+                "source_returned": len(rows),
+                "examined": 0,
+                "selected": None,
+                "generated": 0,
+                "pending": None,
+                "missing_images": 0,
+                "batches": 0,
+            }
         )
         examined, verified_games, prefix_unknown = 0, 0, 0
         while examined < len(candidates):
@@ -225,8 +243,7 @@ class SteamWallJob:
             )
             examined += len(chunk)
             count(payload)
-            await require_budget(payload)
-            await control.update(
+            await update(
                 {
                     "phase": "metadata",
                     "source_returned": len(rows),
@@ -234,8 +251,10 @@ class SteamWallJob:
                     "unexamined": len(positive) - examined,
                     "verified_eligible": verified_games,
                     "classification_unknown": prefix_unknown,
+                    "counters": dict(counters),
                 }
             )
+            await require_budget(payload)
             if not value["all_apps"] and value["limit_mode"] == "top":
                 # An unresolved higher-ranked app could displace a known game.
                 # Do not skip it and mislabel lower games as the exact top N.
@@ -258,7 +277,7 @@ class SteamWallJob:
         unclassified = selection["counts"]["metadata_unexamined"]
         if prefix_unknown and not value["all_apps"]:
             # Complete library coverage does not prove unknown app types.
-            await control.update(
+            await update(
                 {
                     "phase": "blocked",
                     "reason": "metadata_incomplete",
@@ -287,6 +306,14 @@ class SteamWallJob:
         theme = config.values.get("reply_theme", "warm_paper")
         if theme not in ("warm_paper", "cool_white", "deep_indigo"):
             theme = "warm_paper"
+        await update(
+            {
+                "phase": "rendering",
+                "selected": selected_count,
+                "pending": selected_count,
+                "counters": dict(counters),
+            }
+        )
         # A restart is interrupted by Core. Explicit retry recomputes selection;
         # checkpoints describe progress, never claim automatic continuation.
         start = 0
@@ -361,7 +388,7 @@ class SteamWallJob:
             missing += sum(not row["asset_id"] for row in batch_rows)
             batches += 1
             start += len(chunk)
-            await control.update(
+            await update(
                 {
                     "phase": "rendering",
                     "selected": len(chosen),
@@ -369,6 +396,7 @@ class SteamWallJob:
                     "pending": len(chosen) - generated,
                     "missing_images": missing,
                     "batches": batches,
+                    "counters": dict(counters),
                 },
                 checkpoint={
                     "completed_batches": batches,
@@ -510,7 +538,12 @@ class JobHandler:
                 if page.next_cursor is not None:
                     text += f"下一页：/ygl steam wall result {job_id} --page {page_number + 1}。"
         counts = {**job.progress, **job.summary}
-        text += f"已选{counts.get('selected', '待确认')}，已生成{counts.get('generated', 0)}，待处理{counts.get('pending', '待确认')}，缺图{counts.get('missing_images', 0)}。已发布图片资源{counts.get('result_entries', '待确认')}项，来源完整性{counts.get('complete_source', '待确认')}。"
+
+        def count(key):
+            amount = counts.get(key)
+            return amount if type(amount) is int and amount >= 0 else "待确认"
+
+        text += f"已选{count('selected')}，已生成{count('generated')}，待处理{count('pending')}，缺图{count('missing_images')}。已发布图片资源{count('result_entries')}项，来源完整性{counts.get('complete_source', '待确认')}。"
         return ygl.CapabilityResult(
             "steam-wall-job",
             ygl.ResultStatus.SUCCESS,

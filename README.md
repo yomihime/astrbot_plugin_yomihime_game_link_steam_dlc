@@ -1,16 +1,18 @@
 # 如月怜的游戏连结：Steam DLC
 
-独立 AstrBot 插件，提供共享 Steam 身份、商店与完整库、游戏生涯拼图、Dota 2 比赛订阅、CS2 完美/官匹/5E 查询和 Deadlock 查询。当前版本 `0.2.0-beta.1`，兼容冻结的 Core `0.1.11`（`2d6fb1f`）、canonical SDK `0.1.0a22`、模块 ABI `2.0`、外包桥接 `1`。Beta 表示部分外部来源和现场环境仍未验收。请安装 GitHub Release 的插件 ZIP，不要用自动生成的 Source code.zip 代替。来源可用性见[支持矩阵](docs/support-matrix.md)。
+独立 AstrBot 插件，提供共享 Steam 身份、商店与完整库、游戏生涯拼图、Dota 2 比赛订阅、CS2 完美/官匹/5E 查询和 Deadlock 查询。当前版本 `0.2.0-beta.2`，兼容冻结的 Core `0.1.11`（`2d6fb1f`）、canonical SDK `0.1.0a22`、模块 ABI `2.0`、外包桥接 `1`。Beta 表示部分外部来源和现场环境仍未验收。请安装 GitHub Release 的插件 ZIP，不要用自动生成的 Source code.zip 代替。来源可用性见[支持矩阵](docs/support-matrix.md)。
 
 ## 安装与凭据
 
-安装入口：[v0.2.0-beta.1 Release](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.1)。使用其中的 DLC ZIP、原字节 Core `0.1.11` 配对 ZIP 和 `SHA256SUMS`；发布前该入口尚不可下载，实际可用性以 Release 资产为准。发行摘要和支持矩阵区分真实来源、隔离测试和未验项目。
+安装入口：[v0.2.0-beta.2 Release](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.2)。使用其中的 DLC ZIP、原字节 Core `0.1.11` 配对 ZIP 和 `SHA256SUMS`；发布前该入口尚不可下载，实际可用性以 Release 资产为准。发行摘要和支持矩阵区分真实来源、隔离测试和未验项目。
 
 DLC 不包含第二份 SDK。首次安装使用提供同一 canonical SDK 的 Core 与 DLC；Python/SDK 变化时，先通过宿主管理正常停用/卸载旧插件并保留配置与数据，正常重启宿主，再安装并依次启用 Core、DLC。不要热替换 SDK、清空数据库或重建绑定。
 
 已有兼容 Core 的用户从 alpha.7 更新本版只需更新 DLC，保留现有 Core、SDK、Key 和完美授权。本版新增 `img.wmpvp.com` 的 `/pvp/` 匿名 PNG 头像来源，更新后需在可信管理页核对并批准该具体来源计划，再正常重启同一宿主。头像请求不携带完美凭据，未知图床按无头像降级。安装前备份最新数据与旧 DLC，通过正常管理流程保留配置、凭据和数据。回退时保留届时最新数据，只恢复旧 DLC 代码。
 
-新安装按 Core `0.1.11` → DLC `0.2.0-beta.1` 的顺序安装并启用宿主插件，再在 Core 可信管理页审阅并批准本次具体扩展安装计划，最后正常重启宿主。读取计划要求 DLC 宿主插件已启用；批准前 Core 会拒绝未授权的模块接入，启用插件本身不授予新来源权限。普通 DLC 更新沿用既有来源许可；扩大来源权限须批准新计划。使用 localhost/回环或可信 HTTPS 管理安装；远程普通 HTTP 可能在父壳资源摘要校验前失败，不要绕过校验。
+从 beta.1 更新 beta.2 可沿用同一份 Core、SDK、来源许可与已保存凭据。本版修复特殊昵称卡片接收、编辑表单后的旧目标恢复、拼图累计统计和明确授权失效后的页面清理；正常停用/更新 DLC 并保留数据，按宿主管理流程重启即可。
+
+新安装按 Core `0.1.11` → DLC `0.2.0-beta.2` 的顺序安装并启用宿主插件，再在 Core 可信管理页审阅并批准本次具体扩展安装计划，最后正常重启宿主。读取计划要求 DLC 宿主插件已启用；批准前 Core 会拒绝未授权的模块接入，启用插件本身不授予新来源权限。普通 DLC 更新沿用既有来源许可；扩大来源权限须批准新计划。使用 localhost/回环或可信 HTTPS 管理安装；远程普通 HTTP 可能在父壳资源摘要校验前失败，不要绕过校验。
 
 首次来源授权可在 Core 模块管理的“独立扩展安装授权”读取并批准当前安装计划：宿主插件名 `astrbot_plugin_yomihime_game_link_steam_dlc`，包 ID `steam_dlc`。核对来源/注入规则后批准并正常重启；已有等价配对授权可审计迁移。普通 DLC 版本和页面更新沿用许可，使用同一份 Core ZIP；新增敏感权限须批准新计划，不自动信任扩展自己的策略文件，也不要求重填现有 Key。
 
