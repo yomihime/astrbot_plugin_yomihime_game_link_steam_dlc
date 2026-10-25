@@ -37,7 +37,7 @@ def avatar_request(url):
             or parsed.netloc != "img.wmpvp.com"
             or parsed.fragment
             or not re.fullmatch(
-                r"/pvp/[0-9a-f]{2}/[0-9a-f]{2}/[0-9a-f]{40}\.png", parsed.path
+                r"/pvp/[0-9a-f]{2}/[0-9a-f]{2}/[0-9a-f]{42}\.png", parsed.path
             )
             or (parsed.query and not re.fullmatch(r"v=[0-9]{1,20}", parsed.query))
             or any(ord(char) <= 32 or ord(char) == 127 for char in url)
@@ -99,13 +99,25 @@ async def avatar_asset(scope, url, *, platform="perfect"):
             .strip()
             .lower()
         )
+        final_request = (
+            avatar_request(response.final_url)
+            if response.final_url is not None
+            else None
+        )
+        # Core final_url deliberately omits query values, and validation may
+        # normalize the original request headers. Compare only the controlled
+        # source and exact image path after validating the returned URL.
         if (
             response.status_code != 200
             or media != "image/png"
             or not _bounded_png(response.body)
             or (
                 response.final_url is not None
-                and avatar_request(response.final_url) != request
+                and (
+                    final_request is None
+                    or final_request.source_id != request.source_id
+                    or final_request.path != request.path
+                )
             )
         ):
             return None

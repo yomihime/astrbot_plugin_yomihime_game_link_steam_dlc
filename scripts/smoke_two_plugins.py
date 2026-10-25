@@ -841,11 +841,11 @@ async def install_smoke():
                 ),
                 (
                     "/ygl cs2 profile 76561197960265729 --platform perfect",
-                    ("凭据未配置", "可信管理页"),
+                    ("此来源需要授权", "管理员", "请勿在聊天中发送凭据"),
                 ),
                 (
                     "/ygl cs2 profile fixture-domain --platform 5e",
-                    ("凭据未配置", "5E Token"),
+                    ("此来源需要授权", "管理员", "请勿在聊天中发送凭据"),
                 ),
             ):
                 before = len(transport_calls)

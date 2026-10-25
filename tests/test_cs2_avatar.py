@@ -23,7 +23,7 @@ if AVAILABLE:
     from ygl_test_subject.presentation.card_bitmap import BitmapUnavailable
     from ygl_test_subject.presentation.layout_assets import rasterize_asset
 
-PATH = "/pvp/ab/cd/" + "a" * 40 + ".png"
+PATH = "/pvp/ab/cd/" + "a" * 42 + ".png"
 AVATAR = "https://img.wmpvp.com" + PATH + "?v=12345678"
 
 
@@ -330,7 +330,7 @@ class AvatarTests(unittest.IsolatedAsyncioTestCase):
     async def test_unexpected_final_url_is_rejected_without_redirect_followup(self):
         for final_url in (
             "https://unknown.invalid" + PATH,
-            "https://img.wmpvp.com" + PATH + "?v=999",
+            "https://img.wmpvp.com" + PATH.replace("a" * 42, "b" * 42),
         ):
             self.final_url = final_url
             self.requests.clear()
@@ -362,7 +362,8 @@ class AvatarTests(unittest.IsolatedAsyncioTestCase):
             "https://img.wmpvp.com" + PATH + "?v=1&v=2",
             "https://img.wmpvp.com" + PATH + "?v=%31",
             "https://img.wmpvp.com" + PATH + "#fragment",
-            "https://img.wmpvp.com/pvp/ab/cd/../" + "a" * 40 + ".png",
+            "https://img.wmpvp.com/pvp/ab/cd/../" + "a" * 42 + ".png",
+            "https://img.wmpvp.com/pvp/ab/cd/" + "a" * 40 + ".png",
             "https://img.wmpvp.com" + PATH.replace("/ab/", "/%61b/"),
             "https://img.wmpvp.com" + PATH + "\n",
             "https://img.wmpvp.com" + PATH + "?v=" + "1" * 21,
