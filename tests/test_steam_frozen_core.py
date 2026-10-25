@@ -23,6 +23,7 @@ from yomihime_game_link_sdk.storage import SecretMetadataState
 
 from packages.steam_dlc.steam.jobs import JobHandler, SteamWallJob
 from packages.steam_dlc.steam.module import SteamModule
+from packages.steam_dlc.steam.queries import QueryFailure
 
 CORE_ROOT = os.environ.get("YGL_CORE_ROOT")
 NOW, EXPIRES = "2026-01-01T00:00:00+00:00", "2099-01-01T00:00:00+00:00"
@@ -204,13 +205,211 @@ class FrozenRepositoryTests(unittest.IsolatedAsyncioTestCase):
                 job_id, token, ({"metadata": metadata},), NOW, lambda: None, 1024 * 1024
             )
 
-        summary = await SteamWallJob(self.module).run(
-            self.invocation,
-            json.loads(row["parameters_json"]),
-            SimpleNamespace(update=update, publish_document=publish),
-        )
+        try:
+            summary = await SteamWallJob(self.module).run(
+                self.invocation,
+                json.loads(row["parameters_json"]),
+                SimpleNamespace(update=update, publish_document=publish),
+            )
+        except Exception:
+            await self.repository.finish(job_id, token, "failed", {}, "job_failed", NOW)
+            raise
         await self.repository.finish(job_id, token, "succeeded", summary, None, NOW)
         return summary
+
+    async def test_real_http_access_denial_and_retry_after_reach_persisted_feedback(
+        self,
+    ):
+        http = frozen_module("infrastructure.http")
+        for operation in ("library", "profile"):
+            for status in (401, 403, 429):
+                with self.subTest(operation=operation, status=status):
+                    requests = []
+
+                    async def transport(request):
+                        requests.append(request)
+                        if operation == "profile" and request.path.endswith(
+                            "GetOwnedGames/v1/"
+                        ):
+                            return ygl.HttpResponse(
+                                200,
+                                {"Content-Type": "application/json"},
+                                b'{"response":{"game_count":0}}',
+                            )
+                        return ygl.HttpResponse(
+                            status, {"Retry-After": "47"}, b"private upstream detail"
+                        )
+
+                    # Real frozen HTTP error/public boundary, synthetic policy
+                    # and transport; this never obtains credentials or a socket.
+                    self.scope.http = http.SourceHttpService(
+                        (ygl.SourceDeclaration("steam_api", "api.steampowered.com"),),
+                        transport,
+                    )
+                    job_id = await self.request(refresh=True)
+                    with self.assertRaises(ygl.SourceHttpError) as caught:
+                        await self.execute(job_id)
+                    self.assertEqual(caught.exception.code, "upstream_error")
+                    self.assertEqual(caught.exception.status_code, status)
+                    job = await self.status(job_id)
+                    self.assertEqual(job.status.value, "failed")
+                    self.assertEqual(
+                        job.progress["reason"],
+                        "rate_limited"
+                        if status == 429
+                        else "steam_source_access_denied",
+                    )
+                    self.assertEqual(
+                        job.progress.get("retry_after"), 47 if status == 429 else None
+                    )
+                    self.assertNotIn("selected", job.progress)
+                    self.assertNotIn("missing_images", job.progress)
+                    self.assertEqual(len((await self.result(job_id)).entries), 0)
+                    response = await self.handler.command(
+                        self.command, self.scope, f"status {job_id}"
+                    )
+                    text = response.document.ordered_blocks[0].text
+                    if status in (401, 403):
+                        self.assertIn("可信配置", text)
+                        self.assertIn("公开设置", text)
+                        self.assertNotIn("Key无效", text)
+                    else:
+                        self.assertIn("等待47秒", text)
+                    self.assertNotIn("private upstream detail", text)
+                    self.assertEqual(len(requests), 1 if operation == "library" else 2)
+
+    async def test_partial_missing_cover_survives_later_rate_or_resource_stop(self):
+        for reason in ("rate_limited", "resource_budget"):
+            with self.subTest(reason=reason):
+                self.scope.cache.values.clear()
+                self.scope.resources.values.clear()
+                self.source_rows = [(index, 1) for index in range(3, 153)]
+                fetch = self.scope.http.fetch
+                store = self.scope.resources.store
+
+                async def failing_fetch(request):
+                    if request.source_id == "steam_store_image":
+                        appid = int(request.path.split("/apps/", 1)[1].split("/", 1)[0])
+                        if appid == 3:
+                            return ygl.HttpResponse(404, {}, b"")
+                        if appid >= 131 and reason == "rate_limited":
+                            return ygl.HttpResponse(429, {"Retry-After": "53"}, b"")
+                    return await fetch(request)
+
+                async def limited_store(media, content, **kwargs):
+                    # The first published batch has one placeholder and 127
+                    # stored originals; later storage denial is a real SDK port.
+                    if (
+                        reason == "resource_budget"
+                        and len(self.scope.resources.values) >= 127
+                    ):
+                        raise ygl.ServiceUnavailable()
+                    return await store(media, content, **kwargs)
+
+                self.scope.http.fetch = failing_fetch
+                self.scope.resources.store = limited_store
+                try:
+                    job_id = await self.request(refresh=True, limit=150, mode="legacy")
+                    error = (
+                        QueryFailure
+                        if reason == "rate_limited"
+                        else ygl.ServiceUnavailable
+                    )
+                    with self.assertRaises(error):
+                        await self.execute(job_id)
+                    job = await self.status(job_id)
+                    progress = job.progress
+                    self.assertEqual(progress["reason"], reason)
+                    self.assertEqual(
+                        tuple(
+                            progress[key]
+                            for key in (
+                                "selected",
+                                "generated",
+                                "pending",
+                                "missing_images",
+                                "batches",
+                            )
+                        ),
+                        (150, 128, 22, 1, 1),
+                    )
+                    self.assertEqual(progress["result_entries"], 1)
+                    self.assertEqual(progress["source_returned"], 150)
+                    self.assertEqual(progress["examined"], 150)
+                    self.assertEqual(progress["counters"]["list_requests"], 2)
+                    if reason == "rate_limited":
+                        self.assertEqual(progress["retry_after"], 53)
+                    page = await self.result(job_id)
+                    self.assertEqual(len(page.entries), 1)
+                    self.assertEqual(
+                        dict(page.entries[0]["metadata"]),
+                        {"batch_index": 0, "start": 0, "end": 128, "item_count": 128},
+                    )
+                    response = await self.handler.command(
+                        self.command, self.scope, f"status {job_id}"
+                    )
+                    self.assertIn(
+                        f"/ygl steam wall result {job_id}",
+                        response.document.ordered_blocks[0].text,
+                    )
+                finally:
+                    self.scope.http.fetch = fetch
+                    self.scope.resources.store = store
+
+    async def test_metadata_stop_retains_unknown_selection_and_observed_zero_output(
+        self,
+    ):
+        fetch = self.scope.http.fetch
+
+        async def limited_metadata(request):
+            if request.source_id == "steam_browse":
+                return ygl.HttpResponse(429, {"Retry-After": "37"}, b"")
+            return await fetch(request)
+
+        self.scope.http.fetch = limited_metadata
+        job_id = await self.request(refresh=True)
+        with self.assertRaises(QueryFailure):
+            await self.execute(job_id)
+        progress = (await self.status(job_id)).progress
+        self.assertEqual(progress["reason"], "rate_limited")
+        self.assertIsNone(progress["selected"])
+        self.assertIsNone(progress["pending"])
+        self.assertEqual(progress["generated"], 0)
+        self.assertEqual(progress["missing_images"], 0)
+        self.assertEqual(progress["batches"], 0)
+        self.assertEqual(progress["result_entries"], 0)
+        self.assertEqual(progress["examined"], 2)
+        self.assertEqual(progress["retry_after"], 37)
+        self.assertEqual(len((await self.result(job_id)).entries), 0)
+
+    async def test_optional_profile_temporary_failure_still_allows_verified_library(
+        self,
+    ):
+        http = frozen_module("infrastructure.http")
+        for failure in (500, 503, "transport_failed"):
+            with self.subTest(failure=failure):
+
+                async def transport(request):
+                    if request.path.endswith("GetOwnedGames/v1/"):
+                        return ygl.HttpResponse(
+                            200,
+                            {"Content-Type": "application/json"},
+                            b'{"response":{"game_count":0}}',
+                        )
+                    if isinstance(failure, str):
+                        raise ygl.SourceHttpError(failure)
+                    return ygl.HttpResponse(failure, {}, b"private upstream detail")
+
+                self.scope.http = http.SourceHttpService(
+                    (ygl.SourceDeclaration("steam_api", "api.steampowered.com"),),
+                    transport,
+                )
+                job_id = await self.request(refresh=True)
+                summary = await self.execute(job_id)
+                self.assertEqual(summary["source_returned"], 0)
+                self.assertEqual(summary["generated"], 0)
+                self.assertTrue(summary["complete_source"])
+                self.assertEqual((await self.status(job_id)).status.value, "succeeded")
 
     async def test_completed_refreshes_execute_again_and_reuse_valid_originals(self):
         first = await self.request()

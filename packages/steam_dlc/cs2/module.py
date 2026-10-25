@@ -3,6 +3,7 @@
 import math
 import shlex
 from collections.abc import Mapping
+from unicodedata import category
 
 import yomihime_game_link_sdk as ygl
 from yomihime_game_link_sdk import cards
@@ -515,19 +516,34 @@ def _display_projection(value):
     return value
 
 
+def _card_text(value):
+    # Card receiving validation is stricter than TextBlock/Fields/FactDocument:
+    # only LF is allowed among Unicode C* characters; U+2028/U+2029 are forbidden.
+    # Adapt presentation alone, preserving raw names, ranks, seasons and identity
+    # in the text fallback, structured fields and model facts.
+    return "".join(
+        char
+        for char in value
+        if char == "\n"
+        or (not category(char).startswith("C") and char not in "\u2028\u2029")
+    )
+
+
 def _result(title, projection, lines, *, model_facts=True, private=False, avatar=None):
     privacy = ygl.Privacy.PRIVATE if private else ygl.Privacy.PUBLIC
     lines = tuple(lines)
     card = None
     if projection.get("kind") == "profile":
-        panels: tuple[cards.Block, ...] = tuple(cards.Text(line) for line in lines)
+        panels: tuple[cards.Block, ...] = tuple(
+            cards.Text(_card_text(line)) for line in lines
+        )
         if avatar is not None:
             panels = (cards.Image(avatar, width=96, height=96),) + panels
         card = cards.Document(
-            f"CS2 · {title}",
+            _card_text(f"CS2 · {title}"),
             panels,
             brand="游戏连结 · CS2",
-            sources=(f"来源：{title}",),
+            sources=(_card_text(f"来源：{title}"),),
         )
     return ygl.CapabilityResult(
         result_id="steam-dlc-cs2",

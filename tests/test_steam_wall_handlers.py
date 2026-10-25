@@ -159,6 +159,39 @@ class HandlerTests(unittest.IsolatedAsyncioTestCase):
             "/ygl steam wall retry job", result.document.ordered_blocks[0].text
         )
 
+    async def test_status_counts_distinguish_unknown_legacy_fields_from_observed_zero(
+        self,
+    ):
+        command = SimpleNamespace(
+            origin=ygl.InvocationOrigin.COMMAND, parent_id=None, actor_id="owner"
+        )
+        for counts, expected in (
+            ({}, "已选待确认，已生成待确认，待处理待确认，缺图待确认"),
+            (
+                {
+                    "selected": None,
+                    "generated": 0,
+                    "pending": None,
+                    "missing_images": 0,
+                },
+                "已选待确认，已生成0，待处理待确认，缺图0",
+            ),
+            (
+                {"selected": 150, "generated": 128, "pending": 22, "missing_images": 1},
+                "已选150，已生成128，待处理22，缺图1",
+            ),
+        ):
+            with self.subTest(counts=counts):
+                self.scope.jobs.status = AsyncMock(
+                    return_value=JobView(
+                        "job", 3, "steam_wall", JobStatus.FAILED, progress=counts
+                    )
+                )
+                response = await JobHandler(self.module, "submit").command(
+                    command, self.scope, "status job"
+                )
+                self.assertIn(expected, response.document.ordered_blocks[0].text)
+
     async def test_queued_retry_is_rejected_before_mutating_gateway(self):
         command = SimpleNamespace(
             origin=ygl.InvocationOrigin.COMMAND, parent_id=None, actor_id="owner"
