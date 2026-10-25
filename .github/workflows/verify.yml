@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       YGL_CORE_ROOT: .ci-core
-      CS2_GATEWAY_FIXTURE: ${{ runner.temp }}/cs2-gateway-fixture.json
+      CS2_GATEWAY_FIXTURE: .local-dev/ci/cs2-gateway-fixture.json
     strategy:
       matrix:
         python: ["3.11", "3.13"]
