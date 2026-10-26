@@ -29,8 +29,8 @@ export function mountWishlistForm(root, {options, active, field, say}) {
       const response = await options.services.invoke('wishlist_explicit', parameters);
       if (disposed || !active() || ticket !== generation) return;
       if (response?.status === 'error') {
-        const errors = {not_public: '愿望单未公开或来源受限，未视为空单。', rate_limited: '愿望单来源限流，请稍后重试。', upstream_error: '愿望单来源请求失败，未视为空单。', unparsed: '愿望单来源结构无法验证，未视为空单。', parameter_error: '请检查账号、地区、语言或页码。', module_unavailable: '愿望单服务或本次授权暂不可用。'};
-        throw problem(errors[response.error?.code] || '愿望单来源暂不可用，未视为空单。');
+        const errors = {not_public: '愿望单未公开或来源受限，请确认公开设置后重试。', rate_limited: '愿望单来源限流，请稍后重试。', upstream_error: '愿望单来源请求失败，请稍后重试。', unparsed: '愿望单来源结构无法验证，请稍后重试。', parameter_error: '请检查账号、地区、语言或页码。', module_unavailable: '愿望单服务或本次授权暂不可用。'};
+        throw problem(errors[response.error?.code] || '愿望单来源暂不可用，请稍后重试。');
       }
       const data = response?.document?.blocks?.find(block => block?.kind === 'fields' && block.fields?.wishlist)?.fields.wishlist;
       if (!data || !Array.isArray(data.items) || data.items.length > 20 || !Number.isSafeInteger(data.pages) || data.page !== requested) throw Error('愿望单结果无法验证。');
@@ -44,7 +44,7 @@ export function mountWishlistForm(root, {options, active, field, say}) {
         const releases = {unreleased: '未发售', released: '已发售', unknown: '发售状态未知'};
         row.append(title, node('p', `添加：${new Date(item.date_added * 1000).toISOString()} · ${item.price || priceStates[item.price_state] || '价格未知'} · 币种${item.currency || '未提供'} · 折扣${item.discount_percent ?? '未知'}% · ${releases[item.release_state] || '发售状态未知'}`)); results.append(row);
       }
-      if (data.state === 'empty') results.append(node('p', '来源明确返回空items，本次公开愿望单为空。'));
+      if (data.state === 'empty') results.append(node('p', '来源返回的本次公开愿望单为空。'));
       if (data.enrichment_failed) results.append(node('p', '愿望单已读取；当前页商店补全失败，未将缺失价格视为免费。'));
       previous.disabled = page <= 1; next.disabled = page >= pages;
     } catch (error) {if (!disposed && active() && ticket === generation) {results.replaceChildren(node('p', error.publicMessage || '愿望单请求未完成，请稍后重试。')); say('愿望单查询未完成。', 'error');}}

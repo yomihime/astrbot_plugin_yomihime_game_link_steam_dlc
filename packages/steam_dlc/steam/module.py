@@ -106,10 +106,10 @@ class _Handler:
                 "游戏连结 · Steam · 状态",
                 (
                     "商店 search/app 与公开账号 profile/recent/games 样本查询可用。",
-                    "商店默认 CN/schinese；可用 --country CC --language english 指定。",
-                    "recent 是主页展示样本，games 是 legacy mostPlayedGames 样本；都不是完整游戏库。",
+                    "商店默认中国地区、简体中文；可用 --country CC --language english 指定地区和语言。",
+                    "recent 展示主页近期样本，games 展示旧版资料接口常玩样本；二者均按来源提供的样本范围展示。",
                     "请在私聊使用 /ygl steam bind、binding、unbind。",
-                    "手动关联为 self_asserted，不代表已验证 Steam 所有权。",
+                    "手动关联按用户声明保存，Steam 账号所有权仍待验证。",
                 ),
                 {"module": "steam", "account_association": "self_asserted"},
             )
@@ -140,9 +140,9 @@ class _Handler:
                 steam_id = parse_steam_binding_target(value.strip())
                 payload = {"steam_id64": steam_id, "association": "self_asserted"}
                 if record is None:
-                    saved = await collection.create("default", payload)
+                    await collection.create("default", payload)
                 else:
-                    saved = await collection.replace(
+                    await collection.replace(
                         "default", payload, expected_revision=record.revision
                     )
                 return success(
@@ -150,8 +150,7 @@ class _Handler:
                     (
                         f"已关联 SteamID64：{steam_id}",
                         f"Dota ID32：{account_id32(steam_id)}",
-                        "关联方式：self_asserted（用户声明，未验证所有权）。",
-                        f"绑定修订：{saved.revision}",
+                        "关联方式：用户声明，账号所有权仍待验证。",
                     ),
                     privacy=_PRIVATE,
                 )
@@ -162,14 +161,14 @@ class _Handler:
                         ("当前没有关联 Steam 账号。",),
                         privacy=_PRIVATE,
                     )
-                saved = await collection.replace(
+                await collection.replace(
                     "default",
                     {"steam_id64": None, "association": "self_asserted"},
                     expected_revision=record.revision,
                 )
                 return success(
                     "游戏连结 · Steam · 解绑",
-                    (f"已解除关联；修订：{saved.revision}",),
+                    ("已解除关联。",),
                     privacy=_PRIVATE,
                 )
             if record is None or record.value.get("steam_id64") is None:
@@ -209,7 +208,7 @@ class _Handler:
                 (
                     f"SteamID64：{steam_id}",
                     f"Dota ID32：{identity['account_id32']}",
-                    f"修订：{record.revision}；self_asserted（未验证所有权）。",
+                    "关联方式：用户声明，账号所有权仍待验证。",
                 ),
                 privacy=_PRIVATE,
             )
@@ -395,7 +394,7 @@ class _Query:
         except PermissionError:
             return failure(
                 ygl.ErrorCode.NOT_PUBLIC,
-                "Steam 资料需要登录或未公开；未视为空库。",
+                "Steam 资料需要登录或未公开，游戏库内容仍待确认。",
                 privacy=ygl.Privacy.PUBLIC,
             )
         except LookupError:

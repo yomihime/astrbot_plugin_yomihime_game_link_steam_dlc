@@ -201,7 +201,7 @@ class TestDotaNext(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(player["xp_per_min"])
         self.assertIn("0 / 未提供", shown(focused))
         self.assertIn("槽1：空；槽2：未提供", shown(focused))
-        self.assertIn("不是购买顺序", shown(focused))
+        self.assertIn("物品编号表示最终装备槽位", shown(focused))
         absent = await self.call("match", {"match_id": "9001", "account": "124"})
         self.assertEqual(absent.model_facts.facts["focus"]["status"], "not_found")
         self.assertIn("可能不在比赛中或账号未公开", shown(absent))

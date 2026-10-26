@@ -660,7 +660,22 @@ def analysis_result(projection, focus, *, command):
         "objectives": "目标事件",
         "team_advantage": "团队经济/经验差",
         "benchmarks": "表现基准",
+        "players": "玩家名单",
+        "invalid_player": "无效玩家记录",
+        "gold_t": "经济时间线",
+        "xp_t": "经验时间线",
+        "team_gold": "团队经济差",
+        "team_xp": "团队经验差",
+        "teamfight_players": "团战玩家记录",
     }
+
+    def section_label(name):
+        key, _, suffix = name.partition(".")
+        detail = {"invalid_rows": "（含无效记录）", "missing_points": "（采样点缺失）"}
+        return section_names.get(key, "未知分析段") + detail.get(
+            suffix, "（范围待确认）" if suffix else ""
+        )
+
     coverage = {
         "settlement_only": "仅基础结算",
         "partial": "部分数据",
@@ -683,7 +698,7 @@ def analysis_result(projection, focus, *, command):
         TextBlock(
             "对线与发育：K/D/A "
             + "/".join(shown(player[k]) for k in ("kills", "deaths", "assists"))
-            + f"；补刀 {shown(player['last_hits'])}；反补 {shown(player['denies'])}；GPM {shown(player['gold_per_min'])}；XPM {shown(player['xp_per_min'])}；来源lane_role {shown(focus['lane']['role'])}。"
+            + f"；补刀 {shown(player['last_hits'])}；反补 {shown(player['denies'])}；GPM {shown(player['gold_per_min'])}；XPM {shown(player['xp_per_min'])}；来源分路编号 {shown(focus['lane']['role'])}。"
         ),
         TextBlock(
             "装备与节奏：最终物品ID "
@@ -713,19 +728,22 @@ def analysis_result(projection, focus, *, command):
             + shown(player["tower_damage"])
             + "；治疗 "
             + shown(player["hero_healing"])
-            + "。具体改进须结合已提供的时间线/基准，不由结算数值臆测操作原因。"
+            + "。具体改进须结合已提供的时间线与表现基准；操作原因有待更多证据确认。"
         ),
         TextBlock(
             "数据覆盖："
             + coverage[facts["data_completeness"]]
             + "；缺失："
             + (
-                "、".join(section_names[name] for name in facts["missing_sections"])
+                "、".join(section_label(name) for name in facts["missing_sections"])
                 or "受支持章节无缺项"
             )
             + "；有界截取："
-            + (", ".join(facts["truncated_sections"]) or "无")
-            + "。来源OpenDota；不是第一视角录像复盘。"
+            + (
+                "、".join(section_label(name) for name in facts["truncated_sections"])
+                or "无"
+            )
+            + "。基于OpenDota公开结算与已有解析数据。"
         ),
     )
     return CapabilityResult(
