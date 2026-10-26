@@ -102,7 +102,7 @@ test('CS2 known source error codes retain actionable guidance without echoing me
     ['parameter_error', /核对玩家账号、所选来源、赛季和比赛 ID/],
     ['not_public', /核对公开设置与来源授权/],
     ['not_found', /核对玩家账号与所选来源/],
-    ['no_records', /不代表该玩家没有比赛历史/],
+    ['no_records', /重新查询已收录比赛/],
     ['unparsed', /等待来源解析/],
     ['upstream_error', /所选来源暂时不可用/],
   ]) {

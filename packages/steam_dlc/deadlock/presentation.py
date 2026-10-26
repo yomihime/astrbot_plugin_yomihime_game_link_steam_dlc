@@ -8,6 +8,23 @@ from yomihime_game_link_sdk import cards
 from .normalization import literal
 
 
+def label_for(item):
+    return {
+        "recorded": "已收录",
+        "not_recorded": "尚未收录",
+        "kills": "击杀",
+        "deaths": "死亡",
+        "assists": "助攻",
+        "duration_s": "时长（秒）",
+        "win": "胜利",
+        "loss": "失利",
+        "unknown": "未知",
+        "found": "已定位该玩家",
+        "ambiguous": "存在多条匹配记录，待确认",
+        "not_found": "本场记录中暂无该玩家",
+    }.get(item, "未知")
+
+
 def value(item):
     return "未知" if item is None else str(item)
 
@@ -27,7 +44,7 @@ def result(operation, projection, default_target, avatar=None):
             "match": "比赛详情",
         }[operation]
     )
-    lines = ["社区 Deadlock API · 仅已收录公开数据；不代表 Valve 官方完整实时历史。"]
+    lines = ["社区 Deadlock API · 展示已收录公开数据，覆盖范围以社区来源为准。"]
     if operation == "profile":
         p = projection["profile"]
         rank = p["rank"]
@@ -36,12 +53,12 @@ def result(operation, projection, default_target, avatar=None):
             if rank["badge"] == 0
             else "段位未知"
             if rank["badge"] is None
-            else f"段位 {rank['tier']} · 分段 {rank['subrank']} · badge {rank['badge']}"
+            else f"段位 {rank['tier']} · 分段 {rank['subrank']} · 段位标识 {rank['badge']}"
         )
         lines += [
             f"账号：{p['account_id32']} · {p['name'] or '昵称未收录'}",
             label,
-            f"资料状态：{p['profile_status']}；来源资料更新：{value(p['last_updated'])}",
+            f"资料状态：{label_for(p['profile_status'])}；来源资料更新：{value(p['last_updated'])}",
             "段位取最近已收录排位；Eternus 按上游每日百分位，显示该场入场段位。",
         ]
     elif operation in ("recent", "stats"):
@@ -52,16 +69,16 @@ def result(operation, projection, default_target, avatar=None):
             f"胜 {stats['wins']} / 负 {stats['losses']} / 未知 {stats['unknown']}；胜率 {value(stats['win_rate'])}%（有效分母 {stats['outcome_denominator']}）",
         ]
         if not history["matches"]:
-            lines.append("来源暂无已收录有效比赛；不等于账号没有游玩记录。")
+            lines.append("来源暂无已收录有效比赛，账号完整游玩历史仍待确认。")
         if operation == "stats":
             for key, metric in stats["averages"].items():
                 lines.append(
-                    f"平均 {key}：{value(metric['value'])}（有效样本 {metric['sample_count']}）"
+                    f"平均 {label_for(key)}：{value(metric['value'])}（有效样本 {metric['sample_count']}）"
                 )
         else:
             for row in history["matches"]:
                 lines.append(
-                    f"#{row['match_id']} · 英雄 {value(row['hero_id'])} · 模式 {value(row['game_mode'])}/{value(row['match_mode'])} · {row['outcome']} · KDA {kda(row)} · {value(row['duration_s'])}秒"
+                    f"#{row['match_id']} · 英雄 {value(row['hero_id'])} · 模式 {value(row['game_mode'])}/{value(row['match_mode'])} · {label_for(row['outcome'])} · KDA {kda(row)} · {value(row['duration_s'])}秒"
                 )
     else:
         report = projection["match"]
@@ -71,24 +88,24 @@ def result(operation, projection, default_target, avatar=None):
         ]
         if "selection" in projection:
             lines.append(
-                f"上一场选择：已收录窗口最近有效比赛 #{projection['selection']['match_id']}；未查更早比赛。"
+                f"上一场选择：已收录窗口最近有效比赛 #{projection['selection']['match_id']}；查询范围为本次已收录窗口。"
             )
         if "focus" in projection:
             focus = projection["focus"]
             lines.append(
-                f"个人焦点账号 {focus['account_id32']}：{focus['status']}"
+                f"个人焦点账号 {focus['account_id32']}：{label_for(focus['status'])}"
                 + (f" · KDA {kda(focus['player'])}" if focus["player"] else "")
             )
         for p in report["players"][:24]:
             lines.append(
-                f"账号 {value(p['account_id32'])} · 队伍 {value(p['team'])} · 英雄 {value(p['hero_id'])} · KDA {kda(p)} · {p['outcome']}"
+                f"账号 {value(p['account_id32'])} · 队伍 {value(p['team'])} · 英雄 {value(p['hero_id'])} · KDA {kda(p)} · {label_for(p['outcome'])}"
             )
         if report["player_count"] > 24:
             lines.append("卡片仅展示前24位；实际人数保留于比赛摘要。")
     lines.append(
-        f"获取 UTC：{projection['fetched_at']} · {'缓存' if projection['cache_hit'] else '本次网络'} · 投影 v{projection['schema_version']}"
+        f"获取 UTC：{projection['fetched_at']} · {'缓存' if projection['cache_hit'] else '本次网络'}"
     )
-    lines.append("缺失字段=未知；样本均值与胜率各自排除未知值。")
+    lines.append("缺失数据标为未知；样本均值与胜率分别按有效数据计算。")
     clean = tuple(literal(line, 600) or "" for line in lines)
     panels: tuple[cards.Block, ...] = tuple(cards.Text(line) for line in clean)
     if avatar is not None:

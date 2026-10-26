@@ -457,10 +457,42 @@ def _provider_failure(error):
     return failure(code, message, retry_after_seconds=error.retry_after_seconds)
 
 
+_DISPLAY_LABELS = {
+    "recorded_official": "已收录官匹数据",
+    "platform_recorded": "平台已收录数据",
+    "recent_player_summary": "近期玩家摘要",
+    "recent_first_page": "近期比赛首批样本",
+    "season_aggregate": "赛季汇总",
+    "career_aggregate": "生涯汇总",
+    "source_aggregate": "来源汇总",
+    "requested_season_aggregate": "所选赛季汇总",
+    "fivee_level": "5E 等级",
+    "perfect_pvp_rank": "完美平台段位",
+    "official_competitive_rank": "官匹竞技段位",
+    "aggregate": "汇总数据",
+    "player_summary": "玩家摘要",
+    "full_match": "完整比赛详情",
+    "matches": "比赛场数",
+    "kd": "击杀死亡比",
+    "rating": "Rating 评分",
+    "pw_rating": "完美评分",
+    "rws": "RWS 回合贡献",
+    "adr": "ADR 平均每回合伤害",
+    "win_rate": "胜率",
+    "win": "胜利",
+    "loss": "失利",
+    "draw": "平局",
+}
+
+
+def _display_label(value, fallback="未知"):
+    return _DISPLAY_LABELS.get(value, fallback)
+
+
 def _lines(projection):
     data, kind = projection["data"], projection["kind"]
     lines = [
-        f"来源：{_LABELS[projection['platform']]} · 范围：{projection['coverage']}"
+        f"来源：{_LABELS[projection['platform']]} · 范围：{_display_label(projection['coverage'], '范围未知')}"
     ]
     if kind in ("profile", "stats"):
         lines.append(
@@ -471,35 +503,41 @@ def _lines(projection):
         rank = data.get("rank")
         if rank:
             lines.append(
-                f"{rank['system']}：{rank['value'] if rank['value'] is not None else '未知'}；积分：{rank['score'] if rank['score'] is not None else '未知'}"
+                f"{_display_label(rank['system'], '段位体系未知')}：{rank['value'] if rank['value'] is not None else '未知'}；积分：{rank['score'] if rank['score'] is not None else '未知'}"
             )
         metrics = data.get("metrics", {})
         lines.append(
             " · ".join(
-                f"{key}={value}" for key, value in metrics.items() if value is not None
+                f"{_display_label(key, '其他统计')}：{value}"
+                for key, value in metrics.items()
+                if value is not None
             )
             or "来源未提供可用统计。"
         )
-        lines.append(f"统计口径：{data['metric_scope']}")
+        lines.append(
+            f"统计口径：{_display_label(data['metric_scope'], '统计口径未知')}"
+        )
     elif kind == "recent":
         matches = data["matches"]
         lines.append(
             f"当前样本 {data['available_matches']} 场，展示 {len(matches)} 场。"
         )
         lines.extend(
-            f"{row['match_id']} · {row['map'] or '未知地图'} · {row['result'] or '未知胜负'} · K/D/A {row['kills']}/{row['deaths']}/{row['assists']}"
+            f"{row['match_id']} · {row['map'] or '未知地图'} · {_display_label(row['result'], '胜负未知')} · K/D/A {row['kills']}/{row['deaths']}/{row['assists']}"
             for row in matches
         )
     else:
         lines.append(f"比赛：{data['match_id']} · {data.get('map') or '未知地图'}")
-        lines.append(f"详情层级：{projection['detail_level']}")
+        lines.append(
+            f"详情层级：{_display_label(projection['detail_level'], '详情范围未知')}"
+        )
         focus = data.get("focus")
         if isinstance(focus, dict):
             lines.append(
                 f"焦点：{focus.get('account_id') or focus.get('id') or '未知'}"
             )
     if projection.get("unavailable_reason"):
-        lines.append("此来源当前只提供有界玩家摘要，不含完整比赛名单与详情。")
+        lines.append("此来源当前提供近期窗口内的玩家摘要；完整比赛名单与详情暂缺。")
     return lines
 
 

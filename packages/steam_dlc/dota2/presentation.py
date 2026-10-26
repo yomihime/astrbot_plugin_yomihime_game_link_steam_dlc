@@ -217,7 +217,7 @@ def _stats(projection, timezone_name, blocks, panels):
         panels,
     )
     _note(
-        "胜率=胜/(胜+负)，未知不计败；均值分别按有效值计算，不是KDA比率。仅最近N场实际样本，不代表全生涯、固定日期完整战绩或排位水平。",
+        "胜率按胜场占已知胜负场次的比例计算；击杀、死亡和助攻均值分别按有效值计算。统计范围为最近N场实际返回样本。",
         blocks,
         panels,
     )
@@ -294,7 +294,7 @@ def _match(projection, timezone_name, blocks, panels):
                 panels,
             )
             _note(
-                "物品编号表示最终槽位，不是购买顺序或时间线。未提供的详细字段不记作0；基础响应足以展示结算，不会提交录像解析。",
+                "物品编号表示最终装备槽位。缺失字段保持未知；结算使用现有公开数据。",
                 blocks,
                 panels,
             )

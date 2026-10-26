@@ -7,16 +7,16 @@ import {metric} from './metric.js';
 export const MODULES = Object.freeze({
   steam: {
     title: 'Steam',
-    summary: '商店搜索、游戏详情与公开账号资料。共享关联由用户声明，不代表账号所有权验证。',
+    summary: '商店搜索、游戏详情与公开账号资料。共享关联是用户自行声明的账号信息，所有权尚未验证。',
     source: 'Steam 商店和 Community 提供公开样本；完整库 full 使用可选 Steam Key。是否完整以本次来源返回为准，私密库、缺少 Key 与上游失败会分别说明。',
     commands: [
       ['/ygl steam bind <Dota ID32、SteamID64 或 profiles URL>', '在私聊中关联当前用户的 Steam 账号。'],
       ['/ygl steam binding', '在私聊中查看当前用户关联。'],
       ['/ygl steam unbind', '在私聊中解除当前用户关联。'],
-      ['/ygl steam search <游戏名或 AppID> [--country CC] [--language english]', '商店默认 CN / schinese；价格按本次地区、币种和来源时间展示，不代表历史最低价。'],
+      ['/ygl steam search <游戏名或 AppID> [--country CC] [--language english]', '商店默认 CN / schinese；展示本次地区、币种和来源时间对应的当前价格。'],
       ['/ygl steam app <AppID> [--country CC] [--language english]', '查看商店详情与当前可用价格；图片失败时保留文字结果。'],
       ['/ygl steam profile [账号]', '查看公开资料；昵称、头像、等级逐项标明可用性。'],
-      ['/ygl steam recent [账号]', '查看主页最近展示的公开样本，不代表完整两周游戏列表。'],
+      ['/ygl steam recent [账号]', '查看主页最近展示的公开样本，范围以本次来源返回为准。'],
       ['/ygl steam games [账号]', '查看来源可用的公开样本；完整游戏库增强需要可选 Steam Key。'],
       ['/ygl steam wall [账号] [--source games|recent|full] [--all-apps] [--limit N] [--refresh]', '生成游戏生涯拼图。来源、时间预设、比例与数量受已保存设置及输出预算约束；完整库需要可选 Key。'],
       ['/ygl steam wall status|result|cancel|retry <任务ID>', '查看本人任务状态、逐图结果、取消或重试。result支持 --page N --image N，每次只返回选中一张，不自动刷屏。'],
@@ -35,7 +35,7 @@ export const MODULES = Object.freeze({
       ['/ygl dota2 last [账号]', '查询该玩家上一场基础结算；省略账号时使用当前用户关联。'],
       ['/ygl dota2 match <match_id> [--account <账号>]', '指定账号查看个人焦点，无账号保持全场概览；不读取默认关联，不提交解析。'],
       ['/ygl dota2 status', '查看功能说明。'],
-      ['/ygl dota2 analyze <比赛ID> --account <玩家账号或本场唯一昵称>', '查看指定玩家的对线、装备、团战和证据边界；网页与Tool仅提供确定性事实，Host模型仅在真实命令路径可选生成。'],
+      ['/ygl dota2 analyze <比赛ID> --account <玩家账号或本场唯一昵称>', '查看指定玩家的对线、装备、团战和证据边界；网页与模型查询展示公开事实；聊天命令可选生成模型短评。'],
       ['/ygl dota2 watch [账号]', '在当前群或私聊创建自己的比赛订阅；省略账号使用当前 Steam 绑定。'],
       ['/ygl dota2 watchlist', '在当前会话查看自己的订阅；首次建立基线，不补发旧比赛。'],
       ['/ygl dota2 unwatch <订阅ID>', '取消当前会话中自己的订阅。'],
@@ -45,9 +45,9 @@ export const MODULES = Object.freeze({
     title: 'CS2', summary: '完美平台、完美收录官匹与 5E 玩家资料、近期战绩、赛季统计和来源单场查询。',
     source: '完美扫码与 5E Token 在可信管理页设置。登录主体只用于请求授权，不替换玩家绑定。官匹与 5E 单场只提供来源近期样本中的玩家摘要。',
     commands: [
-      ['/ygl cs2 status', '查看来源和凭据配置状态；配置不等于平台当前验证有效。'],
+      ['/ygl cs2 status', '查看来源和凭据配置状态；上游有效性在查询时验证。'],
       ['/ygl cs2 profile [SteamID64] --platform perfect [--season S16]', '完美/官匹可复用本人 Steam 绑定；模型查询必须明确账号。'],
-      ['/ygl cs2 recent [SteamID64] --platform official [--limit 5]', '官匹仅指完美收录口径，不代表全部 Valve 历史。'],
+      ['/ygl cs2 recent [SteamID64] --platform official [--limit 5]', '官匹展示完美平台已收录的比赛。'],
       ['/ygl cs2 stats <5E-domain> --platform 5e [--season 2026S5]', '5E domain 与 SteamID 分开；统计注明来源赛季口径。'],
       ['/ygl cs2 last [SteamID64] --platform perfect', '查看来源最近一场；官匹与 5E 返回有界玩家摘要。'],
       ['/ygl cs2 match <来源比赛ID> --platform perfect [--focus SteamID64]', '完美可返回完整名单及焦点；官匹/5E 另需 --account，限定在该玩家近期样本。'],
@@ -55,7 +55,7 @@ export const MODULES = Object.freeze({
   },
   deadlock: {
     title: 'Deadlock', summary: '玩家资料、近期样本、统计与单场焦点查询，数据来自 Deadlock API 社区已收录记录。',
-    source: '默认使用最近 20 条已收录记录，不代表 Valve 官方实时完整历史。未收录、受保护、尚未解析与空结果分别报告；缺失段位不推断为最低段位或零 MMR。',
+    source: '使用社区来源最近 20 条已收录记录，范围和更新时间以该来源为准。未收录、受保护、尚未解析与空结果分别报告；缺失段位保持未知。',
     commands: [
       ['/ygl deadlock profile [账号]', '查看来源已收录资料与最近可用排位记录。'],
       ['/ygl deadlock recent [账号] [--limit N]', '默认 20 条，范围 1–20；仅指来源已收录近期记录。'],
@@ -66,6 +66,10 @@ export const MODULES = Object.freeze({
     ],
   },
 });
+
+export const authorizationLabel = state => displayLabel({waiting: '等待扫码确认', authorized: '授权成功', completed: '授权完成', cancelled: '已取消', expired: '已过期', failed: '授权失败'}, state, '状态未知');
+
+const displayLabel = (labels, key, fallback) => Object.hasOwn(labels, key) ? labels[key] : fallback;
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const identity = context => JSON.stringify([
@@ -79,7 +83,7 @@ const SETTINGS = Object.freeze({
   cs2: ['reply_theme', 'default_platform'], deadlock: ['reply_theme'],
 });
 const LABELS = {timezone: '输出时区', reply_theme: '回复主题', poster_source: '游戏库来源', poster_mode: '拼图布局', poster_preset: '时长预设', poster_aspect: '输出比例', poster_quality: '输出清晰度', poster_fit: '封面适配', poster_include_apps: '包含软件等全部应用', poster_limit: '作品数量上限', subscription_enabled: '启用比赛订阅', poll_interval_seconds: '订阅检查间隔（秒）', opendota_rph: '每小时请求上限', commentary_enabled: '启用模型短评', default_platform: '默认 CS2 来源'};
-const CHOICE_LABELS = {games: '公开主页样本', recent: '近期公开样本', full: '完整游戏库（需要 Key）', dense: '游戏生涯拼图', legacy: '兼容旧布局', single: '单机', standard: '标准', long: '长玩', normal: '标准', hd: '高清', cover: '等比裁切填充', contain: '保留完整封面', perfect: '完美平台', official: '完美收录官匹', '5e': '5E'};
+const CHOICE_LABELS = {profile: '玩家资料', stats: '玩家统计', last: '上一场比赛', match: '比赛详情', games: '公开主页样本', recent: '近期公开样本', full: '完整游戏库（需要 Key）', dense: '游戏生涯拼图', legacy: '兼容旧布局', single: '单机', standard: '标准', long: '长玩', normal: '标准', hd: '高清', cover: '等比裁切填充', contain: '保留完整封面', perfect: '完美平台', official: '完美收录官匹', '5e': '5E'};
 const CREDENTIALS = {steam: [['credential_steam_key', 'Steam Web API Key']], dota2: [['credential_opendota_key', 'OpenDota Key（可选）']], cs2: [['credential_perfect', '完美扫码授权'], ['credential_fivee', '5E 会话 Token']]};
 LABELS.poster_limit_mode = '作品数量模式';
 CHOICE_LABELS.top = '按时长取前 N 项'; CHOICE_LABELS.all = '不限（来源实际返回范围）';
@@ -755,7 +759,7 @@ export function mountController(container, options) {
     if (!aliases.length) return;
     if (!credentialRoot) {
       credentialRoot = node('section', undefined, 'steam-dlc-credentials');
-      credentialRoot.append(node('h3', '来源凭据与授权'), node('p', '凭据只在可信管理入口提交。输入不保留为跨页草稿；已配置不代表上游已验证有效。', 'steam-dlc-hint'));
+      credentialRoot.append(node('h3', '来源凭据与授权'), node('p', '凭据只在可信管理入口提交。输入仅在当前页面保留；上游有效性在查询时验证。', 'steam-dlc-hint'));
       root.insertBefore(credentialRoot, message);
     }
     for (const [field, label] of aliases) {
@@ -798,7 +802,7 @@ export function mountController(container, options) {
         const state = credentialSnapshot?.fields[field];
         row.status.textContent = !state ? '状态待刷新。' : !state.configured ? '未配置。'
           : state.decryptable ? '已配置；上游有效性尚未验证。' : '已配置，但当前无法解密，请检查服务密钥后重新设置。';
-        if (field === 'credential_perfect' && authorizationSession) row.status.textContent += ` 当前扫码：${authorizationSession.state}。`;
+        if (field === 'credential_perfect' && authorizationSession) row.status.textContent += ` 当前扫码：${authorizationLabel(authorizationSession.state)}。`;
         if (row.input) row.input.disabled = !active() || pending || credentialPending || authorizationSession?.state === 'waiting';
         for (const button of row.buttons) {
           const action = button.dataset.action;
@@ -820,7 +824,7 @@ export function mountController(container, options) {
     input.id = `steam-dlc-${moduleId}-${options.routeId}-${name}`; input.name = name;
     input.className = 'ui-control'; text.htmlFor = input.id;
     if (choices) {
-      input.append(...choices.map(value => { const choice = node('option', CHOICE_LABELS[value] || value); choice.value = value; return choice; }));
+      input.append(...choices.map(value => { const choice = node('option', (name === 'action' && value === 'recent' ? '近期战绩' : CHOICE_LABELS[value]) || '未知选项'); choice.value = value; return choice; }));
     } else { input.type = 'text'; input.maxLength = 128; input.autocomplete = 'off'; }
     input.value = initial;
     const hint = node('p', '', 'steam-dlc-hint'), error = node('p', '', 'steam-dlc-field-error');
@@ -843,10 +847,10 @@ export function mountController(container, options) {
       }
       wrap.append(element); target.append(wrap);
     };
-    const coverage = {platform_recorded: '平台收录', recorded_official: '完美收录官匹', recent_first_page: '近期首批样本', recent_player_summary: '有界近期玩家摘要'}[projection.coverage] || text(projection.coverage);
+    const coverage = displayLabel({platform_recorded: '平台收录', recorded_official: '完美收录官匹', recent_first_page: '近期首批样本', recent_player_summary: '有界近期玩家摘要'}, projection.coverage, '范围未知');
     const full = projection.detail_level === 'full_match';
     if (['profile', 'stats'].includes(projection.kind)) {
-      target.append(node('p', `来源：${CHOICE_LABELS[projection.platform] || text(projection.platform)} · 范围：${coverage}`, 'steam-dlc-hint'));
+      target.append(node('p', `来源：${displayLabel(CHOICE_LABELS, projection.platform, '来源未知')} · 范围：${coverage}`, 'steam-dlc-hint'));
       if (projection.kind === 'profile') {
         const rank = data.rank || {};
         const rankValue = typeof rank.value === 'string' && rank.value.trim() && !/^[+-]?[\d.]+$/u.test(rank.value) ? rank.value : metric(rank.value);
@@ -857,9 +861,9 @@ export function mountController(container, options) {
       target.append(node('p', '未知表示来源未提供，不按 0 计算。', 'steam-dlc-hint'));
       return;
     }
-    target.append(node('p', `来源：${CHOICE_LABELS[projection.platform] || text(projection.platform)} · 范围：${coverage} · 详情：${full ? '完整比赛' : '玩家摘要'}`, 'steam-dlc-hint'));
-    if (!full) target.append(node('p', '该来源仅提供该玩家的有界近期摘要，不含完整比赛名单与详情。', 'steam-dlc-hint'));
-    if (projection.unavailable_reason && projection.unavailable_reason !== 'full_match_detail_unavailable') target.append(node('p', `缺项说明：${text(projection.unavailable_reason)}`, 'steam-dlc-hint'));
+    target.append(node('p', `来源：${displayLabel(CHOICE_LABELS, projection.platform, '来源未知')} · 范围：${coverage} · 详情：${displayLabel({full_match: '完整比赛', player_summary: '玩家摘要'}, projection.detail_level, '详情范围未知')}`, 'steam-dlc-hint'));
+    if (projection.detail_level === 'player_summary') target.append(node('p', '该来源提供该玩家的近期样本摘要。', 'steam-dlc-hint'));
+    if (projection.unavailable_reason && projection.unavailable_reason !== 'full_match_detail_unavailable') target.append(node('p', '部分详情暂不可用。', 'steam-dlc-hint'));
     target.append(node('p', '未知表示来源未提供，不按 0 计算。', 'steam-dlc-hint'));
     if (projection.kind === 'recent') {
       if (!Array.isArray(data.matches) || !data.matches.length) {
@@ -911,7 +915,7 @@ export function mountController(container, options) {
       if (Array.isArray(data?.sources)) {
         const list = node('dl', undefined, 'steam-dlc-source-status');
         for (const source of data.sources) {
-          list.append(node('dt', CHOICE_LABELS[source.platform] || source.platform), node('dd', source.credential_state === 'configured' ? '凭据已配置；查询时验证上游有效性。' : '需要在可信设置页授权。'));
+          list.append(node('dt', displayLabel(CHOICE_LABELS, source.platform, '来源未知')), node('dd', source.credential_state === 'configured' ? '凭据已配置；查询时验证上游有效性。' : '需要在可信设置页授权。'));
         }
         target.append(list);
       } else if (data?.data) {
@@ -1023,7 +1027,7 @@ export function mountController(container, options) {
             ['parameter_error', '查询参数不符合要求，请核对玩家账号、所选来源、赛季和比赛 ID 后重新查询。'],
             ['not_public', '玩家资料未公开或来源访问受限，请核对公开设置与来源授权后重新查询。'],
             ['not_found', '来源未找到对应玩家或记录，请核对玩家账号与所选来源后重新查询。'],
-            ['no_records', '来源当前没有可用记录，可稍后查询；这不代表该玩家没有比赛历史。'],
+            ['no_records', '来源当前暂无可用记录，可稍后重新查询已收录比赛。'],
             ['unparsed', '来源尚未解析对应记录，请等待来源解析后再查询。'],
             ['upstream_error', '所选来源暂时不可用，请稍后再查询。'],
           ]).get(response.schema_version === 1 ? response.error?.code : null);
@@ -1095,13 +1099,13 @@ export function mountController(container, options) {
     if (moduleId === 'steam') {
       root.append(node('h3', '时长海报墙'));
       root.append(node('p', '游戏生涯拼图用累计小时映射每张作品的目标面积，提供单机、标准和长玩预设。大图跨行、小图填空，封面保持纵向比例；旧布局可以显式选择。未知时长不补零。', 'steam-dlc-hint'));
-      root.append(node('p', 'games 与 recent 是不同公开样本；full 需要可选 Steam Key。选择来源不会自动把样本当成完整库。默认纵向 2:3，可切换 9:16 或 1:2；作品数量和输出预算共同约束分页，兼容旧布局最多 200 项。包含全部应用会纳入软件，旧设置中的关闭值继续保留。', 'steam-dlc-hint'));
+      root.append(node('p', '公开主页与近期记录各有其样本范围；完整游戏库需要可选 Steam Key，完整性以本次来源返回为准。默认纵向 2:3，可切换 9:16 或 1:2；作品数量和输出预算共同约束分页，兼容旧布局最多 200 项。包含全部应用会纳入软件，旧设置中的关闭值继续保留。', 'steam-dlc-hint'));
       cacheValue = node('p', '尚未读取缓存状态。', 'steam-dlc-cache-value');
       cacheButton = node('button', '刷新缓存状态'); cacheButton.className = 'ui-button'; cacheButton.type = 'button'; cacheButton.dataset.action = 'refresh-cache';
       listen(cacheButton, 'click', () => { void refreshCache(); });
       root.append(cacheValue, cacheButton);
     }
-    if (moduleId === 'dota2') root.append(node('p', '账号可用 Dota ID32 或 SteamID64。订阅创建、查看和取消使用当前群或私聊中的命令；页面不伪造聊天身份。OpenDota Key 可选，匿名与有 Key 都遵守同一每小时预算；模型短评失败不会阻止基础通知。', 'steam-dlc-hint'));
+    if (moduleId === 'dota2') root.append(node('p', '账号可用 Dota ID32 或 SteamID64。订阅创建、查看和取消通过当前群或私聊中的命令完成。OpenDota Key 可选，匿名与有 Key 都遵守同一每小时预算；模型短评失败不会阻止基础通知。', 'steam-dlc-hint'));
   } else if (module && options.routeId === 'settings') {
     form = node('form');
     listen(form, 'submit', event => { event.preventDefault(); void save(); });

@@ -215,9 +215,7 @@ async def load(
         )
         data = normalize_profile(text, target)
         scope_description = "public_homepage_recent_display_sample"
-        warnings.append(
-            "主页最多3款最近展示游戏；不是完整两周列表或完整游戏库。时长为网页显示小时精度。"
-        )
+        warnings.append("主页最近展示游戏样本（最多3款）；时长为网页显示小时精度。")
     else:
         source, endpoint = "steam_community", f"/profiles/{target}/"
         body = await fetch(scope, source, endpoint, (("xml", "1"),), expected="xml")
@@ -225,7 +223,7 @@ async def load(
         scope_description = "deprecated_xml_most_played_sample"
         warnings.extend(
             (
-                "这是已弃用 Community XML 的最多5款 mostPlayedGames 公开样本，不是全部游戏库或完整近期列表。",
+                "这是旧版社区接口提供的常玩游戏公开样本，最多5款。",
                 "子项时长与上游汇总口径可能不同；不据此计算完整两周总时长。完整库增强需要可选 Steam Web API Key。",
             )
         )
