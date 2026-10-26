@@ -12,7 +12,7 @@ from io import BytesIO
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SDK_VERSION = "0.1.0a22"
+SDK_VERSION = "0.1.0a23"
 QUERY_TOOLS = {
     "steam": {
         "search": ("search", "query"),
@@ -39,6 +39,13 @@ QUERY_TOOLS = {
         name: (name + "_explicit", "match_id" if name == "match" else "account")
         for name in ("profile", "recent", "stats", "last", "match")
     },
+}
+MODEL_TOOL_NAMES = {module_id: f"steam_dlc_{module_id}" for module_id in QUERY_TOOLS}
+MODEL_TOOL_DESCRIPTIONS = {
+    "steam": "查询 Steam 商店、应用详情、公开玩家资料、近期游戏、游戏样本、游戏生涯拼图与公开愿望单。",
+    "dota2": "查询 Dota 2 玩家资料、近期比赛、统计、单场详情与比赛分析。",
+    "cs2": "查询 CS2 完美、官匹与 5E 的玩家资料、近期比赛、统计和单场详情。",
+    "deadlock": "查询 Deadlock 社区公开玩家资料、近期比赛、统计和单场详情。",
 }
 ROOT_FILES = (
     "__init__.py",
@@ -116,6 +123,8 @@ def validate_version_declarations(files):
     readme = files["README.md"].decode("utf-8")
     if f"当前版本 `{version}`" not in readme:
         raise ValueError("README version differs from manifest package version")
+    if f"canonical SDK `{SDK_VERSION}`" not in readme:
+        raise ValueError("README SDK version differs from release requirement")
 
 
 def source_bytes(path, root):
@@ -225,6 +234,24 @@ def validate_query_tools(module):
     tools = module["tools"]
     if len(tools) != len(expected) or {tool["name"] for tool in tools} != set(expected):
         raise ValueError("release exposes unsupported tools")
+    model_tool_name = module.get("model_tool_name")
+    model_tool_description = module.get("model_tool_description")
+    if (model_tool_name is None) != (model_tool_description is None):
+        raise ValueError("model tool name and description must be paired")
+    if model_tool_name is None:
+        raise ValueError("release requires one aggregate model tool per module")
+    expected_actions = {
+        f"steam_dlc_{module_id}_{operation}": operation
+        for operation in QUERY_TOOLS[module_id]
+    }
+    actual_actions = {tool["name"]: tool.get("action") for tool in tools}
+    if (
+        model_tool_name != MODEL_TOOL_NAMES[module_id]
+        or model_tool_description != MODEL_TOOL_DESCRIPTIONS[module_id]
+        or actual_actions != expected_actions
+        or len(set(actual_actions.values())) != len(actual_actions)
+    ):
+        raise ValueError("model tool declaration differs from the fixed mapping")
     capabilities = {item["capability_id"]: item for item in module["capabilities"]}
     for tool in tools:
         capability_id, required = expected[tool["name"]]

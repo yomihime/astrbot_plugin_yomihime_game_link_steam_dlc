@@ -739,14 +739,14 @@ async def install_smoke():
         sdk = sys.modules["yomihime_game_link_sdk"]
         sdk_root = Path(sdk.__file__).resolve().parent
         sdk_root.relative_to((root / "data/plugins" / CORE).resolve())
-        assert sdk.__version__ == "0.1.0a22"
+        assert sdk.__version__ == "0.1.0a23"
         for name, module in tuple(sys.modules.items()):
             if name == "yomihime_game_link_sdk" or name.startswith(
                 "yomihime_game_link_sdk."
             ):
                 Path(module.__file__).resolve().relative_to(sdk_root)
         result["sdk_version"], result["sdk_origin"] = sdk.__version__, str(sdk_root)
-        passed("install-smoke-canonical-sdk-a22")
+        passed("install-smoke-canonical-sdk-a23")
 
         with zipfile.ZipFile(archives[DLC]) as bundle:
             manifest_raw = bundle.read("packages/steam_dlc/yomihime.manifest.json")
@@ -803,9 +803,12 @@ async def install_smoke():
                 item.get("source") == "perfect_avatar"
                 for item in plan["source_policy"].get("credentials", [])
             ), plan
+            assert (
+                type(plan["expected_revision"]) is int
+                and plan["expected_revision"] >= 0
+            ), plan
             result["installation_plan"] = plan
             if not args.restart_check:
-                assert plan["expected_revision"] == 0, plan
                 approval = await api(
                     "module-install-approve",
                     identity
@@ -1127,40 +1130,69 @@ async def main():
         handles = list(runtime._tool_publisher.handles)
         assert not any(
             handle.module_id.startswith("steam_dlc/")
+            and handle.descriptor is not None
             and handle.descriptor.capability_id
             in {"bind", "binding", "identity", "unbind"}
             for handle in handles
         )
-        for module_id, count in (("steam", 6), ("deadlock", 5), ("cs2", 5)):
-            assert (
-                sum(handle.module_id == "steam_dlc/" + module_id for handle in handles)
-                == count
-            )
+        aggregate_actions = {
+            "steam": {
+                "search",
+                "app",
+                "profile",
+                "recent",
+                "games",
+                "wall",
+                "wishlist",
+            },
+            "dota2": {"recent", "profile", "match", "stats", "last", "analyze"},
+            "cs2": {"profile", "recent", "stats", "last", "match"},
+            "deadlock": {"profile", "recent", "stats", "last", "match"},
+        }
+        for module_id, actions in aggregate_actions.items():
+            module_handles = [
+                handle
+                for handle in handles
+                if handle.module_id == "steam_dlc/" + module_id
+            ]
+            assert len(module_handles) == 1
+            aggregate = module_handles[0]
+            assert aggregate.published_name == "steam_dlc_" + module_id
+            assert aggregate.descriptor is None
+            assert set(aggregate.action_descriptors) == actions
         dota_handles = [
             handle for handle in handles if handle.module_id == "steam_dlc/dota2"
         ]
-        assert len(dota_handles) == 5
-        recent = next(
-            handle
-            for handle in dota_handles
-            if handle.descriptor.capability_id == "recent_explicit"
+        assert len(dota_handles) == 1
+        recent = dota_handles[0]
+        assert (
+            "account" in recent.tool.parameters["properties"]["arguments"]["properties"]
         )
-        assert "account" in recent.tool.parameters["properties"]
+        assert recent.tool.parameters["required"] == ["action", "arguments"]
         result["published_tool_account_schema_required"] = (
-            "account" in recent.tool.parameters["required"]
+            "account" in (recent.tool.parameters["properties"]["arguments"]["required"])
         )
-        assert result["published_tool_account_schema_required"]
+        assert not result["published_tool_account_schema_required"]
         tool_event = Event("synthetic explicit-account Tool")
         from astrbot.core.agent.run_context import ContextWrapper
+        from astrbot.core.agent.tool import ToolSet
 
         wrapper = ContextWrapper(
             SimpleNamespace(event=tool_event, context=host.star_context)
         )
-        tool_result = await recent.tool.call(wrapper, account="3")
+        request = SimpleNamespace(func_tool=ToolSet([recent.tool]))
+        await runtime.scope_model_tools(tool_event, request)
+        scoped_recent = request.func_tool.get_tool("steam_dlc_dota2")
+        assert scoped_recent is not None and scoped_recent is not recent.tool
+        tool_result = await scoped_recent.call(
+            wrapper, action="recent", arguments={"account": "3"}
+        )
         assert json.loads(tool_result)["account_id32"] == "3", tool_result
         before = len(transport_calls)
         try:
-            missing_result = await recent.tool.call(wrapper)
+            missing_result = await scoped_recent.call(
+                wrapper, action="recent", arguments={}
+            )
         except Exception:
             pass
         else:
@@ -1257,7 +1289,6 @@ async def main():
                             handle
                             for handle in runtime._tool_publisher.handles
                             if handle.module_id == "steam_dlc/dota2"
-                            and handle.descriptor.capability_id == "profile_explicit"
                         )
                         provider_tool_event = Event(
                             "synthetic provider-disabled explicit profile Tool"
@@ -1267,8 +1298,20 @@ async def main():
                                 event=provider_tool_event, context=host.star_context
                             )
                         )
-                        provider_tool_output = await profile_handle.tool.call(
-                            provider_tool_context, account="99"
+                        provider_request = SimpleNamespace(
+                            func_tool=ToolSet([profile_handle.tool])
+                        )
+                        await runtime.scope_model_tools(
+                            provider_tool_event, provider_request
+                        )
+                        scoped_profile = provider_request.func_tool.get_tool(
+                            "steam_dlc_dota2"
+                        )
+                        assert scoped_profile is not None
+                        provider_tool_output = await scoped_profile.call(
+                            provider_tool_context,
+                            action="profile",
+                            arguments={"account": "99"},
                         )
                         provider_facts = json.loads(provider_tool_output)
                         assert provider_facts["account_id32"] == "99", provider_facts
@@ -1291,8 +1334,8 @@ async def main():
             handle
             for handle in runtime._tool_publisher.handles
             if handle.module_id == "steam_dlc/dota2"
-            and handle.descriptor.capability_id == "recent_explicit"
         )
+        recent_descriptor = recent.action_descriptors["recent"]
         success, error = await host.plugin_manager.reload(DLC)
         assert success, error
         dlc = star(DLC)
@@ -1307,10 +1350,12 @@ async def main():
         try:
             await runtime.invoke_tool(
                 recent.module_id,
-                recent.descriptor.name,
+                recent_descriptor.name,
                 {"account": "3"},
                 tool_event,
                 tool_handle=recent,
+                tool_descriptor=recent_descriptor,
+                tool_action="recent",
             )
         except Exception:
             passed("old-tool-epoch-rejected-after-dlc-reload")
@@ -1444,7 +1489,7 @@ if __name__ == "__main__":
         if args.install_smoke:
             expected_checks = [
                 "install-smoke-installed-archive-members-exact",
-                "install-smoke-canonical-sdk-a22",
+                "install-smoke-canonical-sdk-a23",
             ] + (
                 [
                     "install-smoke-cold-process-approved-five-modules",

@@ -1,6 +1,8 @@
 # 架构与配对合同
 
-Core负责生命周期、权限、owner/epoch/CAS、存储、受控HTTP/秘密、资源、渲染与订阅投递。DLC只经canonical公开SDK提供游戏协议、归一化、时长规则及纯Evaluator/Composer，不导入Core私有代码或另开网络、数据库、发送通道。当前兼容冻结Core0.1.11、DLC0.2.0-beta.1、SDK0.1.0a22、ABI2.0、bridge1、schema210；普通DLC更新不重建或重装Core。
+Core负责生命周期、权限、owner/epoch/CAS、存储、受控HTTP/秘密、资源、渲染与订阅投递。DLC只经canonical公开SDK提供游戏协议、归一化、时长规则及纯Evaluator/Composer，不导入Core私有代码或另开网络、数据库、发送通道。当前源码候选要求模型工具聚合版 Core、DLC0.2.0-beta.2、SDK0.1.0a23、ABI2.0、bridge1、schema210 精确配对；历史 beta.2 Release 的 a22 Core/DLC 仍是一组独立旧配对，不能交叉混装。
+
+每个迁移模块声明一个 `model_tool_name`、短说明和有限唯一 action；原 ToolDescriptor 名称、capability、参数映射与逐项说明继续作为权限和分发事实源。Core 向 Host 注册可正常选择和调用的原生 `FunctionTool` 聚合入口：当前 Host `ToolSet` 选择新 parent 时使用持有当前 handle 和完整 action 映射的 full 对象；显式选择旧工具子集时，兼容投影生成同名 limited 对象并只保留对应 action。每次 action 调用仍按旧名复核 Host 权限与 inactive 状态，并由 Core/runtime/Gateway 复核 owner、module epoch、parent、action、descriptor、capability 与生命周期。`None` 或显式新 parent 的选择完全沿用 Host 原生发现和执行；合法真实 `Context`/event 对当前 `FunctionTool` 的直接 Python 调用沿用 Host 基线，构造 SDK 对象或伪造上下文不会取得调用权。full 与 skills_like 复用 Host 两阶段机制；action 必要说明位于参数 schema，顶层描述被移除时仍可读。
 
 Steam统一管理USER身份关联；默认查询仅可信命令根使用，显式子能力保持结构化账号，即使origin来自COMMAND也不重新解析祖先命令。所有默认身份结果抑制model_facts。平台登录主体独立于目标玩家，不更改共享Steam绑定。
 
@@ -14,7 +16,7 @@ Dota复用Core PUBLIC CollectionKey共享采集与持久scheduler/outbox。订�
 
 SDK DenseCollage是通用整数格资源文档，Core不识别Steam小时。模块先筛选、确定span与分页预算，再按有界批次补公共素材；逻辑顺序为tuple顺序，物理为大块优先稳定first-fit。旧WeightedCollage保持兼容。资源完整性快照在成图命中前复核授权、文件版本/过期，变更或未知证据重新hash；未命中同一源只全读一次。衍生物以源hash/尺寸/fit/渲染版本分区；权限撤销不能被快路径绕过。
 
-页面复用Core公开UI、共享runtime与scope生命周期。普通草稿隔离；凭据立即清空、不持久化；CAS冲突重读，未知写入不重试，迟到响应必须重新检查当前scope。实际部署固定单一SDK身份；独立扩展安装许可与内容摘要分开，普通版本/页面更新不重建Core。SDK或已加载Python变化使用正常进程重启。动态页面依赖浏览器安全上下文：localhost/回环或可信 HTTPS 是支持路径；远程普通 HTTP 可能在父壳摘要校验前失败，不应绕过校验。包内排除测试过程、私有证据、Key、运行缓存及项目记忆。离线、包、隔离Host、浏览器、线上API和真实IM分别验收，不互相替代。
+页面复用Core公开UI、共享runtime与scope生命周期。普通草稿隔离；凭据立即清空、不持久化；CAS冲突重读，未知写入不重试，迟到响应必须重新检查当前scope。实际部署固定单一SDK身份；独立扩展安装许可与内容摘要分开。SDK或已加载Python变化必须正常停止后配对更新 Core/DLC 并冷启动，不能热替换。回滚恢复同一次备份的配对代码，保留最新配置和数据，不以旧数据库覆盖新数据。动态页面依赖浏览器安全上下文：localhost/回环或可信 HTTPS 是支持路径；远程普通 HTTP 可能在父壳摘要校验前失败，不应绕过校验。包内排除测试过程、私有证据、Key、运行缓存及项目记忆。离线、包、隔离Host、浏览器、线上API和真实IM分别验收，不互相替代。
 
 长作业采用Core持久Jobs与新JOB scope。DLC只提供规范参数、选集和声明文档；Core保存owner/CAS/期限/分页引用、渲染并保护RAW/DERIVED/OUTPUT缓存。页面操作标识只进入幂等元数据；命令无可靠重试身份时省略该键，仍由Core按规范输入合并活跃任务。完成后新动作重新检查业务来源与内容缓存，不永久绑定旧任务。命令结果按需单图，不自动刷群；页面轮询退出不取消作业。
 

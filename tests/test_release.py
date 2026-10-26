@@ -167,6 +167,29 @@ class ReleaseResourcesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "explicit public target"):
             release.inventory(self.root)
 
+    def test_model_tool_fields_and_actions_are_atomic_and_fixed(self):
+        dota2 = next(
+            module
+            for module in self.manifest["modules"]
+            if module["module_id"] == "dota2"
+        )
+        original_description = dota2.pop("model_tool_description")
+        self.save_manifest()
+        with self.assertRaisesRegex(ValueError, "must be paired"):
+            release.inventory(self.root)
+
+        dota2["model_tool_description"] = original_description
+        dota2["tools"][0]["action"] = "profile"
+        self.save_manifest()
+        with self.assertRaisesRegex(ValueError, "fixed mapping"):
+            release.inventory(self.root)
+
+        dota2.pop("model_tool_name")
+        dota2.pop("model_tool_description")
+        self.save_manifest()
+        with self.assertRaisesRegex(ValueError, "requires one aggregate"):
+            release.inventory(self.root)
+
     def test_registered_tools_have_public_read_only_dependency_closure(self):
         capabilities = {
             (

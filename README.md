@@ -1,18 +1,16 @@
 # 如月怜的游戏连结：Steam DLC
 
-独立 AstrBot 插件，提供共享 Steam 身份、商店与完整库、游戏生涯拼图、Dota 2 比赛订阅、CS2 完美/官匹/5E 查询和 Deadlock 查询。当前版本 `0.2.0-beta.2`，兼容冻结的 Core `0.1.11`（`2d6fb1f`）、canonical SDK `0.1.0a22`、模块 ABI `2.0`、外包桥接 `1`。Beta 表示部分外部来源和现场环境仍未验收。请安装 GitHub Release 的插件 ZIP，不要用自动生成的 Source code.zip 代替。来源可用性见[支持矩阵](docs/support-matrix.md)。
+独立 AstrBot 插件，提供共享 Steam 身份、商店与完整库、游戏生涯拼图、Dota 2 比赛订阅、CS2 完美/官匹/5E 查询和 Deadlock 查询。当前版本 `0.2.0-beta.2` 的源码候选要求支持模块聚合工具的配对 Core、canonical SDK `0.1.0a23`、模块 ABI `2.0` 与外包桥接 `1`。已发布的同版本 beta.2 资产仍是历史 a22 配对，不包含本次模型工具入口改造，不能与此源码候选混装。Beta 表示部分外部来源和现场环境仍未验收。请安装审核后的插件 ZIP，不要用自动生成的 Source code.zip 代替。来源可用性见[支持矩阵](docs/support-matrix.md)。
 
 ## 安装与凭据
 
-安装入口：[v0.2.0-beta.2 Release](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.2)。使用其中的 DLC ZIP、原字节 Core `0.1.11` 配对 ZIP 和 `SHA256SUMS`；发布前该入口尚不可下载，实际可用性以 Release 资产为准。发行摘要和支持矩阵区分真实来源、隔离测试和未验项目。
+历史安装入口：[v0.2.0-beta.2 Release](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.2)。其中的 Core/DLC ZIP 与 `SHA256SUMS` 只适用于历史 a22 版本。本源码候选尚未推送，远程 CI 未运行，也没有可下载的 a23 配对资产；旧远程提交或旧 CI 不能证明此候选通过。
 
-DLC 不包含第二份 SDK。首次安装使用提供同一 canonical SDK 的 Core 与 DLC；Python/SDK 变化时，先通过宿主管理正常停用/卸载旧插件并保留配置与数据，正常重启宿主，再安装并依次启用 Core、DLC。不要热替换 SDK、清空数据库或重建绑定。
+DLC 不包含第二份 SDK。a23 必须由匹配的 Core 提供，Core 与 DLC 作为一对更新：先核对两个包的来源提交、SDK/ABI 和 SHA256，备份现有 Core/DLC 插件目录以及配置和数据；通过宿主正常停止目标实例，在停止状态先安装 Core、再安装 DLC，随后正常冷启动一次，并核对实际加载路径、SDK 版本与候选哈希。不要热替换 SDK、只更新一侧、清空数据库或重建绑定。
 
-已有兼容 Core 的用户从 alpha.7 更新本版只需更新 DLC，保留现有 Core、SDK、Key 和完美授权。本版新增 `img.wmpvp.com` 的 `/pvp/` 匿名 PNG 头像来源，更新后需在可信管理页核对并批准该具体来源计划，再正常重启同一宿主。头像请求不携带完美凭据，未知图床按无头像降级。安装前备份最新数据与旧 DLC，通过正常管理流程保留配置、凭据和数据。回退时保留届时最新数据，只恢复旧 DLC 代码。
+回滚也必须使用匹配的一对包：正常停止同一实例，保留届时最新配置和数据，恢复同一次备份中的 Core/DLC 代码，再正常启动并核对 SDK 与插件来源。不要把旧数据库覆盖到新数据上，也不要将 a22 Core 与 a23 DLC（或反向组合）作为回滚。模块 ABI 仍为 2.0 不代表 Python SDK 单例可以跨版本混用。
 
-从 beta.1 更新 beta.2 可沿用同一份 Core、SDK、来源许可与已保存凭据。本版修复特殊昵称卡片接收、编辑表单后的旧目标恢复、拼图累计统计和明确授权失效后的页面清理；正常停用/更新 DLC 并保留数据，按宿主管理流程重启即可。
-
-新安装按 Core `0.1.11` → DLC `0.2.0-beta.2` 的顺序安装并启用宿主插件，再在 Core 可信管理页审阅并批准本次具体扩展安装计划，最后正常重启宿主。读取计划要求 DLC 宿主插件已启用；批准前 Core 会拒绝未授权的模块接入，启用插件本身不授予新来源权限。普通 DLC 更新沿用既有来源许可；扩大来源权限须批准新计划。使用 localhost/回环或可信 HTTPS 管理安装；远程普通 HTTP 可能在父壳资源摘要校验前失败，不要绕过校验。
+新安装按匹配 Core → DLC 的顺序安装并启用宿主插件，再在 Core 可信管理页审阅并批准本次具体扩展安装计划。读取计划要求 DLC 宿主插件已启用；批准前 Core 会拒绝未授权的模块接入，启用插件本身不授予新来源权限。普通 DLC 更新沿用既有来源许可；扩大来源权限须批准新计划。使用 localhost/回环或可信 HTTPS 管理安装；远程普通 HTTP 可能在父壳资源摘要校验前失败，不要绕过校验。
 
 首次来源授权可在 Core 模块管理的“独立扩展安装授权”读取并批准当前安装计划：宿主插件名 `astrbot_plugin_yomihime_game_link_steam_dlc`，包 ID `steam_dlc`。核对来源/注入规则后批准并正常重启；已有等价配对授权可审计迁移。普通 DLC 版本和页面更新沿用许可，使用同一份 Core ZIP；新增敏感权限须批准新计划，不自动信任扩展自己的策略文件，也不要求重填现有 Key。
 
@@ -48,6 +46,19 @@ DLC 不包含第二份 SDK。首次安装使用提供同一 canonical SDK 的 Co
 | `dota2 status` / `cs2 status` / `deadlock status` | 来源和能力状态；不是凭据有效性证明 |
 
 `bind` 是用户主动声明的账号关联，不是 Steam 所有权认证。本人默认身份仅在可信命令根调用中读取；模型和公开 Web 查询必须给明确目标，不推导私人绑定。默认身份路径整份 `model_facts=None`。商店默认 CN/schinese；时长与比赛数据保留来源、取数时间和缺项原因。
+
+## 模型工具入口
+
+每个启用的 DLC 模块只向模型发布一个聚合入口。该入口是 Host `ToolSet` 可正常选择和调用的原生 `FunctionTool`：`full` 使用完整 action 集；旧人格或 manager 显式只允许部分旧工具名时，同名 limited 对象只保留对应 action。`full` 与 AstrBot 原生 `skills_like` 都受支持，复用宿主同一两阶段流程；不要求用户开启 `skills_like`。模块顶层短说明在 `skills_like` 的参数阶段可能被移除，因此每个有限 `action` 的用途和必要条件仍写入 `action` 参数说明，选中模块后可以读取。Core 在服务端按所选 action 的原能力 schema 再校验缺参、类型、多余字段和跨 action 参数组合，并逐 action 复核旧工具权限、inactive 状态、owner 与 module epoch。
+
+| 模块入口 | action → 旧工具权限身份 |
+| --- | --- |
+| `steam_dlc_steam` | `search` → `steam_dlc_steam_search`；`app` → `steam_dlc_steam_app`；`profile` → `steam_dlc_steam_profile`；`recent` → `steam_dlc_steam_recent`；`games` → `steam_dlc_steam_games`；`wall` → `steam_dlc_steam_wall`；`wishlist` → `steam_dlc_steam_wishlist` |
+| `steam_dlc_dota2` | `recent` → `steam_dlc_dota2_recent`；`profile` → `steam_dlc_dota2_profile`；`match` → `steam_dlc_dota2_match`；`stats` → `steam_dlc_dota2_stats`；`last` → `steam_dlc_dota2_last`；`analyze` → `steam_dlc_dota2_analyze` |
+| `steam_dlc_cs2` | `profile` → `steam_dlc_cs2_profile`；`recent` → `steam_dlc_cs2_recent`；`stats` → `steam_dlc_cs2_stats`；`last` → `steam_dlc_cs2_last`；`match` → `steam_dlc_cs2_match` |
+| `steam_dlc_deadlock` | `profile` → `steam_dlc_deadlock_profile`；`recent` → `steam_dlc_deadlock_recent`；`stats` → `steam_dlc_deadlock_stats`；`last` → `steam_dlc_deadlock_last`；`match` → `steam_dlc_deadlock_match` |
+
+旧工具名不再作为同模块的第二套模型入口，但继续作为逐 action 的 persona、插件/子 agent 过滤及 Host 权限身份；迁移不会把原来只允许一个查询的配置扩大为整个模块。Host 未提供显式列表（`None`）或显式选择新 parent 时沿用原生 full 对象；合法真实 `Context`/event 对当前对象的直接 Python 调用沿用 Host 基线，构造 SDK 对象或伪造上下文不能取得调用权。命令、页面、候选续接、内部 capability 和结果语义不因入口聚合而改变。完整声明合同见[模型工具迁移说明](docs/model-tools.md)。
 
 ## 生涯拼图与缓存
 
@@ -85,12 +96,12 @@ CS2 以 CS2UID 为行为和接口参考，退休旧 Leetify 主方案。perfect�
 
 同一页面身份短暂不可用会暂停请求和轮询；恢复后可重新手动操作，不自动重放提交。切换身份、撤权或离开页面后，旧响应继续失效。CS2 的 rating、PW rating、ADR 等支持合法小数显示，缺失值仍显示未知。
 
-## 冻结 Core 的已知限制
+## Core 的既有已知限制
 
 - `CORE-K01`：任务队列取出的一整批候选都无法入场时，后续任务可能停在 queued。本版未修复该 Core 行为；queued 仅可查询或按权限取消，不能当作失败任务重试。
 - `CORE-K02`：同群、同模块/类型/来源累计 101 条 active PUBLIC 订阅会超过冻结 Core 的候选投影上限，可能影响共享 observation 的其他群。本版保留公共事件聚合，不以 DLC 内存计数、私有数据库修改或关闭 projector 绕过该限制。
 
-两项限制需要 Core 独立修复；本版不更改 Core、SDK 接口或数据库 schema。
+两项限制不属于本次模型入口改造；本次不更改数据库 schema，也不以 DLC 内部旁路规避。
 
 ## 构建与边界
 
@@ -108,6 +119,6 @@ mypy packages/steam_dlc
 python scripts/build_release.py
 ```
 
-页面构建需要冻结 Core 源码的锁定前端依赖，可通过 `YGL_CORE_ROOT` 指定只读源码位置。先构建页面/同步摘要，再在干净已提交源码生成正式 DLC 包。消费者验证使用该源码生成的 canonical a22 wheel，仅安装在隔离环境；本版不需要重建或重装 Core。CI 的 Python 消费者回归生成去标识 CS2 序列化结果，再由页面测试读取 `CS2_GATEWAY_FIXTURE` 验证真实跨层数字显示。独立扩展通过受信管理安装计划授权并在运行时发布当前页面；包声明不自动取得秘密权限。`--allow-dirty`仅供本地开发。
+页面构建需要配对 Core 源码的锁定前端依赖，可通过 `YGL_CORE_ROOT` 指定只读源码位置。先构建页面/同步摘要，再在干净已提交源码生成正式 DLC 包。消费者验证使用同一 Core 源码生成的 canonical a23 wheel，仅安装在隔离环境；Core/DLC 必须共同构建和验收。CI 的 Python 消费者回归生成去标识 CS2 序列化结果，再由页面测试读取 `CS2_GATEWAY_FIXTURE` 验证真实跨层数字显示。独立扩展通过受信管理安装计划授权并在运行时发布当前页面；包声明不自动取得秘密权限。`--allow-dirty`仅供本地开发，正式包要求已提交源码和干净工作树。
 
 双插件 harness 入口为 `scripts/smoke_two_plugins.py`，分别在新隔离目录运行 `--order core-first` 和 `--order dlc-first`，同时给 `--core-zip`、`--dlc-zip`、`--host-source`、`--work-root`。其事件与接口响应为合成数据；不证明真实新比赛、IM、扫码或线上平台通过。未配置凭据时先使用已有公开能力，实际Key、扫码、目标发送授权和IPv6-only测试应分别记录。安装前备份最新数据；不要把旧 schema 数据库覆盖到已升级实例。过程证据、账号、Key、附件、缓存均不进入公开仓库或安装包。

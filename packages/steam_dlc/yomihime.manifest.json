@@ -13,6 +13,8 @@
       "category": "platform",
       "factory_entry": "steam.module:Factory",
       "module_version": "0.2.0-beta.2",
+      "model_tool_name": "steam_dlc_steam",
+      "model_tool_description": "查询 Steam 商店、应用详情、公开玩家资料、近期游戏、游戏样本、游戏生涯拼图与公开愿望单。",
       "capabilities": [
         {
           "capability_id": "bind",
@@ -690,6 +692,7 @@
       "tools": [
         {
           "name": "steam_dlc_steam_search",
+          "action": "search",
           "capability_id": "search",
           "parameter_mapping": {
             "query": "query",
@@ -700,6 +703,7 @@
         },
         {
           "name": "steam_dlc_steam_app",
+          "action": "app",
           "capability_id": "app",
           "parameter_mapping": {
             "app_id": "app_id",
@@ -710,6 +714,7 @@
         },
         {
           "name": "steam_dlc_steam_profile",
+          "action": "profile",
           "capability_id": "profile_explicit",
           "parameter_mapping": {
             "account": "account"
@@ -718,6 +723,7 @@
         },
         {
           "name": "steam_dlc_steam_recent",
+          "action": "recent",
           "capability_id": "recent_explicit",
           "parameter_mapping": {
             "account": "account"
@@ -726,6 +732,7 @@
         },
         {
           "name": "steam_dlc_steam_games",
+          "action": "games",
           "capability_id": "games_explicit",
           "parameter_mapping": {
             "account": "account"
@@ -734,6 +741,7 @@
         },
         {
           "name": "steam_dlc_steam_wall",
+          "action": "wall",
           "capability_id": "wall_explicit",
           "parameter_mapping": {
             "account": "account",
@@ -752,6 +760,7 @@
         },
         {
           "name": "steam_dlc_steam_wishlist",
+          "action": "wishlist",
           "capability_id": "wishlist_explicit",
           "parameter_mapping": {
             "account": "account",
@@ -1106,6 +1115,8 @@
       "category": "game",
       "factory_entry": "dota2.module:Factory",
       "module_version": "0.2.0-beta.2",
+      "model_tool_name": "steam_dlc_dota2",
+      "model_tool_description": "查询 Dota 2 玩家资料、近期比赛、统计、单场详情与比赛分析。",
       "capabilities": [
         {
           "capability_id": "recent",
@@ -1596,6 +1607,7 @@
       "tools": [
         {
           "name": "steam_dlc_dota2_recent",
+          "action": "recent",
           "capability_id": "recent_explicit",
           "parameter_mapping": {
             "account": "account",
@@ -1605,6 +1617,7 @@
         },
         {
           "name": "steam_dlc_dota2_profile",
+          "action": "profile",
           "capability_id": "profile_explicit",
           "parameter_mapping": {
             "account": "account"
@@ -1613,6 +1626,7 @@
         },
         {
           "name": "steam_dlc_dota2_match",
+          "action": "match",
           "capability_id": "match_explicit",
           "parameter_mapping": {
             "match_id": "match_id",
@@ -1622,6 +1636,7 @@
         },
         {
           "name": "steam_dlc_dota2_stats",
+          "action": "stats",
           "capability_id": "stats_explicit",
           "parameter_mapping": {
             "account": "account",
@@ -1631,6 +1646,7 @@
         },
         {
           "name": "steam_dlc_dota2_last",
+          "action": "last",
           "capability_id": "last_explicit",
           "parameter_mapping": {
             "account": "account"
@@ -1639,6 +1655,7 @@
         },
         {
           "name": "steam_dlc_dota2_analyze",
+          "action": "analyze",
           "capability_id": "analyze_explicit",
           "parameter_mapping": {
             "match_id": "match_id",
@@ -1841,6 +1858,8 @@
       "category": "game",
       "factory_entry": "cs2.module:Factory",
       "module_version": "0.2.0-beta.2",
+      "model_tool_name": "steam_dlc_cs2",
+      "model_tool_description": "查询 CS2 完美、官匹与 5E 的玩家资料、近期比赛、统计和单场详情。",
       "capabilities": [
         {
           "capability_id": "status",
@@ -2354,45 +2373,50 @@
       "tools": [
         {
           "name": "steam_dlc_cs2_profile",
+          "action": "profile",
           "capability_id": "profile_explicit",
           "parameter_mapping": {
             "platform": "platform",
             "account": "account",
             "season": "season"
           },
-          "description": "CS2 profile：明确来源与账号（5E domain），不推断默认绑定；match 必须有来源比赛 ID，官匹/5E match 另需 account，只提供有界玩家摘要；缺项不得补造。"
+          "description": "查询指定 account 的 CS2 玩家资料；platform 可选，省略时使用配置默认，season 可选。覆盖完美、已收录官匹与 5E，缺项不得补造。"
         },
         {
           "name": "steam_dlc_cs2_recent",
+          "action": "recent",
           "capability_id": "recent_explicit",
           "parameter_mapping": {
             "platform": "platform",
             "account": "account",
             "limit": "limit"
           },
-          "description": "CS2 recent：明确来源与账号（5E domain），不推断默认绑定；match 必须有来源比赛 ID，官匹/5E match 另需 account，只提供有界玩家摘要；缺项不得补造。"
+          "description": "查询指定 account 的 CS2 近期比赛；platform 可选，省略时使用配置默认，limit 可选且最多 20。覆盖完美、已收录官匹与 5E。"
         },
         {
           "name": "steam_dlc_cs2_stats",
+          "action": "stats",
           "capability_id": "stats_explicit",
           "parameter_mapping": {
             "platform": "platform",
             "account": "account",
             "season": "season"
           },
-          "description": "CS2 stats：明确来源与账号（5E domain），不推断默认绑定；match 必须有来源比赛 ID，官匹/5E match 另需 account，只提供有界玩家摘要；缺项不得补造。"
+          "description": "汇总指定 account 的 CS2 战绩统计；platform 可选，省略时使用配置默认，season 可选。只统计来源实际返回的有界样本。"
         },
         {
           "name": "steam_dlc_cs2_last",
+          "action": "last",
           "capability_id": "last_explicit",
           "parameter_mapping": {
             "platform": "platform",
             "account": "account"
           },
-          "description": "CS2 last：明确来源与账号（5E domain），不推断默认绑定；match 必须有来源比赛 ID，官匹/5E match 另需 account，只提供有界玩家摘要；缺项不得补造。"
+          "description": "查询指定 account 的最近一场 CS2 比赛；platform 可选，省略时使用配置默认。来源为完美、已收录官匹或 5E。"
         },
         {
           "name": "steam_dlc_cs2_match",
+          "action": "match",
           "capability_id": "match_explicit",
           "parameter_mapping": {
             "platform": "platform",
@@ -2400,7 +2424,7 @@
             "match_id": "match_id",
             "focus": "focus"
           },
-          "description": "CS2 match：明确来源与账号（5E domain），不推断默认绑定；match 必须有来源比赛 ID，官匹/5E match 另需 account，只提供有界玩家摘要；缺项不得补造。"
+          "description": "按必填 match_id 查询 CS2 单场详情；platform 可选，省略时使用配置默认；official/5e 还需 account，focus 可选。缺项不得补造。"
         }
       ],
       "display": {
@@ -2532,6 +2556,8 @@
       "category": "game",
       "factory_entry": "deadlock.module:Factory",
       "module_version": "0.2.0-beta.2",
+      "model_tool_name": "steam_dlc_deadlock",
+      "model_tool_description": "查询 Deadlock 社区公开玩家资料、近期比赛、统计和单场详情。",
       "capabilities": [
         {
           "capability_id": "status",
@@ -2878,46 +2904,51 @@
       "tools": [
         {
           "name": "steam_dlc_deadlock_profile",
+          "action": "profile",
           "capability_id": "profile_explicit",
           "parameter_mapping": {
             "account": "account"
           },
-          "description": "Deadlock profile：仅已收录社区公开记录；必须明确提供 account，不得推测或读取用户默认绑定。缺失字段未知，非官方完整实时历史。"
+          "description": "查询指定 account 的 Deadlock 社区公开玩家资料与可用头像；不读取默认绑定，缺失字段保持未知。"
         },
         {
           "name": "steam_dlc_deadlock_recent",
+          "action": "recent",
           "capability_id": "recent_explicit",
           "parameter_mapping": {
             "account": "account",
             "limit": "limit"
           },
-          "description": "Deadlock recent：仅已收录社区公开记录；必须明确提供 account，不得推测或读取用户默认绑定。缺失字段未知，非官方完整实时历史。"
+          "description": "查询指定 account 的 Deadlock 近期比赛；limit 可选且最多 20。仅限社区来源已收录的公开记录，不代表完整实时历史。"
         },
         {
           "name": "steam_dlc_deadlock_stats",
+          "action": "stats",
           "capability_id": "stats_explicit",
           "parameter_mapping": {
             "account": "account",
             "limit": "limit"
           },
-          "description": "Deadlock stats：仅已收录社区公开记录；必须明确提供 account，不得推测或读取用户默认绑定。缺失字段未知，非官方完整实时历史。"
+          "description": "汇总指定 account 的 Deadlock 近期统计；limit 可选且最多 20。只统计社区来源实际收录的公开比赛样本。"
         },
         {
           "name": "steam_dlc_deadlock_last",
+          "action": "last",
           "capability_id": "last_explicit",
           "parameter_mapping": {
             "account": "account"
           },
-          "description": "Deadlock last：仅已收录社区公开记录；必须明确提供 account，不得推测或读取用户默认绑定。缺失字段未知，非官方完整实时历史。"
+          "description": "查询指定 account 的最近一场 Deadlock 已收录公开比赛；不读取默认绑定，缺失字段保持未知。"
         },
         {
           "name": "steam_dlc_deadlock_match",
+          "action": "match",
           "capability_id": "match_explicit",
           "parameter_mapping": {
             "match_id": "match_id",
             "account": "account"
           },
-          "description": "Deadlock match：仅已收录社区公开记录；必须明确提供 match_id，account可选并按ID精确定位。缺失字段未知，非官方完整实时历史。"
+          "description": "按必填 match_id 查询 Deadlock 已收录公开比赛详情；account 可选，用于精确定位该玩家。缺失字段保持未知。"
         }
       ],
       "display": {
