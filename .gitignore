@@ -12,3 +12,9 @@ node_modules/
 /AGENTS.md
 /docs/plan.md
 /docs/collaboration.md
+/.project-memory/
+/.agents/
+/.codex/
+/.work/
+/worktrees/
+/.ci-core/

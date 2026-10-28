@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: yomihime/astrbot_plugin_yomihime_game_link
-          ref: 2d6fb1fbd137a5959a5e2bee135451c31cef33a5
+          ref: 56ae6e31c90ed09169522885a369f29a2f3ff181
           path: .ci-core
           persist-credentials: false
       - uses: actions/setup-python@v6
@@ -41,8 +41,8 @@ jobs:
         run: |
           echo '/.ci-core/' >> .git/info/exclude
           python -m pip wheel --no-deps --no-build-isolation --wheel-dir .ci-core/wheelhouse ./.ci-core
-          python -m pip install --no-deps .ci-core/wheelhouse/yomihime_game_link_sdk-0.1.0a22-py3-none-any.whl
-          python -c "import yomihime_game_link_sdk as s; assert s.__version__ == '0.1.0a22'; print(s.__file__)"
+          python -m pip install --no-deps .ci-core/wheelhouse/yomihime_game_link_sdk-0.1.0a23-py3-none-any.whl
+          python -c "import yomihime_game_link_sdk as s; assert s.__version__ == '0.1.0a23'; print(s.__file__)"
       - name: Verify offline behavior and boundaries
         run: |
           python -m unittest discover -s tests -v
