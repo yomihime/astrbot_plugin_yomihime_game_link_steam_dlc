@@ -850,7 +850,7 @@
       "resources": [
         {
           "path": "pages/steam/entry.js",
-          "sha256": "390cfd7d2f08867766b0b4e8313f69f25e4d49fb4c3374e86d4563c891a25ff9"
+          "sha256": "51dcadfb60fef4de5a5dc22a32fed22c4f3bdad690be62071cd98e3628076127"
         },
         {
           "path": "pages/steam/style.css",
@@ -1792,7 +1792,7 @@
       "resources": [
         {
           "path": "pages/dota2/entry.js",
-          "sha256": "390cfd7d2f08867766b0b4e8313f69f25e4d49fb4c3374e86d4563c891a25ff9"
+          "sha256": "51dcadfb60fef4de5a5dc22a32fed22c4f3bdad690be62071cd98e3628076127"
         },
         {
           "path": "pages/dota2/style.css",
@@ -2380,7 +2380,7 @@
             "account": "account",
             "season": "season"
           },
-          "description": "查询指定 account 的 CS2 玩家资料；platform 可选，省略时使用配置默认，season 可选。覆盖完美、已收录官匹与 5E，缺项不得补造。"
+          "description": "查询指定 account 的 CS2 玩家资料；platform 可选，省略时使用配置默认。account 必须由用户明确提供：perfect/official 使用 SteamID64，5e 使用明确 5E domain，不能从 Steam 账号推导或读取默认绑定。season 仅 perfect/5e 可选（如 S16/2026S5），official 不支持。覆盖完美、已收录官匹与 5E，缺项不得补造。"
         },
         {
           "name": "steam_dlc_cs2_recent",
@@ -2391,7 +2391,7 @@
             "account": "account",
             "limit": "limit"
           },
-          "description": "查询指定 account 的 CS2 近期比赛；platform 可选，省略时使用配置默认，limit 可选且最多 20。覆盖完美、已收录官匹与 5E。"
+          "description": "查询指定 account 的 CS2 近期比赛；platform 可选，省略时使用配置默认，limit 可选且最多 20。account 必须由用户明确提供：perfect/official 使用 SteamID64，5e 使用明确 5E domain，不能从 Steam 账号推导或读取默认绑定。覆盖完美、已收录官匹与 5E。"
         },
         {
           "name": "steam_dlc_cs2_stats",
@@ -2402,7 +2402,7 @@
             "account": "account",
             "season": "season"
           },
-          "description": "汇总指定 account 的 CS2 战绩统计；platform 可选，省略时使用配置默认，season 可选。只统计来源实际返回的有界样本。"
+          "description": "汇总指定 account 的 CS2 战绩统计；platform 可选，省略时使用配置默认。account 必须由用户明确提供：perfect/official 使用 SteamID64，5e 使用明确 5E domain，不能从 Steam 账号推导或读取默认绑定。season 仅 perfect/5e 可选（如 S16/2026S5），official 不支持。只统计来源实际返回的有界样本。"
         },
         {
           "name": "steam_dlc_cs2_last",
@@ -2412,7 +2412,7 @@
             "platform": "platform",
             "account": "account"
           },
-          "description": "查询指定 account 的最近一场 CS2 比赛；platform 可选，省略时使用配置默认。来源为完美、已收录官匹或 5E。"
+          "description": "查询指定 account 的最近一场 CS2 比赛；platform 可选，省略时使用配置默认。account 必须由用户明确提供：perfect/official 使用 SteamID64，5e 使用明确 5E domain，不能从 Steam 账号推导或读取默认绑定。来源为完美、已收录官匹或 5E。"
         },
         {
           "name": "steam_dlc_cs2_match",
@@ -2424,7 +2424,7 @@
             "match_id": "match_id",
             "focus": "focus"
           },
-          "description": "按必填 match_id 查询 CS2 单场详情；platform 可选，省略时使用配置默认；official/5e 还需 account，focus 可选。缺项不得补造。"
+          "description": "按必填 match_id 查询 CS2 单场详情；platform 可选，省略时使用配置默认；official/5e 还需 account，focus 可选。account 如提供须由用户明确指定：perfect/official 使用 SteamID64，5e 使用明确 5E domain，不能推导或读取默认绑定。缺项不得补造。"
         }
       ],
       "display": {
@@ -2480,7 +2480,7 @@
       "resources": [
         {
           "path": "pages/cs2/entry.js",
-          "sha256": "390cfd7d2f08867766b0b4e8313f69f25e4d49fb4c3374e86d4563c891a25ff9"
+          "sha256": "51dcadfb60fef4de5a5dc22a32fed22c4f3bdad690be62071cd98e3628076127"
         },
         {
           "path": "pages/cs2/style.css",
@@ -2988,7 +2988,7 @@
       "resources": [
         {
           "path": "pages/deadlock/entry.js",
-          "sha256": "390cfd7d2f08867766b0b4e8313f69f25e4d49fb4c3374e86d4563c891a25ff9"
+          "sha256": "51dcadfb60fef4de5a5dc22a32fed22c4f3bdad690be62071cd98e3628076127"
         },
         {
           "path": "pages/deadlock/style.css",

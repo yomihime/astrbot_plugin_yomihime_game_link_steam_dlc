@@ -114,7 +114,7 @@ class Query:
                 if not history["history"]["matches"]:
                     raise QueryFailure(
                         ygl.ErrorCode.NO_RECORDS,
-                        "来源暂无已收录有效比赛；不等于账号没有游玩记录。",
+                        "来源暂无已收录有效比赛，可稍后重新查询。",
                     )
                 selected = history["history"]["matches"][0]["match_id"]
                 projection = await load(scope, "match", None, None, selected)

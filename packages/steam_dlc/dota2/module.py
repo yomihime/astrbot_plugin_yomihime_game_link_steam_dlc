@@ -520,7 +520,7 @@ async def _invoke_analysis(services, context, parameters):
         if type(response.body) is not bytes or len(response.body) > ANALYSIS_MAX_BYTES:
             raise _QueryFailure(
                 ErrorCode.UPSTREAM_ERROR,
-                "详细比赛响应超过4MB有界读取上限，未伪造部分完成。",
+                "详细比赛响应超过4MB读取上限，请稍后重试。",
             )
         projection = normalize_analysis(
             json.loads(response.body.decode("utf-8")), match_id

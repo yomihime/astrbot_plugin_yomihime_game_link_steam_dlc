@@ -37,16 +37,16 @@ def _feedback(job):
     }
     reasons = {
         "steam_key_required": "完整库需要在可信管理页配置 Steam Key，也可改选公开样本。",
-        "steam_source_unavailable": "Steam 来源暂不可用，未用其他来源替代，请稍后重试。",
-        "steam_source_not_public": "Steam 库未公开或来源授权受限，请检查公开设置和可信配置；未视为空库。",
-        "steam_source_access_denied": "Steam 来源授权或访问受限，请检查可信配置和目标账号的公开设置；未视为空库，也未用公开样本替代。",
+        "steam_source_unavailable": "所选 Steam 来源暂不可用，请稍后重试或另行选择来源。",
+        "steam_source_not_public": "Steam 库未公开或来源授权受限，库内容仍待确认；请检查公开设置和可信配置。",
+        "steam_source_access_denied": "所选 Steam 来源授权或访问受限，库内容仍待确认；请检查可信配置和目标账号的公开设置。",
         "rate_limited": "来源限流，请等待后再操作；已发布结果保留。",
         "resource_budget": "资源预算不足，已停止后续批次；可减少数量后重新执行，已发布结果保留。",
-        "metadata_incomplete": "部分作品类型尚未验证，无法完成仅游戏筛选；请稍后重试，未视为空库。",
+        "metadata_incomplete": "部分作品类型仍待验证，仅游戏筛选尚待完成；请稍后重试。",
     }
     status = job.status.value
     counts = {**job.progress, **job.summary}
-    text = f"任务{job.job_id} · {states.get(status, '状态待确认')}（{status}） · 修订{job.revision}。"
+    text = f"任务 {job.job_id} · {states.get(status, '状态待确认')}。"
     reason = counts.get("reason")
     if reason in reasons:
         text += reasons[reason]
@@ -54,12 +54,12 @@ def _feedback(job):
         text += "任务暂时无法完成，请查询状态并稍后重新执行；详细原因未确认。"
     wait = _retry_seconds(counts.get("retry_after"))
     if reason == "rate_limited" and wait is not None:
-        text += f"来源建议等待{wait}秒后再操作（非自动重试倒计时）。"
+        text += f"来源建议等待{wait}秒后再操作（届时请手动重试）。"
     text += f"状态查询：/ygl steam wall status {job.job_id}。"
     if status in ("queued", "running"):
         text += f"可取消：/ygl steam wall cancel {job.job_id}；当前不可重试。"
     elif status in ("failed", "cancelled", "interrupted"):
-        text += f"显式重新执行：/ygl steam wall retry {job.job_id}；重新计算并复用有效缓存，不从最后一项自动续跑。"
+        text += f"显式重新执行：/ygl steam wall retry {job.job_id}；从头重新计算并复用有效缓存。"
     published = counts.get("result_entries")
     if type(published) is int and published > 0:
         text += f"已发布{published}项图片资源，可查看：/ygl steam wall result {job.job_id}。"
@@ -514,7 +514,7 @@ class JobHandler:
                 cursor = page.next_cursor
             entries = page.entries
             if not entries:
-                text += "当前没有已完成图片；不代表来源空库，请查看任务状态。"
+                text += "图片尚未生成完成，请查看任务状态与来源信息。"
             else:
                 if not 1 <= image_number <= len(entries):
                     raise ValueError(f"本页图片序号范围1..{len(entries)}。")
@@ -543,7 +543,15 @@ class JobHandler:
             amount = counts.get(key)
             return amount if type(amount) is int and amount >= 0 else "待确认"
 
-        text += f"已选{count('selected')}，已生成{count('generated')}，待处理{count('pending')}，缺图{count('missing_images')}。已发布图片资源{count('result_entries')}项，来源完整性{counts.get('complete_source', '待确认')}。"
+        complete = counts.get("complete_source")
+        completeness = (
+            "完整"
+            if complete is True
+            else "部分数据"
+            if complete is False
+            else "待确认"
+        )
+        text += f"已选{count('selected')}，已生成{count('generated')}，待处理{count('pending')}，缺图{count('missing_images')}。已发布图片资源{count('result_entries')}项，来源完整性{completeness}。"
         return ygl.CapabilityResult(
             "steam-wall-job",
             ygl.ResultStatus.SUCCESS,

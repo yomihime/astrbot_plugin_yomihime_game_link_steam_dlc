@@ -36,7 +36,7 @@ def _legacy_result(selection, *, private=True, theme="warm_paper"):
         if full
         else "游戏库返回条目旧版海报；来源覆盖不完整，入图数量另受筛选及预算限制。"
         if owned
-        else "公开样本海报；不是完整游戏库。",
+        else "公开样本海报，范围以来源返回为准。",
         f"{coverage}；{kind}。",
         f"来源原始时间：{selection['fetched_at']}",
         "按累计时长平方根分配面积；同面积分档可能并列，等时长按AppID排序；等比cover可裁边，不拉伸。",
@@ -90,7 +90,9 @@ def _legacy_result(selection, *, private=True, theme="warm_paper"):
     )
     visible_sources = [
         coverage
-        + ("；入图数量与来源完整性分别计数。" if full else "；不是完整游戏库。"),
+        + (
+            "；入图数量与来源完整性分别计数。" if full else "；范围以本次来源返回为准。"
+        ),
         f"来源{counts['source_rows']}项 · 去重后{counts['unique']}项 · {eligible_label}{counts['eligible']}项 · 本次纳入{counts['included']}项 · 已确认筛除{counts['filtered']}项 · 已知limit截取{counts['limited']}项",
         f"未知类型{counts['unknown_type']}项 · 未知时长{counts['unknown_duration']}项 · 未游玩{counts['zero_duration']}项；分类计数可交叉。",
         f"缺图{counts['missing_images']}项使用备用块。",
@@ -160,9 +162,9 @@ def result(selection, *, private=True, theme="warm_paper", avatar=None):
     coverage = (
         ("Steam Web API完整库" if full else "Steam Web API返回库条目（覆盖不完整）")
         if selection["scope"] == "webapi_owned_games"
-        else "主页最近展示样本（最多3项），不是完整游戏库"
+        else "主页最近展示样本（最多3项）"
         if selection["scope"] == "public_homepage_recent_display_sample"
-        else "XML公开样本（最多5项），不是完整游戏库"
+        else "公开主页样本（最多5项）"
     )
     kind = "包含游戏、软件及未知类型" if selection["all_apps"] else "仅已确认游戏"
     hours = sum((Decimal(row["minutes"]) for row in selection["rows"]), Decimal(0)) / 60

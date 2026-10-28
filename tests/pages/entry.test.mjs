@@ -139,7 +139,7 @@ for (const moduleId of ['steam', 'dota2', 'cs2', 'deadlock']) {
     assert.match(f.text(), new RegExp(`/ygl ${moduleId} `));
     assert.match(f.text(), /运行健康请在模块管理中查看/);
     if (moduleId === 'cs2') { assert.match(f.text(), /完美收录官匹与 5E/); assert.doesNotMatch(f.text(), /Leetify|留存政策限制/); }
-    if (moduleId === 'deadlock') assert.match(f.text(), /默认使用最近 20 条已收录记录/);
+    if (moduleId === 'deadlock') assert.match(f.text(), /使用社区来源最近 20 条已收录记录/);
     assert.ok(f.container.querySelector('.ui-page .ui-page-header h1'));
     assert.ok(f.container.querySelector('.ui-settings-layout .ui-settings-group'));
     if (moduleId === 'steam') {
@@ -1318,7 +1318,7 @@ for (const platform of ['official', '5e']) {
     await settle(); f.input('account', response.document.blocks[1].fields.cs2.target.id); f.input('platform', platform); f.input('action', 'match'); f.input('match_id', 'summary-10001'); f.submit(); await settle();
     const output = f.container.querySelector('.steam-dlc-public-result');
     assert.match(output.textContent, /比分：0 : 未知/); assert.match(output.textContent, /K\/D\/A：7\/0\/未知 · rating：未知/);
-    assert.match(output.textContent, /有界近期玩家摘要/); assert.match(output.textContent, /不含完整比赛名单与详情/);
+    assert.match(output.textContent, /有界近期玩家摘要/); assert.match(output.textContent, /该来源提供该玩家的近期样本摘要/);
     assert.equal(output.querySelector('table'), null); assert.doesNotMatch(output.textContent, /undefined|NaN|null/);
     f.close();
   });
@@ -1492,7 +1492,7 @@ test('Dota analysis page shows focus, settlement-only completeness and missing s
   try {
     f.input('match_id', '12345'); f.input('account', 'Focus'); f.submit(); await settle();
     assert.match(f.text(), /仅基础结算/); assert.match(f.text(), /ID32 456/); assert.match(f.text(), /K\/D\/A 0\/4\/未知/);
-    assert.match(f.text(), /teamfights、purchases/); assert.match(f.text(), /来源未提供团战数据/);
+    assert.match(f.text(), /团战、购买时间线/); assert.match(f.text(), /来源未提供团战数据/);
     assert.doesNotMatch(f.text(), /AI短评已生成|K\/D\/A 0\/4\/0/);
     f.page.update({...f.context, runtimeId: 'new-analysis-runtime'}); assert.doesNotMatch(f.text(), /ID32 456/);
   } finally {f.close();}

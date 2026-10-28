@@ -67,6 +67,28 @@ def detailed():
 
 
 class AnalysisNormalizationTests(unittest.TestCase):
+    def test_display_section_labels_leave_raw_analysis_facts_unchanged(self):
+        projection = normalize_analysis(detailed(), "12345")
+        projection["truncated_sections"] = [
+            "teamfights.invalid_rows",
+            "gold_t.missing_points",
+            "future_section",
+        ]
+        focus = select_focus(projection, "123")
+        before = compact_analysis(projection, focus)
+        response = analysis_result(projection, focus, command=True)
+        text = "\n".join(
+            block.text
+            for block in response.document.ordered_blocks
+            if hasattr(block, "text")
+        )
+        self.assertIn("团战（含无效记录）", text)
+        self.assertIn("经济时间线（采样点缺失）", text)
+        self.assertIn("未知分析段", text)
+        self.assertNotIn("future_section", text)
+        self.assertNotIn("lane_role", text)
+        self.assertEqual(plain(response.model_facts.facts), plain(before))
+
     def test_serialized_cache_reorders_object_keys_without_changing_fact_hash(self):
         cold = normalize_analysis(detailed(), "12345")
         warm = json.loads(json.dumps(cold, sort_keys=True, allow_nan=False))

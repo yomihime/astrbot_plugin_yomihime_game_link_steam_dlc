@@ -87,7 +87,7 @@ class HandlerTests(unittest.IsolatedAsyncioTestCase):
             (JobStatus.SUCCEEDED, {"result_entries": 1}, "已完成"),
             (JobStatus.FAILED, {"reason": "steam_key_required"}, "Steam Key"),
             (JobStatus.FAILED, {"reason": "steam_source_unavailable"}, "暂不可用"),
-            (JobStatus.FAILED, {"reason": "steam_source_not_public"}, "未视为空库"),
+            (JobStatus.FAILED, {"reason": "steam_source_not_public"}, "库内容仍待确认"),
             (
                 JobStatus.FAILED,
                 {"reason": "rate_limited", "retry_after": 60},
@@ -95,7 +95,7 @@ class HandlerTests(unittest.IsolatedAsyncioTestCase):
             ),
             (JobStatus.FAILED, {"reason": "rate_limited"}, "来源限流"),
             (JobStatus.FAILED, {"reason": "resource_budget"}, "资源预算不足"),
-            (JobStatus.FAILED, {"reason": "metadata_incomplete"}, "类型尚未验证"),
+            (JobStatus.FAILED, {"reason": "metadata_incomplete"}, "类型仍待验证"),
             (JobStatus.FAILED, {"reason": "unknown-upstream-trace"}, "原因未确认"),
             (JobStatus.CANCELLED, {}, "已取消"),
             (JobStatus.INTERRUPTED, {}, "已中断"),
@@ -126,7 +126,7 @@ class HandlerTests(unittest.IsolatedAsyncioTestCase):
                     JobStatus.INTERRUPTED,
                 ):
                     self.assertIn("复用有效缓存", text)
-                    self.assertIn("不从最后一项自动续跑", text)
+                    self.assertIn("从头重新计算并复用有效缓存", text)
                 if (
                     progress.get("reason") == "rate_limited"
                     and "retry_after" not in progress

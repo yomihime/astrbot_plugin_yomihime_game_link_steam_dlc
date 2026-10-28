@@ -4,7 +4,7 @@
 
 ## 安装与凭据
 
-历史安装入口：[v0.2.0-beta.2 Release](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.2)。其中的 Core/DLC ZIP 与 `SHA256SUMS` 只适用于历史 a22 版本。本源码候选尚未推送，远程 CI 未运行，也没有可下载的 a23 配对资产；旧远程提交或旧 CI 不能证明此候选通过。
+历史安装入口：[v0.2.0-beta.2 Release](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.2)。其中的 Core/DLC ZIP 与 `SHA256SUMS` 只适用于历史 a22 版本。a23 源码和审核 CI 见 [Core PR #15](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/pull/15) 与 [DLC PR #6](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/pull/6)；以最终合并提交及其 CI 为准。本次源码合并不发布或覆盖现有 Release，历史 a22 安装资产不能作为 a23 配对包。
 
 DLC 不包含第二份 SDK。a23 必须由匹配的 Core 提供，Core 与 DLC 作为一对更新：先核对两个包的来源提交、SDK/ABI 和 SHA256，备份现有 Core/DLC 插件目录以及配置和数据；通过宿主正常停止目标实例，在停止状态先安装 Core、再安装 DLC，随后正常冷启动一次，并核对实际加载路径、SDK 版本与候选哈希。不要热替换 SDK、只更新一侧、清空数据库或重建绑定。
 
@@ -49,7 +49,7 @@ DLC 不包含第二份 SDK。a23 必须由匹配的 Core 提供，Core 与 DLC �
 
 ## 模型工具入口
 
-每个启用的 DLC 模块只向模型发布一个聚合入口。该入口是 Host `ToolSet` 可正常选择和调用的原生 `FunctionTool`：`full` 使用完整 action 集；旧人格或 manager 显式只允许部分旧工具名时，同名 limited 对象只保留对应 action。`full` 与 AstrBot 原生 `skills_like` 都受支持，复用宿主同一两阶段流程；不要求用户开启 `skills_like`。模块顶层短说明在 `skills_like` 的参数阶段可能被移除，因此每个有限 `action` 的用途和必要条件仍写入 `action` 参数说明，选中模块后可以读取。Core 在服务端按所选 action 的原能力 schema 再校验缺参、类型、多余字段和跨 action 参数组合，并逐 action 复核旧工具权限、inactive 状态、owner 与 module epoch。
+每个启用的 DLC 模块只向模型发布一个聚合入口。该入口是 Host `ToolSet` 可正常选择和调用的原生 `FunctionTool`：`full` 使用完整 action 集；旧人格或 manager 显式只允许部分旧工具名时，同名 limited 对象只保留对应 action。`full` 与 AstrBot 原生 `skills_like` 都受支持，复用宿主同一两阶段流程；不要求用户开启 `skills_like`。模块顶层短说明在 `skills_like` 的参数阶段可能被移除，因此每个有限 `action` 的用途和必要条件仍写入 `action` 参数说明，选中模块后可以读取。Core 在服务端按所选 action 的原能力 schema 校验必填字段、类型、范围及多余字段，拒绝其他 action 专有的参数；游戏特有的跨字段规则仍由模块原有校验处理。每次调用逐 action 复核旧工具权限、inactive 状态、owner 与 module epoch。
 
 | 模块入口 | action → 旧工具权限身份 |
 | --- | --- |
@@ -58,7 +58,7 @@ DLC 不包含第二份 SDK。a23 必须由匹配的 Core 提供，Core 与 DLC �
 | `steam_dlc_cs2` | `profile` → `steam_dlc_cs2_profile`；`recent` → `steam_dlc_cs2_recent`；`stats` → `steam_dlc_cs2_stats`；`last` → `steam_dlc_cs2_last`；`match` → `steam_dlc_cs2_match` |
 | `steam_dlc_deadlock` | `profile` → `steam_dlc_deadlock_profile`；`recent` → `steam_dlc_deadlock_recent`；`stats` → `steam_dlc_deadlock_stats`；`last` → `steam_dlc_deadlock_last`；`match` → `steam_dlc_deadlock_match` |
 
-旧工具名不再作为同模块的第二套模型入口，但继续作为逐 action 的 persona、插件/子 agent 过滤及 Host 权限身份；迁移不会把原来只允许一个查询的配置扩大为整个模块。Host 未提供显式列表（`None`）或显式选择新 parent 时沿用原生 full 对象；合法真实 `Context`/event 对当前对象的直接 Python 调用沿用 Host 基线，构造 SDK 对象或伪造上下文不能取得调用权。命令、页面、候选续接、内部 capability 和结果语义不因入口聚合而改变。完整声明合同见[模型工具迁移说明](docs/model-tools.md)。
+旧工具名不再作为同模块的第二套模型入口，但继续作为逐 action 的 persona、插件/子 agent 过滤及 Host 权限身份；迁移不会把原来只允许一个查询的配置扩大为整个模块。主请求按当前 Host event 与权限生成聚合 `FunctionTool`：完整选择保留全部获准 action，legacy 子集仅保留对应 action。Host handoff 的 `tools=None` 或显式新 parent 路径沿用原生 full 对象；合法真实 `Context`/event 对当前对象的直接 Python 调用沿用 Host 基线，构造 SDK 对象或伪造上下文不能取得调用权。命令、页面、候选续接、内部 capability 和结果语义不因入口聚合而改变。完整声明合同见[模型工具迁移说明](docs/model-tools.md)。
 
 ## 生涯拼图与缓存
 

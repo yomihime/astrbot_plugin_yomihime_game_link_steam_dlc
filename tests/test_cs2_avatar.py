@@ -168,9 +168,9 @@ class AvatarTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("Synthetic", text)
         self.assertIn("完美平台", text)
-        self.assertIn("perfect_pvp_rank", text)
-        self.assertIn("rating=1.2", text)
-        self.assertIn("pw_rating=0.0", text)
+        self.assertIn("完美平台段位", text)
+        self.assertIn("Rating 评分：1.2", text)
+        self.assertIn("完美评分：0.0", text)
         projection = result.document.ordered_blocks[-1].fields["cs2"]
         metrics = projection["data"]["metrics"]
         self.assertEqual(metrics["matches"], 0)
