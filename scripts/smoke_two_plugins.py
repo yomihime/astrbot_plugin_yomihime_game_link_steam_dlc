@@ -739,7 +739,7 @@ async def install_smoke():
         sdk = sys.modules["yomihime_game_link_sdk"]
         sdk_root = Path(sdk.__file__).resolve().parent
         sdk_root.relative_to((root / "data/plugins" / CORE).resolve())
-        assert sdk.__version__ == "0.1.0a23"
+        assert sdk.__version__ == "0.1.0a24"
         for name, module in tuple(sys.modules.items()):
             if name == "yomihime_game_link_sdk" or name.startswith(
                 "yomihime_game_link_sdk."
