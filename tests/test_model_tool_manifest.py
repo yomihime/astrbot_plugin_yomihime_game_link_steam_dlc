@@ -98,7 +98,7 @@ class ModelToolManifestTest(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("`full`", readme)
         self.assertIn("`skills_like`", readme)
-        self.assertIn("canonical SDK `0.1.0a23`", readme)
+        self.assertIn("canonical SDK `0.1.0a24`", readme)
 
     def test_cs2_and_deadlock_action_help_survives_top_level_description_removal(self):
         modules = {module["module_id"]: module for module in self.manifest["modules"]}

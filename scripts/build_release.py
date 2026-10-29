@@ -12,7 +12,7 @@ from io import BytesIO
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SDK_VERSION = "0.1.0a23"
+SDK_VERSION = "0.1.0a24"
 QUERY_TOOLS = {
     "steam": {
         "search": ("search", "query"),

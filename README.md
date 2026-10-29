@@ -1,18 +1,18 @@
 # 如月怜的游戏连结：Steam DLC
 
-独立 AstrBot 插件，提供共享 Steam 身份、商店与完整库、游戏生涯拼图、Dota 2 比赛订阅、CS2 完美/官匹/5E 查询和 Deadlock 查询。当前版本 `0.2.0-beta.2` 的源码候选要求支持模块聚合工具的配对 Core、canonical SDK `0.1.0a23`、模块 ABI `2.0` 与外包桥接 `1`。已发布的同版本 beta.2 资产仍是历史 a22 配对，不包含本次模型工具入口改造，不能与此源码候选混装。Beta 表示部分外部来源和现场环境仍未验收。请安装审核后的插件 ZIP，不要用自动生成的 Source code.zip 代替。来源可用性见[支持矩阵](docs/support-matrix.md)。
+独立 AstrBot 插件，提供共享 Steam 身份、商店与完整库、游戏生涯拼图、Dota 2 比赛订阅、CS2 完美/官匹/5E 查询和 Deadlock 查询。当前版本 `0.2.0-beta.3` 与 Core `0.1.12`、canonical SDK `0.1.0a24`、模块 ABI `2.0`、外包桥接 `1` 与 schema `210` 精确配对。Beta 表示部分外部来源和现场环境仍未验收。请安装审核后的插件 ZIP，不要用自动生成的 Source code.zip 代替。来源可用性见[支持矩阵](docs/support-matrix.md)。
 
 ## 安装与凭据
 
-历史安装入口：[v0.2.0-beta.2 Release](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.2)。其中的 Core/DLC ZIP 与 `SHA256SUMS` 只适用于历史 a22 版本。a23 源码和审核 CI 见 [Core PR #15](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/pull/15) 与 [DLC PR #6](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/pull/6)；以最终合并提交及其 CI 为准。本次源码合并不发布或覆盖现有 Release，历史 a22 安装资产不能作为 a23 配对包。
+配对安装入口：[v0.2.0-beta.3 Release](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.3)。使用同一 Release 的 Core/DLC ZIP 与 `SHA256SUMS`；历史 beta.1/beta.2 的 a22 资产保持原样，早先 a23 源码候选也不能代替本版 a24 配对。
 
-DLC 不包含第二份 SDK。a23 必须由匹配的 Core 提供，Core 与 DLC 作为一对更新：先核对两个包的来源提交、SDK/ABI 和 SHA256，备份现有 Core/DLC 插件目录以及配置和数据；通过宿主正常停止目标实例，在停止状态先安装 Core、再安装 DLC，随后正常冷启动一次，并核对实际加载路径、SDK 版本与候选哈希。不要热替换 SDK、只更新一侧、清空数据库或重建绑定。
+DLC 不包含第二份 SDK。a24 必须由匹配的 Core 提供，Core 与 DLC 作为一对更新：先核对两个包的来源提交、SDK/ABI 和 SHA256，备份现有 Core/DLC 插件目录以及配置和数据；通过宿主正常停止目标实例，在停止状态先安装 Core、再安装 DLC，随后正常冷启动一次，并核对实际加载路径、SDK 版本与候选哈希。不要热替换 SDK、只更新一侧、清空数据库或重建绑定。
 
-回滚也必须使用匹配的一对包：正常停止同一实例，保留届时最新配置和数据，恢复同一次备份中的 Core/DLC 代码，再正常启动并核对 SDK 与插件来源。不要把旧数据库覆盖到新数据上，也不要将 a22 Core 与 a23 DLC（或反向组合）作为回滚。模块 ABI 仍为 2.0 不代表 Python SDK 单例可以跨版本混用。
+回滚也必须使用匹配的一对包：正常停止同一实例，保留届时最新配置和数据，恢复同一次备份中的 Core/DLC 代码，再正常启动并核对 SDK 与插件来源。不要把旧数据库覆盖到新数据上，也不要将历史 a22/a23 Core 与 a24 DLC（或反向组合）作为回滚。模块 ABI 仍为 2.0 不代表 Python SDK 单例可以跨版本混用。
 
 新安装按匹配 Core → DLC 的顺序安装并启用宿主插件，再在 Core 可信管理页审阅并批准本次具体扩展安装计划。读取计划要求 DLC 宿主插件已启用；批准前 Core 会拒绝未授权的模块接入，启用插件本身不授予新来源权限。普通 DLC 更新沿用既有来源许可；扩大来源权限须批准新计划。使用 localhost/回环或可信 HTTPS 管理安装；远程普通 HTTP 可能在父壳资源摘要校验前失败，不要绕过校验。
 
-首次来源授权可在 Core 模块管理的“独立扩展安装授权”读取并批准当前安装计划：宿主插件名 `astrbot_plugin_yomihime_game_link_steam_dlc`，包 ID `steam_dlc`。核对来源/注入规则后批准并正常重启；已有等价配对授权可审计迁移。普通 DLC 版本和页面更新沿用许可，使用同一份 Core ZIP；新增敏感权限须批准新计划，不自动信任扩展自己的策略文件，也不要求重填现有 Key。
+首次来源授权可在 Core 模块管理的“独立扩展安装授权”读取并批准当前安装计划：宿主插件名 `astrbot_plugin_yomihime_game_link_steam_dlc`，包 ID `steam_dlc`。核对来源/注入规则后批准并正常重启；已有等价配对授权可审计迁移。普通 DLC 版本和页面更新沿用许可；本版 SDK 变更须同时更新匹配 Core ZIP。新增敏感权限须批准新计划，不自动信任扩展自己的策略文件，也不要求重填现有 Key。
 
 在 Core 模块管理中打开相应模块的设置：
 
@@ -123,6 +123,6 @@ mypy packages/steam_dlc
 python scripts/build_release.py
 ```
 
-页面构建需要配对 Core 源码的锁定前端依赖，可通过 `YGL_CORE_ROOT` 指定只读源码位置。先构建页面/同步摘要，再在干净已提交源码生成正式 DLC 包。消费者验证使用同一 Core 源码生成的 canonical a23 wheel，仅安装在隔离环境；Core/DLC 必须共同构建和验收。CI 的 Python 消费者回归生成去标识 CS2 序列化结果，再由页面测试读取 `CS2_GATEWAY_FIXTURE` 验证真实跨层数字显示。独立扩展通过受信管理安装计划授权并在运行时发布当前页面；包声明不自动取得秘密权限。`--allow-dirty`仅供本地开发，正式包要求已提交源码和干净工作树。
+页面构建需要配对 Core 源码的锁定前端依赖，可通过 `YGL_CORE_ROOT` 指定只读源码位置。先构建页面/同步摘要，再在干净已提交源码生成正式 DLC 包。消费者验证使用同一 Core 源码生成的 canonical a24 wheel，仅安装在隔离环境；Core/DLC 必须共同构建和验收。CI 的 Python 消费者回归生成去标识 CS2 序列化结果，再由页面测试读取 `CS2_GATEWAY_FIXTURE` 验证真实跨层数字显示。独立扩展通过受信管理安装计划授权并在运行时发布当前页面；包声明不自动取得秘密权限。`--allow-dirty`仅供本地开发，正式包要求已提交源码和干净工作树。
 
 双插件 harness 入口为 `scripts/smoke_two_plugins.py`，分别在新隔离目录运行 `--order core-first` 和 `--order dlc-first`，同时给 `--core-zip`、`--dlc-zip`、`--host-source`、`--work-root`。其事件与接口响应为合成数据；不证明真实新比赛、IM、扫码或线上平台通过。未配置凭据时先使用已有公开能力，实际Key、扫码、目标发送授权和IPv6-only测试应分别记录。安装前备份最新数据；不要把旧 schema 数据库覆盖到已升级实例。过程证据、账号、Key、附件、缓存均不进入公开仓库或安装包。

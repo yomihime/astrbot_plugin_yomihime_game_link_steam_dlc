@@ -41,8 +41,8 @@ jobs:
         run: |
           echo '/.ci-core/' >> .git/info/exclude
           python -m pip wheel --no-deps --no-build-isolation --wheel-dir .ci-core/wheelhouse ./.ci-core
-          python -m pip install --no-deps .ci-core/wheelhouse/yomihime_game_link_sdk-0.1.0a23-py3-none-any.whl
-          python -c "import yomihime_game_link_sdk as s; assert s.__version__ == '0.1.0a23'; print(s.__file__)"
+          python -m pip install --no-deps .ci-core/wheelhouse/yomihime_game_link_sdk-0.1.0a24-py3-none-any.whl
+          python -c "import yomihime_game_link_sdk as s; assert s.__version__ == '0.1.0a24'; print(s.__file__)"
       - name: Verify offline behavior and boundaries
         run: |
           python -m unittest discover -s tests -v

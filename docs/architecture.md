@@ -1,6 +1,6 @@
 # 架构与配对合同
 
-Core负责生命周期、权限、owner/epoch/CAS、存储、受控HTTP/秘密、资源、渲染与订阅投递。DLC只经canonical公开SDK提供游戏协议、归一化、时长规则及纯Evaluator/Composer，不导入Core私有代码或另开网络、数据库、发送通道。当前源码候选要求模型工具聚合版 Core、DLC0.2.0-beta.2、SDK0.1.0a23、ABI2.0、bridge1、schema210 精确配对；历史 beta.2 Release 的 a22 Core/DLC 仍是一组独立旧配对，不能交叉混装。
+Core负责生命周期、权限、owner/epoch/CAS、存储、受控HTTP/秘密、资源、渲染与订阅投递。DLC只经canonical公开SDK提供游戏协议、归一化、时长规则及纯Evaluator/Composer，不导入Core私有代码或另开网络、数据库、发送通道。当前版本要求模型工具聚合版 Core0.1.12、DLC0.2.0-beta.3、SDK0.1.0a24、ABI2.0、bridge1、schema210 精确配对；历史 beta.2 Release 的 a22 Core/DLC 仍是一组独立旧配对，不能交叉混装。
 
 每个迁移模块声明一个 `model_tool_name`、短说明和有限唯一 action；原 ToolDescriptor 名称、capability、参数映射与逐项说明继续作为权限和分发事实源。Core 向 Host 注册可正常选择和调用的原生 `FunctionTool` 聚合入口：主请求按当前 Host event 和权限投影为可调用的聚合 `FunctionTool`，完整选择保留全部获准 action；显式选择旧工具子集时，同名 limited 对象只保留对应 action。每次 action 调用仍按旧名复核 Host 权限与 inactive 状态，并由 Core/runtime/Gateway 复核 owner、module epoch、parent、action、descriptor、capability 与生命周期。Host handoff 的 `tools=None` 或显式新 parent 路径沿用原生 full 对象；合法真实 `Context`/event 对当前 `FunctionTool` 的直接 Python 调用沿用 Host 基线，构造 SDK 对象或伪造上下文不会取得调用权。full 与 skills_like 复用 Host 两阶段机制；action 必要说明位于参数 schema，顶层描述被移除时仍可读。
 

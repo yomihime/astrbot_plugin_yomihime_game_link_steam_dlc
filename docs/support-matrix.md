@@ -1,6 +1,6 @@
 # 支持与验证矩阵
 
-本表区分代码/隔离证据与真实环境验收。当前源码候选要求支持模块聚合工具的配对 Core、canonical SDK `0.1.0a23`、module ABI `2.0`、bridge `1`、schema `210`。DLC `0.2.0-beta.2` 的 AstrBot 元数据下限是 `>=4.29.1`，它不是对所有未来 Host 版本的兼容保证。历史 beta.2 Release 是 a22 配对；a23 源码和审核 CI 见 [Core PR #15](https://github.com/yomihime/astrbot_plugin_yomihime_game_link/pull/15) 与 [DLC PR #6](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/pull/6)；以最终合并提交及其 CI 为准。本次源码合并不发布或覆盖现有 Release，历史 a22 安装资产不能作为 a23 配对包。
+本表区分代码/隔离证据与真实环境验收。当前源码候选要求支持模块聚合工具的配对 Core、canonical SDK `0.1.0a24`、module ABI `2.0`、bridge `1`、schema `210`。DLC `0.2.0-beta.3` 的 AstrBot 元数据下限是 `>=4.29.1`，它不是对所有未来 Host 版本的兼容保证。历史 beta.2 Release 是 a22 配对；本版配对安装资产见 [v0.2.0-beta.3 Release](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.3)，Core 为 `0.1.12`。历史 a22/a23 不能与本版 a24 混装。
 
 | 类别 | 能力/环境 | 证据边界 |
 | --- | --- | --- |
@@ -16,7 +16,7 @@
 | Core 既有限制 | `CORE-K01` | 队列整批候选无法入场后，后续 queued 作业可能没有新唤醒；queued 仅查询或取消，不提示 retry。 |
 | Core 既有限制 | `CORE-K02` | 同群同模块/类型/来源累计 101 条 active PUBLIC 订阅可能超过投影 100 上限，影响共享 observation 的其他目标。 |
 
-新安装只使用同一候选的 Core/DLC ZIP。备份代码、配置和数据后正常停止 Host，在停止状态先安装 Core、再安装 DLC，然后正常冷启动并核对 SDK、加载路径与哈希。GitHub 自动生成的 Source code.zip 是源码归档，不是插件安装包。回滚恢复同一次备份的配对代码并保留最新数据；不能混用 a22/a23。新增敏感权限仍需批准新的具体计划。
+新安装只使用同一候选的 Core/DLC ZIP。备份代码、配置和数据后正常停止 Host，在停止状态先安装 Core、再安装 DLC，然后正常冷启动并核对 SDK、加载路径与哈希。GitHub 自动生成的 Source code.zip 是源码归档，不是插件安装包。回滚恢复同一次备份的配对代码并保留最新数据；不能混用历史 a22/a23 与 a24。新增敏感权限仍需批准新的具体计划。
 
 ## 当前候选状态
 
