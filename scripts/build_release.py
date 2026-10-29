@@ -152,14 +152,16 @@ def inventory(root):
         declared = set()
         for resource in module.get("resources", []):
             relative = resource["path"]
+            page_resource = isinstance(relative, str) and relative in {
+                f"pages/{module['module_id']}/entry.js",
+                f"pages/{module['module_id']}/style.css",
+            }
+            logo_resource = relative == (
+                f"{module['module_id']}/assets/{module['module_id']}.svg"
+            )
             if (
                 not isinstance(relative, str)
-                or re.fullmatch(
-                    r"pages/(steam|dota2|cs2|deadlock)/(entry\.js|style\.css)",
-                    relative,
-                )
-                is None
-                or relative.split("/")[1] != module["module_id"]
+                or not (page_resource or logo_resource)
                 or relative.casefold() in resources
                 or re.fullmatch(r"[0-9a-f]{64}", resource["sha256"]) is None
             ):
@@ -170,6 +172,11 @@ def inventory(root):
         referenced = {
             name for page in pages for name in (page["entry"], *page.get("styles", []))
         }
+        logo = module.get("display", {}).get("logo_resource")
+        if logo is not None:
+            if logo != f"{module['module_id']}/assets/{module['module_id']}.svg":
+                raise ValueError("logo resource is outside the release allowlist")
+            referenced.add(logo)
         if referenced != declared:
             raise ValueError("page resource declarations must match page references")
     files = [root / name for name in ROOT_FILES]

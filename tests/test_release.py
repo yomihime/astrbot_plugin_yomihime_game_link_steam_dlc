@@ -43,6 +43,7 @@ class ReleaseResourcesTest(unittest.TestCase):
         for module in self.manifest["modules"]:
             module.pop("pages", None)
             module.pop("resources", None)
+            module.get("display", {}).pop("logo_resource", None)
         self.asset = self.package / "pages/steam/entry.js"
         self.asset.parent.mkdir(parents=True)
         self.asset.write_bytes(b"export function mount() {}\n")
@@ -68,6 +69,87 @@ class ReleaseResourcesTest(unittest.TestCase):
         self.assertFalse(any(name.endswith("private.txt") for name in files))
         self.assertEqual(
             files["packages/steam_dlc/pages/steam/entry.js"], self.asset.read_bytes()
+        )
+
+    def add_logo(self):
+        relative = "steam/assets/steam.svg"
+        logo = self.package / relative
+        logo.parent.mkdir(parents=True, exist_ok=True)
+        logo.write_bytes(b'<svg xmlns="http://www.w3.org/2000/svg"/>')
+        self.module["display"]["logo_resource"] = relative
+        self.module["resources"].append(
+            {"path": relative, "sha256": hashlib.sha256(logo.read_bytes()).hexdigest()}
+        )
+        self.save_manifest()
+        return logo
+
+    def test_declared_logo_is_included_and_digest_checked(self):
+        logo = self.add_logo()
+        files = release.inventory(self.root)
+        self.assertEqual(
+            files["packages/steam_dlc/steam/assets/steam.svg"], logo.read_bytes()
+        )
+        logo.write_bytes(b"changed")
+        with self.assertRaisesRegex(ValueError, "bytes differ"):
+            release.inventory(self.root)
+
+    def test_logo_reference_must_be_declared_and_owner_scoped(self):
+        self.add_logo()
+        for path in ("cs2/assets/cs2.svg", "../steam.svg", "https://invalid/logo.svg"):
+            with self.subTest(path=path):
+                self.module["display"]["logo_resource"] = path
+                self.save_manifest()
+                with self.assertRaisesRegex(ValueError, "allowlist"):
+                    release.inventory(self.root)
+        self.module["display"]["logo_resource"] = "steam/assets/steam.svg"
+        self.module["resources"].pop()
+        self.save_manifest()
+        with self.assertRaisesRegex(ValueError, "references"):
+            release.inventory(self.root)
+
+    def test_unreferenced_and_cross_owner_logo_resources_are_rejected(self):
+        self.add_logo()
+        del self.module["display"]["logo_resource"]
+        self.save_manifest()
+        with self.assertRaisesRegex(ValueError, "references"):
+            release.inventory(self.root)
+        self.module["resources"][-1]["path"] = "cs2/assets/cs2.svg"
+        self.save_manifest()
+        with self.assertRaisesRegex(ValueError, "allowlist"):
+            release.inventory(self.root)
+
+    def test_shipped_logos_are_exactly_four_pinned_passive_svgs(self):
+        from xml.etree import ElementTree
+
+        files = release.inventory(ROOT)
+        manifest = json.loads(files["packages/steam_dlc/yomihime.manifest.json"])
+        logos = set()
+        allowed = {"svg", "title", "desc", "path", "circle", "rect", "g"}
+        for module in manifest["modules"]:
+            relative = module["display"]["logo_resource"]
+            logos.add(relative)
+            payload = files["packages/steam_dlc/" + relative]
+            declared = next(r for r in module["resources"] if r["path"] == relative)
+            self.assertEqual(hashlib.sha256(payload).hexdigest(), declared["sha256"])
+            svg = ElementTree.fromstring(payload)
+            self.assertEqual(svg.attrib["viewBox"], "0 0 100 100")
+            self.assertEqual(svg.attrib["fill"], "currentColor")
+            for element in svg.iter():
+                self.assertIn(element.tag.split("}")[-1], allowed)
+                self.assertFalse(
+                    any(
+                        name.lower().startswith("on") or "href" in name.lower()
+                        for name in element.attrib
+                    )
+                )
+        self.assertEqual(len(logos), 4)
+        self.assertEqual(
+            {
+                name.removeprefix("packages/steam_dlc/")
+                for name in files
+                if name.endswith(".svg")
+            },
+            logos,
         )
 
     def test_matching_public_versions_are_accepted(self):
