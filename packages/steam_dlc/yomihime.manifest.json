@@ -774,7 +774,8 @@
       "display": {
         "default_name": "Steam",
         "short_name": "Steam",
-        "summary": "公开商店、账号、完整库、愿望单与游戏生涯拼图。"
+        "summary": "公开商店、账号、完整库、愿望单与游戏生涯拼图。",
+        "logo_resource": "steam/assets/steam.svg"
       },
       "collections": [
         {
@@ -848,6 +849,10 @@
         }
       ],
       "resources": [
+        {
+          "path": "steam/assets/steam.svg",
+          "sha256": "cdfdd6aa4ee0935565ba5f99a2afe155dbc8adee5d467348adec071be4374f17"
+        },
         {
           "path": "pages/steam/entry.js",
           "sha256": "51dcadfb60fef4de5a5dc22a32fed22c4f3bdad690be62071cd98e3628076127"
@@ -1668,7 +1673,8 @@
       "display": {
         "default_name": "Dota2",
         "short_name": "Dota2",
-        "summary": "公开战绩、同场订阅合并战报与指定玩家分析。"
+        "summary": "公开战绩、同场订阅合并战报与指定玩家分析。",
+        "logo_resource": "dota2/assets/dota2.svg"
       },
       "sources": [
         {
@@ -1790,6 +1796,10 @@
         }
       ],
       "resources": [
+        {
+          "path": "dota2/assets/dota2.svg",
+          "sha256": "7a2879ee781f8e00ec2b5996362556742df2c99f0d682d9dbcdcdddae8a547a6"
+        },
         {
           "path": "pages/dota2/entry.js",
           "sha256": "51dcadfb60fef4de5a5dc22a32fed22c4f3bdad690be62071cd98e3628076127"
@@ -2430,7 +2440,8 @@
       "display": {
         "default_name": "CS2",
         "short_name": "CS2",
-        "summary": "完美、收录官匹和5E的独立来源战绩。"
+        "summary": "完美、收录官匹和5E的独立来源战绩。",
+        "logo_resource": "cs2/assets/cs2.svg"
       },
       "pages": [
         {
@@ -2478,6 +2489,10 @@
         }
       ],
       "resources": [
+        {
+          "path": "cs2/assets/cs2.svg",
+          "sha256": "0de37bbfa8b3efb01809e974cb73440dc1bd232380a01dbe825532682d51d26e"
+        },
         {
           "path": "pages/cs2/entry.js",
           "sha256": "51dcadfb60fef4de5a5dc22a32fed22c4f3bdad690be62071cd98e3628076127"
@@ -2954,7 +2969,8 @@
       "display": {
         "default_name": "Deadlock",
         "short_name": "Deadlock",
-        "summary": "公开比赛与玩家近期战绩；覆盖范围随来源说明。"
+        "summary": "公开比赛与玩家近期战绩；覆盖范围随来源说明。",
+        "logo_resource": "deadlock/assets/deadlock.svg"
       },
       "pages": [
         {
@@ -2986,6 +3002,10 @@
         }
       ],
       "resources": [
+        {
+          "path": "deadlock/assets/deadlock.svg",
+          "sha256": "4c632f937a0014adf9bf2256afede0a41cb6bda9da225169fada68e70ec0c001"
+        },
         {
           "path": "pages/deadlock/entry.js",
           "sha256": "51dcadfb60fef4de5a5dc22a32fed22c4f3bdad690be62071cd98e3628076127"

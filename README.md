@@ -103,6 +103,10 @@ CS2 以 CS2UID 为行为和接口参考，退休旧 Leetify 主方案。perfect�
 
 两项限制不属于本次模型入口改造；本次不更改数据库 schema，也不以 DLC 内部旁路规避。
 
+## 模块图标
+
+Steam、Dota 2、CS2 与 Deadlock 的手绘 SVG 通过现有 `display.logo_resource` 和 SHA256 资源声明提供给 Core 工作区模块入口卡片。安装包包含四个图标，沿用 Core 已有的摘要校验、外部资源投影与 CSS mask 着色，跟随浅深主题；不是官方品牌素材。没有修改 Core、FF14、SDK 或 ABI。侧栏使用 Core 的通用导航图标，当前公开合同不支持 DLC 单独替换侧栏图标；模块页面内部布局保持不变。
+
 ## 构建与边界
 
 所有业务仅使用公开 SDK；Core 不含游戏协议。SDK仅由 Core提供。正式许可与行为参考见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，架构与来源见 [architecture.md](docs/architecture.md)、[providers.md](docs/providers.md)。
