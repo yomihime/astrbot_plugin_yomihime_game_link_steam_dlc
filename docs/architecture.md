@@ -16,7 +16,7 @@ Dota复用Core PUBLIC CollectionKey共享采集与持久scheduler/outbox。订�
 
 SDK DenseCollage是通用整数格资源文档，Core不识别Steam小时。模块先筛选、确定span与分页预算，再按有界批次补公共素材；逻辑顺序为tuple顺序，物理为大块优先稳定first-fit。旧WeightedCollage保持兼容。资源完整性快照在成图命中前复核授权、文件版本/过期，变更或未知证据重新hash；未命中同一源只全读一次。衍生物以源hash/尺寸/fit/渲染版本分区；权限撤销不能被快路径绕过。
 
-页面复用Core公开UI、共享runtime与scope生命周期。普通草稿隔离；凭据立即清空、不持久化；CAS冲突重读，未知写入不重试，迟到响应必须重新检查当前scope。实际部署固定单一SDK身份；独立扩展安装许可与内容摘要分开。SDK或已加载Python变化必须正常停止后配对更新 Core/DLC 并冷启动，不能热替换。回滚恢复同一次备份的配对代码，保留最新配置和数据，不以旧数据库覆盖新数据。动态页面依赖浏览器安全上下文：localhost/回环或可信 HTTPS 是支持路径；远程普通 HTTP 可能在父壳摘要校验前失败，不应绕过校验。包内排除测试过程、私有证据、Key、运行缓存及项目记忆。离线、包、隔离Host、浏览器、线上API和真实IM分别验收，不互相替代。
+页面复用Core公开UI、共享runtime与scope生命周期。普通草稿隔离；凭据立即清空、不持久化；CAS冲突重读，未知写入不重试，迟到响应必须重新检查当前scope。实际部署固定单一SDK身份；独立扩展安装许可与内容摘要分开。SDK或已加载Python变化必须正常停止后配对更新 Core/DLC 并冷启动，不能热替换。回滚恢复同一次备份的配对代码，保留最新配置和数据，不以旧数据库覆盖新数据。动态页面优先使用原生 WebCrypto；仅 API 缺失时使用随包 SHA-256 fallback，原生异常继续 fail closed，摘要、MIME、大小与声明检查保持。复用 PR17 accepted head 的真实 LAN HTTP 无 WebCrypto与 localhost 原生校验验收；本次新版本未安装运行 Host。LAN 状态接口仍受原 localhost 单来源策略限制，不放宽授权或关闭校验。包内排除测试过程、私有证据、Key、运行缓存及项目记忆。离线、包、隔离Host、浏览器、线上API和真实IM分别验收，不互相替代。
 
 长作业采用Core持久Jobs与新JOB scope。DLC只提供规范参数、选集和声明文档；Core保存owner/CAS/期限/分页引用、渲染并保护RAW/DERIVED/OUTPUT缓存。页面操作标识只进入幂等元数据；命令无可靠重试身份时省略该键，仍由Core按规范输入合并活跃任务。完成后新动作重新检查业务来源与内容缓存，不永久绑定旧任务。命令结果按需单图，不自动刷群；页面轮询退出不取消作业。
 
