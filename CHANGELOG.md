@@ -4,6 +4,12 @@
 
 暂无。
 
+## 0.2.0-beta.4（2026-10-30）
+
+- 仅更新版本、配对、CI 固定来源和发布说明，与修复 LAN HTTP 动态页面与图标加载的 Core `0.1.13` 配对；DLC 业务与页面资源不变。canonical SDK `0.1.0a24`、ABI `2.0`、bridge `1`、schema `210` 不变。
+- 使用新的 prerelease 承载两包及 SDK；不覆盖 beta.3 资产或旧 tag，不建立独立 Core Release。
+- 更新支持边界：复用 PR17 LAN 无 WebCrypto/localhost 原生校验、四 SVG、12 声明页及主题/生命周期证据；LAN 状态仍受原 localhost 单来源策略限制，Deadlock 未声明辅助页，业务供应商/模型/IM 未测，额外 CS2 localhost query 被拒未执行，原 `.230` 未更新。本轮发布不操作运行实例。
+
 ## 0.2.0-beta.3（2026-10-29）
 
 - 与 Core `0.1.12`、canonical SDK `0.1.0a24` 配对发布；SDK 使用新的发布身份，ABI `2.0`、bridge `1`、schema `210` 保持不变。历史 beta.1/beta.2 的 a22 资产不覆盖，a22/a23 与本版不得交叉混装。

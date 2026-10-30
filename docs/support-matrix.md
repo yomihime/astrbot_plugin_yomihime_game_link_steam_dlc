@@ -1,6 +1,6 @@
 # 支持与验证矩阵
 
-本表区分代码/隔离证据与真实环境验收。当前源码候选要求支持模块聚合工具的配对 Core、canonical SDK `0.1.0a24`、module ABI `2.0`、bridge `1`、schema `210`。DLC `0.2.0-beta.3` 的 AstrBot 元数据下限是 `>=4.29.1`，它不是对所有未来 Host 版本的兼容保证。历史 beta.2 Release 是 a22 配对；本版配对安装资产见 [v0.2.0-beta.3 Release](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.3)，Core 为 `0.1.12`。历史 a22/a23 不能与本版 a24 混装。
+本表区分代码/隔离证据与真实环境验收。当前源码候选要求支持模块聚合工具的配对 Core、canonical SDK `0.1.0a24`、module ABI `2.0`、bridge `1`、schema `210`。DLC `0.2.0-beta.4` 的 AstrBot 元数据下限是 `>=4.29.1`，它不是对所有未来 Host 版本的兼容保证。历史 beta.2 Release 是 a22 配对；本版配对安装资产见 [v0.2.0-beta.4 Release](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.4)，Core 为 `0.1.13`。历史 a22/a23 不能与本版 a24 混装。
 
 | 类别 | 能力/环境 | 证据边界 |
 | --- | --- | --- |
@@ -12,7 +12,7 @@
 | 未验 | Dota 真实 IM 投递和自然新比赛 | 没有受信目标、允许发送条数、时间窗和消息授权，本轮测试出站数为 0。管理页或合成事件不替代真实会话身份。 |
 | 未验 | 非空 CS2/Deadlock 样本、真实手机、OS 重启、生产磁盘恢复 | 外部条件未提供或未执行；390px 视口模拟不代表真实手机，备份校验不代表生产磁盘恢复。 |
 | 来源限制 | Steam 私密库、OpenDota 收录范围、完美/官匹/5E摘要、Deadlock 社区数据 | 受上游可见性、收录和凭据限制；官匹是完美收录口径，官匹/5E近期摘要不等于完整历史或完整单场。可选 OpenDota Key 不扩大 RPH。 |
-| 部署条件 | Core 动态页面资源 | 使用 localhost/回环或可信 HTTPS。远程普通 HTTP 可能在父壳 hash 校验前置能力处失败；不关闭校验，也不承诺此部署方式。 |
+| 部署条件 | Core 动态页面资源 | Core 0.1.13 已在真实 LAN HTTP iframe 缺少 WebCrypto 时验收动态页面和图标，localhost 使用原生 WebCrypto；两路径均保留摘要校验。LAN 状态接口仍受原 localhost 单来源策略限制；不关闭校验或放宽授权。 |
 | Core 既有限制 | `CORE-K01` | 队列整批候选无法入场后，后续 queued 作业可能没有新唤醒；queued 仅查询或取消，不提示 retry。 |
 | Core 既有限制 | `CORE-K02` | 同群同模块/类型/来源累计 101 条 active PUBLIC 订阅可能超过投影 100 上限，影响共享 observation 的其他目标。 |
 

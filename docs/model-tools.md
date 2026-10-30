@@ -42,6 +42,6 @@
 
 ## 配对更新与回滚
 
-此声明需要 canonical SDK `0.1.0a24`，ABI 仍为 `2.0`。DLC 不携带 SDK；a24 由精确配对 Core `0.1.12` 提供。安装前核对两个包的来源提交、SDK/ABI 与 SHA256，并备份插件代码、配置和数据。正常停止目标 Host 后先安装 Core、再安装 DLC，然后正常冷启动并核对实际加载来源。禁止热替换 SDK 或只更新一侧。
+此声明需要 canonical SDK `0.1.0a24`，ABI 仍为 `2.0`。DLC 不携带 SDK；a24 由精确配对 Core `0.1.13` 提供。安装前核对两个包的来源提交、SDK/ABI 与 SHA256，并备份插件代码、配置和数据。正常停止目标 Host 后先安装 Core、再安装 DLC，然后正常冷启动并核对实际加载来源。禁止热替换 SDK 或只更新一侧。
 
-回滚时正常停止同一 Host，保留最新配置和数据，恢复同一次备份中的匹配 Core/DLC 代码，再正常启动并核对加载来源。不要将旧数据库覆盖到较新的用户数据上，也不要混用历史 a22/a23 与 a24。本版配对安装资产见 [v0.2.0-beta.3 Release](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.3)，Core 为 `0.1.12`。历史 a22/a23 不能与本版 a24 混装。
+回滚时正常停止同一 Host，保留最新配置和数据，恢复同一次备份中的匹配 Core/DLC 代码，再正常启动并核对加载来源。不要将旧数据库覆盖到较新的用户数据上，也不要混用历史 a22/a23 与 a24。本版配对安装资产见 [v0.2.0-beta.4 Release](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.4)，Core 为 `0.1.13`。历史 a22/a23 不能与本版 a24 混装。

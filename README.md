@@ -1,10 +1,10 @@
 # 如月怜的游戏连结：Steam DLC
 
-独立 AstrBot 插件，提供共享 Steam 身份、商店与完整库、游戏生涯拼图、Dota 2 比赛订阅、CS2 完美/官匹/5E 查询和 Deadlock 查询。当前版本 `0.2.0-beta.3` 与 Core `0.1.12`、canonical SDK `0.1.0a24`、模块 ABI `2.0`、外包桥接 `1` 与 schema `210` 精确配对。Beta 表示部分外部来源和现场环境仍未验收。请安装审核后的插件 ZIP，不要用自动生成的 Source code.zip 代替。来源可用性见[支持矩阵](docs/support-matrix.md)。
+独立 AstrBot 插件，提供共享 Steam 身份、商店与完整库、游戏生涯拼图、Dota 2 比赛订阅、CS2 完美/官匹/5E 查询和 Deadlock 查询。当前版本 `0.2.0-beta.4` 与 Core `0.1.13`、canonical SDK `0.1.0a24`、模块 ABI `2.0`、外包桥接 `1` 与 schema `210` 精确配对。Beta 表示部分外部来源和现场环境仍未验收。请安装审核后的插件 ZIP，不要用自动生成的 Source code.zip 代替。来源可用性见[支持矩阵](docs/support-matrix.md)。
 
 ## 安装与凭据
 
-配对安装入口：[v0.2.0-beta.3 Release](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.3)。使用同一 Release 的 Core/DLC ZIP 与 `SHA256SUMS`；历史 beta.1/beta.2 的 a22 资产保持原样，早先 a23 源码候选也不能代替本版 a24 配对。
+配对安装入口：[v0.2.0-beta.4 Release](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.4)。使用同一 Release 的 Core/DLC ZIP 与 `SHA256SUMS`；历史 beta.1/beta.2 的 a22 资产保持原样，早先 a23 源码候选也不能代替本版 a24 配对。
 
 DLC 不包含第二份 SDK。a24 必须由匹配的 Core 提供，Core 与 DLC 作为一对更新：先核对两个包的来源提交、SDK/ABI 和 SHA256，备份现有 Core/DLC 插件目录以及配置和数据；通过宿主正常停止目标实例，在停止状态先安装 Core、再安装 DLC，随后正常冷启动一次，并核对实际加载路径、SDK 版本与候选哈希。不要热替换 SDK、只更新一侧、清空数据库或重建绑定。
 
