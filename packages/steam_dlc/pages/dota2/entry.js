@@ -1667,6 +1667,7 @@ function P(f, p) {
 				hint: d.value,
 				error: p.value,
 				layout: _ ? "row" : "stacked",
+				class: a.name === "poster_limit" ? "steam-dlc-limit-field" : void 0,
 				hintId: c.id,
 				errorId: l.id
 			}, {

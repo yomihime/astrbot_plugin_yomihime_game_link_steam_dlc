@@ -41,6 +41,7 @@ export function mount(container, options) {
       const hintText = shallowRef(hint.textContent), errorText = shallowRef(error.textContent);
       const app = createApp({setup: () => () => h(FormField, {
         controlId: control.id, label: label.textContent, hint: hintText.value, error: errorText.value, layout: settings ? 'row' : 'stacked',
+        class: control.name === 'poster_limit' ? 'steam-dlc-limit-field' : undefined,
         hintId: hint.id, errorId: error.id,
       }, {default: ({controlAttrs}) => {
         for (const [key, value] of Object.entries(controlAttrs)) {

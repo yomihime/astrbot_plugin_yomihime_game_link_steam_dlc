@@ -50,3 +50,14 @@
 .steam-dlc-view .ui-surface .steam-dlc-credential { margin:12px 0; }
 .steam-dlc-page>form { counter-reset:steam-settings-group; }
 .steam-dlc-config-group h3::before { counter-increment:steam-settings-group; content:counter(steam-settings-group,decimal-leading-zero); color:var(--ui-gold); font:13px var(--ui-serif); margin-right:14px; }
+
+/* Keep long shortcut lists below the numeric input rather than beside it. */
+.steam-dlc-config-group .ui-form-grid { row-gap:0; }
+.steam-dlc-config-group .steam-dlc-actions { margin-top:0; gap:6px; }
+.steam-dlc-config-group .ui-settings-row { margin:6px 0; }
+.steam-dlc-limit-field.ui-settings-row { grid-template-columns:var(--ui-label-width) minmax(0,1fr); }
+.steam-dlc-limit-field.ui-settings-row > div:nth-of-type(2) { grid-column:2 / -1; }
+@media(max-width:599px) {
+  .steam-dlc-limit-field.ui-settings-row { grid-template-columns:minmax(0,1fr); }
+  .steam-dlc-limit-field.ui-settings-row > div:nth-of-type(2) { grid-column:1 / -1; }
+}

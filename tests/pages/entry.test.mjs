@@ -827,6 +827,8 @@ test('settings group fields by task and place credentials in the side panel', as
   const f = fixture({moduleId: 'steam', credentials: mock.services}); mock.bind(f); await settle();
   assert.deepEqual([...f.container.querySelectorAll('.steam-dlc-config-group h3')].map(node => node.textContent), ['查询与回复', '游戏生涯拼图']);
   assert.ok(f.container.querySelector('.ui-settings-aside [name=credential_steam_key]'));
+  assert.ok(f.container.querySelector('.steam-dlc-limit-field [name=poster_limit]'));
+  assert.ok(f.container.querySelector('.steam-dlc-limit-field [data-action=reset-poster_limit]'));
   assert.ok(!f.container.querySelector('.ui-page-header'), 'shell owns the page heading');
   f.input('credential_steam_key', 'synthetic-secret');
   const secret = f.container.querySelector('[name=credential_steam_key]');
