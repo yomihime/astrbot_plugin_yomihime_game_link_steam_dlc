@@ -1546,3 +1546,20 @@ test('wishlist privacy, rate limit and failure remain distinct after Core saniti
     finally {f.close();}
   }
 });
+
+test('home renders each bundled module artwork as a safe decorative SVG', () => {
+  for (const moduleId of ['steam', 'dota2', 'cs2', 'deadlock']) {
+    const f = fixture({moduleId, routeId: 'home'});
+    const mark = f.container.querySelector(`svg.steam-dlc-module-mark--${moduleId}`);
+    assert.ok(mark, `${moduleId}: missing home mark`);
+    assert.equal(mark.getAttribute('aria-hidden'), 'true');
+    const original = new f.container.ownerDocument.defaultView.DOMParser().parseFromString(readFileSync(new URL(`../../packages/steam_dlc/${moduleId}/assets/${moduleId}.svg`, import.meta.url), 'utf8'), 'image/svg+xml');
+    assert.deepEqual([...mark.querySelectorAll('path')].map(p => p.getAttribute('d')), [...original.querySelectorAll('path')].map(p => p.getAttribute('d')));
+    assert.equal(mark.querySelector('script, image, a, foreignObject'), null);
+    assert.equal(mark.querySelector('[onload], [href], [style]'), null);
+    f.page.dispose();
+    const settings = fixture({moduleId, routeId: 'settings'});
+    assert.equal(settings.container.querySelector('.steam-dlc-module-mark'), null);
+    settings.page.dispose();
+  }
+});

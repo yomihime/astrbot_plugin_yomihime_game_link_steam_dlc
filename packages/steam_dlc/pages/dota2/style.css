@@ -61,3 +61,11 @@
   .steam-dlc-limit-field.ui-settings-row { grid-template-columns:minmax(0,1fr); }
   .steam-dlc-limit-field.ui-settings-row > div:nth-of-type(2) { grid-column:1 / -1; }
 }
+
+/* Module artwork: the same position as FF14, with each module's own color. */
+.steam-dlc-module-mark { display:block; float:right; width:64px; height:64px; margin:0 0 16px 24px; opacity:.24; }
+.steam-dlc-module-mark--steam { color:#2878b7; }
+.steam-dlc-module-mark--dota2 { color:#bd3b35; }
+.steam-dlc-module-mark--cs2 { color:#d88720; }
+.steam-dlc-module-mark--deadlock { color:#8e62ad; }
+@media(max-width:399px) { .steam-dlc-module-mark { width:48px; height:48px; margin-left:12px; } }

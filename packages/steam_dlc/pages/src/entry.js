@@ -1,6 +1,27 @@
 import {createApp, h, shallowRef} from 'vue';
 import {UiProvider, PageHeader, SettingsLayout, Surface, SettingsGroup, StatusHint, FormField, FormGrid, ActionBar} from '@game-link/ui';
 import {mountController, MODULES} from './controller.js';
+import steamLogo from '../../steam/assets/steam.svg?raw';
+import dota2Logo from '../../dota2/assets/dota2.svg?raw';
+import cs2Logo from '../../cs2/assets/cs2.svg?raw';
+import deadlockLogo from '../../deadlock/assets/deadlock.svg?raw';
+
+// Only bundled, reviewed repository artwork is accepted. Never inject SVG markup.
+const moduleArtwork = {steam: steamLogo, dota2: dota2Logo, cs2: cs2Logo, deadlock: deadlockLogo};
+function artworkNode(id, doc) {
+  const source = moduleArtwork[id];
+  if (!source) return null;
+  const root = new doc.defaultView.DOMParser().parseFromString(source, 'image/svg+xml').documentElement;
+  const allowed = {svg: ['viewBox', 'fill'], g: ['transform'], path: ['d', 'fill', 'fill-rule', 'clip-rule']};
+  function convert(node) {
+    const name = node.localName;
+    if (!Object.hasOwn(allowed, name)) return null;
+    const attrs = Object.fromEntries(allowed[name].filter(key => node.hasAttribute(key)).map(key => [key, node.getAttribute(key)]));
+    if (name === 'svg') Object.assign(attrs, {class: `steam-dlc-module-mark steam-dlc-module-mark--${id}`, 'aria-hidden': 'true', focusable: 'false'});
+    return h(name, attrs, [...node.children].map(convert).filter(Boolean));
+  }
+  return root.localName === 'svg' ? convert(root) : null;
+}
 
 /** Public PageModule contract v1. The controller owns services, CAS and drafts;
  * the shared presentation facade owns layout, theme and locale.
@@ -65,6 +86,7 @@ export function mount(container, options) {
     theme: context.value.theme, locale: context.value.locale, styleMountTarget: container,
   }, {default: () => h('section', {class: 'steam-dlc-view', lang: context.value.locale}, [
     home ? h(Surface, {title: module?.title || '模块页面不可用', eyebrow: `${module?.title?.toUpperCase() || 'STEAM DLC'} / MODULE`}, {default: () => [
+      artworkNode(moduleId, container.ownerDocument),
       h('p', module?.summary || '当前页面没有可用的模块声明。'),
       h(StatusHint, {}, {default: () => '请从模块导航选择查询，或进入业务配置调整设置。'}),
       h('div', {ref: element => { host = element; }}),
