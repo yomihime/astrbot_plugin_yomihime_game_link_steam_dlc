@@ -224,9 +224,16 @@ class ReleaseResourcesTest(unittest.TestCase):
         self.save_manifest()
         with self.assertRaisesRegex(ValueError, "references"):
             release.inventory(self.root)
-        self.module["resources"].append({"path": "steam/assets/steam.svg", "sha256": hashlib.sha256(logo.read_bytes()).hexdigest()})
+        self.module["resources"].append(
+            {
+                "path": "steam/assets/steam.svg",
+                "sha256": hashlib.sha256(logo.read_bytes()).hexdigest(),
+            }
+        )
         self.save_manifest()
-        self.assertIn("packages/steam_dlc/steam/assets/steam.svg", release.inventory(self.root))
+        self.assertIn(
+            "packages/steam_dlc/steam/assets/steam.svg", release.inventory(self.root)
+        )
         logo.write_bytes(b"changed")
         with self.assertRaisesRegex(ValueError, "bytes differ"):
             release.inventory(self.root)
