@@ -63,7 +63,7 @@
 }
 
 /* Module artwork: the same position as FF14, with each module's own color. */
-.steam-dlc-module-mark { display:block; float:right; width:64px; height:64px; margin:0 0 16px 24px; opacity:.24; }
+.steam-dlc-module-mark { display:block; float:right; width:64px; height:64px; margin:0 0 16px 24px; opacity:1; }
 .steam-dlc-module-mark--steam { color:var(--ui-brand-steam,var(--ui-muted)); }
 .steam-dlc-module-mark--dota2 { color:var(--ui-brand-dota2,var(--ui-muted)); }
 .steam-dlc-module-mark--cs2 { color:var(--ui-brand-cs2,var(--ui-muted)); }
