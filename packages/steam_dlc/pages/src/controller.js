@@ -366,8 +366,18 @@ export function mountController(container, options) {
     }
   };
   const buildFields = () => {
-    const grid = options.presentation?.grid(form, form.querySelector('.steam-dlc-actions'));
+    const groups = new Map();
+    const groupTitle = name => moduleId === 'steam' && name.startsWith('poster_') ? '游戏生涯拼图'
+      : moduleId === 'dota2' && ['subscription_enabled', 'poll_interval_seconds', 'opendota_rph', 'commentary_enabled'].includes(name) ? '订阅与数据来源' : '查询与回复';
     for (const name of fieldNames) {
+      const title = groupTitle(name);
+      if (!groups.has(title)) {
+        const section = node('section', undefined, 'steam-dlc-config-group');
+        section.append(node('h3', title));
+        form.insertBefore(section, form.querySelector(':scope > .steam-dlc-actions'));
+        groups.set(title, {section, grid: options.presentation?.grid(section)});
+      }
+      const {section, grid} = groups.get(title);
       const descriptor = baseline.descriptors[name];
       const row = node('div', undefined, 'steam-dlc-field');
       const label = node('label', LABELS[name] || name);
@@ -433,7 +443,7 @@ export function mountController(container, options) {
       });
       const presentation = grid && options.presentation.field(grid, {control, reset: resets, label, hint, error});
       controls.set(name, { control, reset, error: presentation?.error || error, hint: presentation?.hint || hint });
-      if (!presentation) {row.append(label, control, resets, hint, error); form.insertBefore(row, form.querySelector('.steam-dlc-actions'));}
+      if (!presentation) {row.append(label, control, resets, hint, error); section.append(row);}
     }
   };
   const applySnapshot = snapshot => {
@@ -760,8 +770,10 @@ export function mountController(container, options) {
     if (!aliases.length) return;
     if (!credentialRoot) {
       credentialRoot = node('section', undefined, 'steam-dlc-credentials');
-      credentialRoot.append(node('h3', '来源凭据与授权'), node('p', '凭据只在可信管理入口提交。输入仅在当前页面保留；上游有效性在查询时验证。', 'steam-dlc-hint'));
-      root.insertBefore(credentialRoot, message);
+      if (!options.presentation?.credentialHost) credentialRoot.append(node('h3', '来源凭据与授权'));
+      credentialRoot.append(node('p', '凭据只在可信管理入口提交。输入仅在当前页面保留；上游有效性在查询时验证。', 'steam-dlc-hint'));
+      if (options.presentation?.credentialHost) options.presentation.credentialHost.append(credentialRoot);
+      else root.insertBefore(credentialRoot, message);
     }
     for (const [field, label] of aliases) {
       if (credentialControls.has(field)) continue;
@@ -1112,7 +1124,6 @@ export function mountController(container, options) {
     }
     if (moduleId === 'dota2') { const details = node('details', undefined, 'steam-dlc-disclosure'); details.append(node('summary', '账号与订阅说明'), node('p', '账号可用 Dota ID32 或 SteamID64。订阅创建、查看和取消通过当前群或私聊中的命令完成。OpenDota Key 可选，匿名与有 Key 都遵守同一每小时预算；模型短评失败不会阻止基础通知。', 'steam-dlc-hint')); root.append(details); }
   } else if (module && options.routeId === 'settings') {
-    root.append(node('h3', '普通设置'));
     form = node('form');
     listen(form, 'submit', event => { event.preventDefault(); void save(); });
     const actions = node('div', undefined, 'steam-dlc-actions');
@@ -1174,6 +1185,7 @@ export function mountController(container, options) {
     drafts.clear(); baseline = null;
     listeners.splice(0).forEach(remove => remove());
     unregister();
+    credentialRoot?.remove();
     root.remove();
   };
   options.scope.signal.addEventListener('abort', dispose, {once: true});

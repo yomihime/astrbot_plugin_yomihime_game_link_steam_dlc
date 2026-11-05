@@ -14,8 +14,10 @@ export function mount(container, options) {
     ? options.context.owner.slice('steam_dlc/'.length) : '';
   const module = MODULES[moduleId];
   const settings = options.routeId === 'settings';
+  const home = options.routeId === 'home';
+  const hasCredentials = settings && ['steam', 'dota2', 'cs2'].includes(moduleId);
   const workspaceTitle = options.routeId === 'collage' ? '游戏生涯拼图' : options.routeId === 'wishlist' ? '公开愿望单' : options.routeId === 'analysis' ? '指定玩家分析' : options.routeId === 'query' ? '平台查询' : '';
-  let host, controller, disposed = false, unregister = () => {};
+  let host, credentialHost, controller, disposed = false, unregister = () => {};
   const fieldApps = [];
   const presentation = {
     actions(container) {
@@ -29,7 +31,7 @@ export function mount(container, options) {
       const mount = container.ownerDocument.createElement('div');
       parent.insertBefore(mount, before || null);
       let target;
-      const app = createApp({setup: () => () => h(FormGrid, {}, {default: () => h('div', {style: {display: 'contents'}, ref: element => {target = element;}})})});
+      const app = createApp({setup: () => () => h(FormGrid, {columns: settings ? 1 : 2}, {default: () => h('div', {style: {display: 'contents'}, ref: element => {target = element;}})})});
       app.mount(mount); fieldApps.push(app);
       return target;
     },
@@ -38,7 +40,7 @@ export function mount(container, options) {
       parent.append(mount);
       const hintText = shallowRef(hint.textContent), errorText = shallowRef(error.textContent);
       const app = createApp({setup: () => () => h(FormField, {
-        controlId: control.id, label: label.textContent, hint: hintText.value, error: errorText.value,
+        controlId: control.id, label: label.textContent, hint: hintText.value, error: errorText.value, layout: settings ? 'row' : 'stacked',
         hintId: hint.id, errorId: error.id,
       }, {default: ({controlAttrs}) => {
         for (const [key, value] of Object.entries(controlAttrs)) {
@@ -61,16 +63,25 @@ export function mount(container, options) {
   const app = createApp({setup: () => () => h(UiProvider, {
     theme: context.value.theme, locale: context.value.locale, styleMountTarget: container,
   }, {default: () => h('section', {class: 'steam-dlc-view', lang: context.value.locale}, [
-    h(PageHeader, {
-      title: module ? `${module.title}${settings ? ' 设置' : workspaceTitle ? ` ${workspaceTitle}` : ''}` : '模块页面不可用',
-      eyebrow: 'YOMIHIME GAME LINK / STEAM DLC',
-      subtitle: settings ? '维护查询、输出设置与来源授权。' : module?.summary,
-    }),
+    home ? h(Surface, {title: module?.title || '模块页面不可用', eyebrow: `${module?.title?.toUpperCase() || 'STEAM DLC'} / MODULE`}, {default: () => [
+      h('p', module?.summary || '当前页面没有可用的模块声明。'),
+      h(StatusHint, {}, {default: () => '请从模块导航选择查询，或进入业务配置调整设置。'}),
+      h('div', {ref: element => { host = element; }}),
+      h('details', {class: 'steam-dlc-disclosure'}, [
+        h('summary', '数据来源与范围'),
+        h('p', {class: 'steam-dlc-hint'}, module?.source || ''),
+        h('p', {class: 'steam-dlc-hint'}, '默认账号只在已授权的命令路径使用。自然语言工具必须提供明确账号或比赛编号。'),
+      ]),
+    ]}) : [
+    !settings ? h(PageHeader, {
+      title: module ? `${module.title}${workspaceTitle ? ` ${workspaceTitle}` : ''}` : '模块页面不可用',
+      eyebrow: 'YOMIHIME GAME LINK / STEAM DLC', subtitle: module?.summary,
+    }) : null,
     h(SettingsLayout, {}, {
-      default: () => h(SettingsGroup, {title: settings ? '模块设置与来源' : workspaceTitle || '状态与帮助', number: '01'}, {
+      default: () => settings ? h('div', {ref: element => { host = element; }}) : h(SettingsGroup, {title: workspaceTitle || '状态与帮助', number: '01'}, {
         default: () => h('div', {ref: element => { host = element; }}),
       }),
-      aside: () => h(Surface, {title: settings ? '设置说明' : '数据与账号'}, {default: () => [
+      aside: () => h(Surface, {title: hasCredentials ? '来源凭据与授权' : settings ? '设置说明' : '数据与账号', eyebrow: hasCredentials ? 'SOURCE ACCESS' : undefined}, {default: () => [
         h(StatusHint, {}, {default: () => settings
           ? moduleId === 'steam'
             ? '选择公开样本或完整库、布局、时长预设、比例和输出预算。完整库需要可选 Steam Key；是否完整以来源实际返回为准。'
@@ -80,13 +91,16 @@ export function mount(container, options) {
                 ? '订阅设置控制当前服务的采集与预算；具体群或私聊订阅通过本人命令管理。OpenDota Key 可选，不会自动扩大请求额度。'
                 : '网页浅深主题与命令图片回复主题分别设置。回复主题选项由当前授权配置提供。'
           : module?.source || '当前页面没有可用的模块声明。'}),
+        hasCredentials ? h('div', {ref: element => { credentialHost = element; }}) : null,
         h('p', {class: 'steam-dlc-hint'}, settings
           ? '保存后会重新读取并核对结果；冲突或未确认结果需要手动刷新。'
           : '默认账号只在已授权的命令路径使用。自然语言工具必须提供明确账号或比赛编号。'),
       ]}),
     }),
+    ],
   ])})});
   app.mount(container);
+  presentation.credentialHost = credentialHost;
   controller = mountController(host, {...options, presentation, scope: {
     signal: options.scope.signal, isCurrent: () => options.scope.isCurrent(), onDispose: () => () => {},
   }});

@@ -42,3 +42,11 @@
 @media(max-width:599px) { .steam-dlc-public-form { grid-template-columns:minmax(0,1fr); } }
 .steam-dlc-view [data-action=refresh-cache][aria-disabled=true] { color:var(--ui-muted); cursor:default; opacity:.75; }
 @media(max-width:599px) { .steam-dlc-field { grid-template-columns:minmax(0,1fr); gap:8px; } .steam-dlc-field .steam-dlc-hint,.steam-dlc-field-error { grid-column:1; } .steam-dlc-field button { justify-self:start; } }
+
+/* Keep the module settings aligned with the shared FF14 settings layout. */
+.steam-dlc-config-group { border-top:1px solid var(--ui-border); padding-top:12px; margin:20px 0; }
+.steam-dlc-config-group h3 { margin:0 0 12px; font-size:17px; }
+.steam-dlc-view .ui-surface .steam-dlc-credentials { margin-top:12px; padding-top:0; border-top:0; }
+.steam-dlc-view .ui-surface .steam-dlc-credential { margin:12px 0; }
+.steam-dlc-page>form { counter-reset:steam-settings-group; }
+.steam-dlc-config-group h3::before { counter-increment:steam-settings-group; content:counter(steam-settings-group,decimal-leading-zero); color:var(--ui-gold); font:13px var(--ui-serif); margin-right:14px; }
