@@ -1,3 +1,4 @@
+import {primaryForm} from './template-adapter.js';
 // The Core service owns work and authorization; this view only polls and displays.
 export function mountJobForm(root, {options, active, field, parseLimit, validatePNG, say}) {
   const document = root.ownerDocument, urls = [], cleanups = [];
@@ -16,7 +17,8 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
   const stop = () => {if (timer !== null) {clearTimeout(timer); timer = null;}};
   const revoke = () => {for (const url of urls.splice(0)) document.defaultView.URL.revokeObjectURL(url);};
   const api = () => {if (!options.services.jobs) throw problem('任务服务暂不可用，请刷新模块。'); return options.services.jobs;};
-  const form = node('form'); form.className = 'steam-dlc-public-form';
+  const primary = primaryForm(root, options, {id: 'generate', label: '提交拼图任务', className: 'steam-dlc-public-form'});
+  const {body: form, actions} = primary;
   const grid = options.presentation?.grid(form) || form;
   const account = field(grid, 'account', 'SteamID64 / Dota ID32（明确账号）');
   const controls = {};
@@ -28,7 +30,6 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
   ]) controls[key] = field(grid, key, label, choices, value);
   controls.all_apps.options[0].textContent = '全部应用'; controls.all_apps.options[1].textContent = '仅游戏';
   const limit = field(grid, 'limit', '数量（至少20，可手填超过1000）', null, '500'); limit.inputMode = 'decimal';
-  const actions = node('div'); actions.className = 'steam-dlc-actions';
   const jobActions = node('div'); jobActions.className = 'steam-dlc-actions';
   const action = (id, label, callback, target = actions) => {
     const button = node('button', label); button.type = 'button'; button.className = 'ui-button'; button.dataset.action = id;
@@ -50,7 +51,6 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
     controls.limit_mode.value = value === 'all' ? 'all' : 'top'; limit.disabled = value === 'all'; if (value !== 'all') limit.value = String(value);
   });
   on(controls.limit_mode, 'change', () => {limit.disabled = controls.limit_mode.value === 'all';});
-  const submit = node('button', '提交拼图任务'); submit.type = 'submit'; submit.className = 'ui-button'; submit.dataset.action = 'generate'; submit.dataset.variant = 'primary'; actions.append(submit);
   const recoveryHeading = node('h3', '任务状态与恢复');
   const recoveryGrid = options.presentation?.grid(form) || form;
   const recoveryMount = recoveryGrid === form ? null : form.lastElementChild;
@@ -59,7 +59,7 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
   const results = node('section'); results.className = 'steam-dlc-public-result';
   const sync = () => {
     const disabled = !available();
-    form.setAttribute('aria-busy', String(busy));
+    primary.sync(disabled, busy);
     for (const button of form.querySelectorAll('button')) button.disabled = disabled || busy;
     for (const input of form.querySelectorAll('input,select')) input.disabled = disabled;
     limit.disabled = disabled || controls.limit_mode.value === 'all';
@@ -160,8 +160,8 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
   action('job-results', '查询结果页', async () => {await resultPage(null);}, jobActions);
   action('job-refresh', '恢复 / 刷新任务', async () => {if (!jobId.value.trim()) return; stop(); clearResults(); generation += 1; job = {job_id: jobId.value.trim()}; await poll();}, jobActions);
   cancel.disabled = true; retry.disabled = true;
-  on(form, 'submit', event => {
-    event.preventDefault(); if (!available() || busy) return;
+  cleanups.push(primary.bind(() => {
+    if (!available() || busy) return;
     void (async () => {
       const ticket = ++generation; stop(); clearResults();
       try {
@@ -184,10 +184,11 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
       } catch (error) {handleError(error, ticket);}
       finally {if (current(ticket)) {busy = false; sync();}}
     })();
-  });
+  }));
   form.insertBefore(actions, recoveryMount);
   form.insertBefore(recoveryHeading, recoveryMount);
-  form.append(jobActions); root.append(node('p', '不限覆盖来源实际返回范围。每批有资源预算，已完成页保留；关闭页面只停止轮询，取消需明确点击。'), node('h3', '创建拼图任务'), form, status, results);
+  form.append(jobActions); root.append(node('p', '不限覆盖来源实际返回范围。每批有资源预算，已完成页保留；关闭页面只停止轮询，取消需明确点击。'), ...(options.presentation?.template ? [] : [node('h3', '创建拼图任务')]), form);
+  primary.result(status, results);
   options.presentation?.actions(actions);
   options.presentation?.actions(jobActions);
   sync();

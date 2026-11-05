@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { mount, installDOM, runtime } from './source-build.mjs';
 import {metric} from '../../packages/steam_dlc/pages/src/metric.js';
 
+const modern = Boolean(runtime.PageTemplate && runtime.uiText);
 const clone = value => structuredClone(value);
 const settle = async () => { for (let i = 0; i < 16; i++) await Promise.resolve(); };
 const deferred = () => {
@@ -112,7 +113,7 @@ function fixture({ moduleId = 'dota2', routeId = 'settings', available = true, s
     control.dispatchEvent(new dom.window.Event(control.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
   };
   const click = action => container.querySelector(`[data-action="${action}"]`).click();
-  const submit = () => container.querySelector('form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  const submit = async (count = 1) => { await runtime.nextTick(); for (let i = 0; i < count; i++) container.querySelector('form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true })); };
   return {
     dom, container, page, context, calls, input, click, submit, config,
     get state() { return state; }, set state(next) { state = next; },
@@ -136,20 +137,23 @@ function cacheResponse(value = { bytes: 12345, items: 7, max_bytes: 8000000, max
 for (const moduleId of ['steam', 'dota2', 'cs2', 'deadlock']) {
   test(`${moduleId} home has actual command help and availability`, async () => {
     const f = fixture({ moduleId, routeId: 'home' });
+    await settle();
     assert.match(f.text(), new RegExp(`/ygl ${moduleId} `));
     assert.match(f.text(), /运行健康请在模块管理中查看/);
     if (moduleId === 'cs2') { assert.match(f.text(), /完美收录官匹与 5E/); assert.doesNotMatch(f.text(), /Leetify|留存政策限制/); }
     if (moduleId === 'deadlock') assert.match(f.text(), /使用社区来源最近 20 条已收录记录/);
     assert.ok(f.container.querySelector('.ui-page .ui-surface h2'));
-    assert.ok(!f.container.querySelector('.ui-page-header'), 'shell owns the page heading');
+    if (modern) assert.ok(f.container.querySelector('.ui-page-template .ui-page-header h2'));
+    else assert.ok(!f.container.querySelector('.ui-page-header'), 'shell owns the page heading');
     assert.ok([...f.container.querySelectorAll('summary')].some(node => node.textContent === '数据来源与范围'));
-    assert.ok(f.container.querySelector('[data-action="' + (moduleId === 'steam' ? 'refresh-cache' : 'refresh-status') + '"]'));
+    assert.ok(f.container.querySelector('[data-action="' + (modern ? 'refresh' : moduleId === 'steam' ? 'refresh-cache' : 'refresh-status') + '"]'));
     if (moduleId === 'steam') {
       await settle();
       assert.deepEqual(f.calls, [['invoke', 'wall_cache_status', {}]]);
       assert.match(f.text(), /7 项 \/ 12345 字节/);
     }
     f.page.update({ ...f.context, available: false });
+    await runtime.nextTick();
     assert.match(f.text(), /当前页面入口不可用/);
     if (moduleId !== 'steam') assert.deepEqual(f.calls, [['invoke', 'status', {}]]);
     assert.deepEqual(Object.keys(f.page.navigationImpact()).sort(), ['credentials', 'ordinary', 'pending', 'version']);
@@ -203,12 +207,12 @@ test('theme update during a pending write retains its focus, single-flight state
   f.config.save = async (...args) => { await pending.promise; return original(...args); };
   f.input('timezone', 'UTC');
   const button = f.container.querySelector('[data-action=save]');
-  button.focus(); f.submit();
+  await runtime.nextTick(); button.focus(); await f.submit();
   f.page.update({...f.context, theme: 'dark', locale: 'en-US'}); await settle();
   assert.equal(f.container.querySelector('[data-action=save]'), button);
   assert.equal(f.dom.window.document.activeElement, button);
   assert.equal(f.page.navigationImpact().pending, true);
-  f.submit();
+  await f.submit();
   pending.resolve(); await settle();
   assert.deepEqual(f.calls, [['current'], ['save', 7, {timezone: 'UTC'}], ['current']]);
   assert.match(f.text(), /已保存/);
@@ -220,7 +224,7 @@ test('timezone save and follow-Core clear use exact sequential CAS revisions', a
   f.input('timezone', 'Europe/London'); f.input('reply_theme', '0');
   const version = f.page.navigationImpact().version;
   assert.equal(f.page.navigationImpact().ordinary, true);
-  f.submit(); f.submit(); await settle();
+  await f.submit(2); await settle();
   assert.deepEqual(f.calls, [ ['current'], ['save', 7, { timezone: 'Europe/London' }], ['clear', 8, ['reply_theme']], ['current'] ]);
   assert.match(f.text(), /已保存/);
   assert.equal(f.page.navigationImpact().ordinary, false);
@@ -235,7 +239,7 @@ test('restoring timezone is a clear draft, not an immediate write', async () => 
   f.click('refresh'); await settle(); f.click('reset-timezone');
   assert.equal(f.container.querySelector('[name=timezone]').value, 'Asia/Shanghai');
   assert.equal(f.calls.some(call => call[0] === 'clear'), false);
-  f.submit(); await settle();
+  await f.submit(); await settle();
   assert.deepEqual(f.calls.filter(call => call[0] === 'clear'), [['clear', 7, ['timezone']]]);
   f.close();
 });
@@ -243,7 +247,7 @@ test('restoring timezone is a clear draft, not an immediate write', async () => 
 test('timezone validation blocks malformed and descriptor-overlength values', async () => {
   const f = fixture(); await settle();
   for (const value of ['Not/AZone', 'x'.repeat(65)]) {
-    f.input('timezone', value); f.submit(); await settle();
+    f.input('timezone', value); await f.submit(); await settle();
     assert.match(f.text(), /IANA 时区/);
   }
   assert.deepEqual(f.calls, [['current']]); f.close();
@@ -268,7 +272,7 @@ test('edits during save survive receipt and readback', async () => {
     f.state.fields.timezone = { value: values.timezone, present: true, state: 'valid', source: 'sqlite' };
     return write.promise;
   };
-  f.input('timezone', 'UTC'); f.submit();
+  f.input('timezone', 'UTC'); await f.submit();
   f.input('timezone', 'Europe/London');
   write.resolve({ revision: 8 }); await settle();
   assert.equal(f.container.querySelector('[name=timezone]').value, 'Europe/London');
@@ -285,7 +289,7 @@ for (const action of ['reset', 'baseline-value']) {
       f.state.fields.timezone = { value: values.timezone, present: true, state: 'valid', source: 'sqlite' };
       return write.promise;
     };
-    f.input('timezone', 'UTC'); f.submit();
+    f.input('timezone', 'UTC'); await f.submit();
     if (action === 'reset') f.click('reset-timezone');
     else f.input('timezone', 'Asia/Shanghai');
     write.resolve({ revision: 8 }); await settle();
@@ -297,7 +301,7 @@ for (const action of ['reset', 'baseline-value']) {
       f.state.fields.timezone = { value: values.timezone, present: true, state: 'valid', source: 'sqlite' };
       return { revision: f.state.revision };
     };
-    f.submit(); await settle();
+    await f.submit(); await settle();
     if (action === 'reset') assert.deepEqual(f.calls.filter(call => call[0] === 'clear'), [['clear', 8, ['timezone']]]);
     else assert.deepEqual(f.calls.filter(call => call[0] === 'save'), [['save', 8, { timezone: 'Asia/Shanghai' }]]);
     f.close();
@@ -323,7 +327,7 @@ test('unavailable update fences an outstanding write before a subsequent clear',
   const write = deferred(); let clearCount = 0;
   f.config.save = () => write.promise;
   f.config.clear = async () => { clearCount++; return { revision: 9 }; };
-  f.input('timezone', 'UTC'); f.input('reply_theme', '0'); f.submit();
+  f.input('timezone', 'UTC'); f.input('reply_theme', '0'); await f.submit();
   f.page.update({ ...f.context, available: false });
   write.resolve({ revision: 8 }); await settle();
   assert.equal(clearCount, 0);
@@ -335,7 +339,7 @@ for (const disposal of ['disposeScope', 'abort', 'revokeScope']) {
   test(`${disposal} prevents late read DOM commits`, async () => {
     const read = deferred();
     const f = fixture({ service: { current: () => read.promise } });
-    f[disposal]();
+    f[disposal](); await runtime.nextTick();
     const previous = f.container.innerHTML;
     read.resolve(snapshot()); await settle();
     assert.equal(f.container.innerHTML, previous);
@@ -355,19 +359,19 @@ test('CAS conflict preserves draft and blocks writes until explicit refresh', as
   const f = fixture(); await settle();
   let attempts = 0;
   f.config.save = async () => { attempts++; throw Error('revision_conflict'); };
-  f.input('timezone', 'UTC'); f.submit(); await settle();
-  assert.match(f.text(), /其他操作修改/); f.submit(); await settle();
+  f.input('timezone', 'UTC'); await f.submit(); await settle();
+  assert.match(f.text(), /其他操作修改/); await f.submit(); await settle();
   assert.equal(attempts, 1);
   assert.equal(f.container.querySelector('[name=timezone]').value, 'UTC');
   f.click('refresh'); await settle();
-  assert.match(f.text(), /草稿已保留/); f.submit(); await settle();
+  assert.match(f.text(), /草稿已保留/); await f.submit(); await settle();
   assert.equal(attempts, 2); f.close();
 });
 
 test('unknown write failure is not retried and never renders arbitrary errors', async () => {
   const f = fixture(); await settle(); let attempts = 0;
   f.config.save = async () => { attempts++; throw Error('<secret diagnostic>'); };
-  f.input('timezone', 'UTC'); f.submit(); await settle(); f.submit(); await settle();
+  f.input('timezone', 'UTC'); await f.submit(); await settle(); await f.submit(); await settle();
   assert.equal(attempts, 1); assert.match(f.text(), /保存结果尚未确认/);
   assert.doesNotMatch(f.text(), /secret diagnostic/); f.close();
 });
@@ -375,9 +379,9 @@ test('unknown write failure is not retried and never renders arbitrary errors', 
 test('accepted write followed by failed readback remains unverified, manual refresh reconciles', async () => {
   const f = fixture(); await settle(); let reads = 0;
   f.config.current = async () => { if (++reads === 1) throw Error('offline'); return clone(f.state); };
-  f.input('timezone', 'UTC'); f.submit(); await settle();
+  f.input('timezone', 'UTC'); await f.submit(); await settle();
   assert.match(f.text(), /状态暂未核实/);
-  f.submit(); await settle();
+  await f.submit(); await settle();
   assert.equal(f.calls.filter(call => call[0] === 'save').length, 1);
   f.click('refresh'); await settle();
   assert.equal(f.page.navigationImpact().ordinary, false);
@@ -387,9 +391,9 @@ test('accepted write followed by failed readback remains unverified, manual refr
 test('save accepted then clear conflict does not conceal partial write', async () => {
   const f = fixture(); await settle(); let clears = 0;
   f.config.clear = async () => { clears++; throw Error('revision_conflict'); };
-  f.input('timezone', 'UTC'); f.input('reply_theme', '0'); f.submit(); await settle();
+  f.input('timezone', 'UTC'); f.input('reply_theme', '0'); await f.submit(); await settle();
   assert.match(f.text(), /部分或全部修改已提交/);
-  f.submit(); await settle(); assert.equal(clears, 1);
+  await f.submit(); await settle(); assert.equal(clears, 1);
   f.click('refresh'); await settle();
   f.config.clear = async revision => { assert.equal(revision, 8); return { revision: 9 }; };
   assert.equal(f.page.navigationImpact().ordinary, true); f.close();
@@ -398,7 +402,7 @@ test('save accepted then clear conflict does not conceal partial write', async (
 test('stale or mismatched post-write readback cannot claim success', async () => {
   const f = fixture(); await settle();
   f.config.save = async () => ({ revision: 8 });
-  f.input('timezone', 'UTC'); f.submit(); await settle();
+  f.input('timezone', 'UTC'); await f.submit(); await settle();
   assert.match(f.text(), /状态暂未核实/); assert.equal(f.page.navigationImpact().ordinary, true); f.close();
 });
 
@@ -479,7 +483,7 @@ for (const key of ['runtimeId', 'epoch', 'boundary']) {
 for (const key of ['owner', 'runtimeId', 'epoch', 'boundary']) {
   test(`observed ${key} revocation deletes retained draft before stale write resolves`, async () => {
     const original = fixture(); await settle(); original.input('timezone', 'UTC');
-    const write = deferred(); original.config.save = () => write.promise; original.submit();
+    const write = deferred(); original.config.save = () => write.promise; await original.submit();
     original.page.update({ ...original.context, [key]: key === 'epoch' ? 4 : 'revoked' });
     assert.equal(original.page.navigationImpact().ordinary, false);
     write.resolve({ revision: 8 }); await settle(); original.close();
@@ -526,8 +530,8 @@ test('scope-only disposal cannot let its late response overwrite the retained dr
 test('saving and discarding clear the retained partition', async () => {
   for (const action of ['save', 'discard']) {
     const original = fixture(); await settle(); original.input('timezone', 'UTC');
-    if (action === 'save') { original.submit(); await settle(); }
-    else original.click('discard');
+    if (action === 'save') { await original.submit(); await settle(); }
+    else {await runtime.nextTick(); original.click('discard');}
     original.close();
     const returned = fixture({ context: original.context }); await settle();
     assert.equal(returned.page.navigationImpact().ordinary, false);
@@ -559,12 +563,12 @@ test('bounded owner partitions replace obsolete identities without evicting othe
 });
 
 test('oversized ordinary input and oversized partition keys are never retained', async () => {
-  const oversizedValue = fixture(); await settle(); oversizedValue.input('timezone', 'x'.repeat(257));
+  const oversizedValue = fixture(); await settle(); oversizedValue.input('timezone', 'x'.repeat(257)); await runtime.nextTick();
   assert.match(oversizedValue.text(), /草稿保留上限/); oversizedValue.close();
   const valueReturn = fixture({ context: oversizedValue.context }); await settle();
   assert.equal(valueReturn.page.navigationImpact().ordinary, false); valueReturn.close();
   const oversizedKey = fixture({ context: { boundary: 'x'.repeat(4097) } }); await settle();
-  oversizedKey.input('timezone', 'UTC'); assert.match(oversizedKey.text(), /草稿保留上限/); oversizedKey.close();
+  oversizedKey.input('timezone', 'UTC'); await runtime.nextTick(); assert.match(oversizedKey.text(), /草稿保留上限/); oversizedKey.close();
   const keyReturn = fixture({ context: oversizedKey.context }); await settle();
   assert.equal(keyReturn.page.navigationImpact().ordinary, false); keyReturn.close();
 });
@@ -573,7 +577,7 @@ test('an unknown write result survives route disposal without automatic resend',
   const original = fixture(); await settle(); original.input('timezone', 'UTC');
   let attempts = 0;
   original.config.save = async () => { attempts++; throw Error('unknown'); };
-  original.submit(); await settle(); original.close();
+  await original.submit(); await settle(); original.close();
   const returned = fixture({ context: original.context }); await settle();
   assert.equal(returned.container.querySelector('[name=timezone]').value, 'UTC');
   assert.equal(returned.page.navigationImpact().ordinary, true);
@@ -584,7 +588,7 @@ test('an unknown write result survives route disposal without automatic resend',
 test('exact authorization failure during save revokes cached intent', async () => {
   const original = fixture(); await settle(); original.input('timezone', 'UTC');
   original.config.save = async () => { throw Error('admin_authorization_denied'); };
-  original.submit(); await settle();
+  await original.submit(); await settle();
   assert.equal(original.page.navigationImpact().ordinary, false);
   assert.match(original.text(), /授权或模块上下文已失效/); original.close();
   const returned = fixture({ context: original.context }); await settle();
@@ -600,14 +604,14 @@ test('manifest-projected Steam settings save all, finite1000 and truncated limit
   const f = fixture({moduleId: 'steam', initialState: state});
   try {
     await settle();
-    clickQuantity(f, '不限'); f.submit(); await settle();
+    clickQuantity(f, '不限'); await f.submit(); await settle();
     assert.doesNotMatch(f.text(), /当前配置尚未提供不限模式/);
     assert.deepEqual(state.descriptors.poster_limit_mode.value_schema, {type: 'string', enum: ['top', 'all']});
     assert.equal(f.container.querySelectorAll('[name=poster_limit_mode] option').length, 2);
     assert.equal(f.state.fields.poster_limit.value, 500, 'all keeps the independent finite count');
-    clickQuantity(f, '1000'); f.submit(); await settle();
+    clickQuantity(f, '1000'); await f.submit(); await settle();
     f.input('poster_limit', '1500.9'); f.input('poster_include_apps', '0'); f.input('poster_preset', '2');
-    f.submit(); await settle();
+    await f.submit(); await settle();
     assert.deepEqual(f.calls.filter(call => call[0] === 'save'), [
       ['save', 7, {poster_limit_mode: 'all'}],
       ['save', 8, {poster_limit_mode: 'top', poster_limit: 1000}],
@@ -625,13 +629,13 @@ test('manifest-projected Steam minimum20 and malformed counts block the entire s
   try {
     await settle(); f.input('poster_include_apps', '0');
     for (const value of ['', '19', '19.99', '20abc', 'NaN', 'Infinity', '-20', '9007199254740992']) {
-      f.input('poster_limit', value); f.submit(); await settle();
+      f.input('poster_limit', value); await f.submit(); await settle();
       assert.equal(f.calls.some(call => call[0] === 'save'), false, `must reject ${JSON.stringify(value)}`);
       const control = f.container.querySelector('[name=poster_limit]');
       assert.equal(control.value, value);
       assert.equal(control.getAttribute('aria-invalid'), 'true');
     }
-    f.input('poster_limit', '20'); f.submit(); await settle();
+    f.input('poster_limit', '20'); await f.submit(); await settle();
     assert.deepEqual(f.calls.find(call => call[0] === 'save'), ['save', 7, {poster_include_apps: false, poster_limit: 20}]);
     assert.equal(f.state.fields.poster_limit_mode.value, 'top');
   } finally {f.close();}
@@ -639,7 +643,7 @@ test('manifest-projected Steam minimum20 and malformed counts block the entire s
 
 test('manifest-projected Steam mode and invalid count drafts survive disposal without writes', async () => {
   const f = fixture({moduleId: 'steam', initialState: manifestSettingsSnapshot()});
-  await settle(); clickQuantity(f, '不限'); f.input('poster_limit', '20abc'); f.submit(); await settle();
+  await settle(); clickQuantity(f, '不限'); f.input('poster_limit', '20abc'); await f.submit(); await settle();
   assert.equal(f.calls.some(call => call[0] === 'save'), false);
   const context = f.context; f.close();
   const reopened = fixture({moduleId: 'steam', initialState: manifestSettingsSnapshot(), context});
@@ -649,7 +653,7 @@ test('manifest-projected Steam mode and invalid count drafts survive disposal wi
     assert.equal(reopened.container.querySelector('[name=poster_limit]').value, '20abc');
     assert.equal(reopened.page.navigationImpact().ordinary, true);
     assert.deepEqual(reopened.calls, [['current']]);
-    reopened.input('poster_limit', '1500.9'); reopened.submit(); await settle();
+    reopened.input('poster_limit', '1500.9'); await reopened.submit(); await settle();
     assert.deepEqual(reopened.calls.find(call => call[0] === 'save'), ['save', 7, {poster_limit_mode: 'all', poster_limit: 1500}]);
   } finally {reopened.close();}
 });
@@ -661,8 +665,8 @@ test('manifest-projected Steam preserves newer mode drafts through pending save 
     await settle();
     const save = f.config.save;
     f.config.save = async (...args) => {await write.promise; return save(...args);};
-    f.input('poster_limit', '1500.9'); f.input('reply_theme', '0'); f.submit();
-    clickQuantity(f, '不限'); f.input('poster_include_apps', '0'); f.submit();
+    f.input('poster_limit', '1500.9'); f.input('reply_theme', '0'); await f.submit();
+    clickQuantity(f, '不限'); f.input('poster_include_apps', '0'); await f.submit();
     assert.equal(f.page.navigationImpact().pending, true);
     write.resolve(); await settle();
     assert.deepEqual(f.calls.filter(call => ['save', 'clear'].includes(call[0])), [
@@ -672,7 +676,7 @@ test('manifest-projected Steam preserves newer mode drafts through pending save 
     assert.equal(f.container.querySelector('[name=poster_include_apps]').value, '0');
     assert.equal(f.page.navigationImpact().ordinary, true);
     assert.match(f.text(), /新的未保存修改/);
-    f.submit(); await settle();
+    await f.submit(); await settle();
     assert.deepEqual(f.calls.filter(call => call[0] === 'save').at(-1), ['save', 9, {poster_limit_mode: 'all', poster_include_apps: false}]);
     assert.equal(f.page.navigationImpact().ordinary, false);
   } finally {write.resolve(); f.close();}
@@ -681,7 +685,7 @@ test('manifest-projected Steam preserves newer mode drafts through pending save 
 test('Steam poster settings save boolean and integer values with their JSON types', async () => {
   const f = fixture({ moduleId: 'steam' }); await settle();
   f.input('poster_include_apps', '1'); f.input('poster_limit', '64');
-  f.submit(); await settle();
+  await f.submit(); await settle();
   const save = f.calls.find(call => call[0] === 'save');
   assert.deepEqual(save, ['save', 7, { poster_include_apps: true, poster_limit: 64 }]);
   assert.equal(typeof save[2].poster_include_apps, 'boolean');
@@ -691,7 +695,7 @@ test('Steam poster settings save boolean and integer values with their JSON type
 
 test('invalid Steam poster limit remains visible, retained, and blocks saving', async () => {
   const f = fixture({ moduleId: 'steam' }); await settle();
-  f.input('poster_limit', '201'); f.submit(); await settle();
+  f.input('poster_limit', '201'); await f.submit(); await settle();
   assert.equal(f.container.querySelector('[name=poster_limit]').value, '201');
   assert.match(f.text(), /1 到 200 之间的整数/);
   assert.equal(f.calls.some(call => call[0] === 'save'), false);
@@ -711,7 +715,7 @@ test('standard boolean schema loads, retains through remount, and saves as a boo
   const reopened = fixture({ moduleId: 'steam', context }); await settle();
   assert.equal(reopened.container.querySelector('[name=poster_include_apps] option:checked').textContent, '全部应用');
   assert.equal(reopened.page.navigationImpact().ordinary, true);
-  reopened.submit(); await settle();
+  await reopened.submit(); await settle();
   const save = reopened.calls.find(call => call[0] === 'save');
   assert.deepEqual(save, ['save', 7, { poster_include_apps: true }]);
   assert.equal(typeof save[2].poster_include_apps, 'boolean');
@@ -726,7 +730,7 @@ test('Steam cache refresh failure is readable and retry succeeds without claimin
   } }); await settle();
   assert.match(f.text(), /缓存状态暂不可用/);
   assert.doesNotMatch(f.text(), /private internal detail/);
-  f.click('refresh-cache'); await settle();
+  f.click(modern ? 'refresh' : 'refresh-cache'); await settle();
   assert.match(f.text(), /7 项 \/ 12345 字节/);
   assert.match(f.text(), /此操作只读取统计/);
   assert.equal(attempts, 2); f.close();
@@ -795,10 +799,10 @@ test('new Steam settings use frozen enums and keep the old include-apps false va
   ]) addSetting(state, name, value, {type: 'string', enum: choices});
   const f = fixture({moduleId: 'steam', initialState: state}); await settle();
   assert.equal(f.container.querySelector('[name=poster_include_apps]').value, '0');
-  f.input('poster_preset', '2'); f.input('poster_aspect', '1'); f.input('poster_limit', '500'); f.submit(); await settle();
+  f.input('poster_preset', '2'); f.input('poster_aspect', '1'); f.input('poster_limit', '500'); await f.submit(); await settle();
   assert.deepEqual(f.calls.find(call => call[0] === 'save')[2], {poster_preset: 'long', poster_aspect: '9:16', poster_limit: 500});
   assert.equal(f.state.fields.poster_source.value, 'games', 'never silently enables full library');
-  f.input('poster_mode', '1'); f.submit(); await settle();
+  f.input('poster_mode', '1'); await f.submit(); await settle();
   assert.match(f.text(), /兼容旧布局最多支持 200/);
   assert.equal(f.calls.filter(call => call[0] === 'save').length, 1);
   f.close();
@@ -812,9 +816,9 @@ test('Dota budget rejects zero, empty restores default, and subscription toggles
   addSetting(state, 'opendota_rph', 100, {type: 'integer', minimum: 1, maximum: 100000});
   state.fields.opendota_rph = {value: 120, state: 'valid', present: true, source: 'sqlite'};
   const f = fixture({initialState: state}); await settle();
-  f.input('opendota_rph', '0'); f.submit(); await settle();
+  f.input('opendota_rph', '0'); await f.submit(); await settle();
   assert.equal(f.calls.filter(call => call[0] === 'save').length, 0);
-  f.input('opendota_rph', ''); f.input('commentary_enabled', '1'); f.submit(); await settle();
+  f.input('opendota_rph', ''); f.input('commentary_enabled', '1'); await f.submit(); await settle();
   assert.deepEqual(f.calls.filter(call => ['save', 'clear'].includes(call[0])), [
     ['save', 7, {commentary_enabled: true}], ['clear', 8, ['opendota_rph']],
   ]);
@@ -825,11 +829,12 @@ test('Dota budget rejects zero, empty restores default, and subscription toggles
 test('settings group fields by task and place credentials in the side panel', async () => {
   const mock = credentialMock(['credential_steam_key']);
   const f = fixture({moduleId: 'steam', credentials: mock.services}); mock.bind(f); await settle();
-  assert.deepEqual([...f.container.querySelectorAll('.steam-dlc-config-group h3')].map(node => node.textContent), ['查询与回复', '游戏生涯拼图']);
+  assert.deepEqual([...f.container.querySelectorAll(modern ? '.ui-settings-main .ui-group-heading h3' : '.steam-dlc-config-group h3')].map(node => node.textContent), ['查询与回复', '游戏生涯拼图']);
   assert.ok(f.container.querySelector('.ui-settings-aside [name=credential_steam_key]'));
   assert.ok(f.container.querySelector('.steam-dlc-limit-field [name=poster_limit]'));
   assert.ok(f.container.querySelector('.steam-dlc-limit-field [data-action=reset-poster_limit]'));
-  assert.ok(!f.container.querySelector('.ui-page-header'), 'shell owns the page heading');
+  if (modern) assert.ok(f.container.querySelector('.ui-page-template .ui-page-header h2'));
+  else assert.ok(!f.container.querySelector('.ui-page-header'), 'shell owns the page heading');
   f.input('credential_steam_key', 'synthetic-secret');
   const secret = f.container.querySelector('[name=credential_steam_key]');
   f.page.dispose();
@@ -851,7 +856,7 @@ test('credential draft is ephemeral, submits with latest shared CAS and never en
   await settle();
   assert.deepEqual(mock.calls, [['replace', 7, 'credential_steam_key', {token: 'synthetic-private-key'}]]);
   assert.doesNotMatch(f.text(), /synthetic-private-key/);
-  f.input('poster_limit', '64'); f.submit(); await settle();
+  f.input('poster_limit', '64'); await f.submit(); await settle();
   f.click('clear-credential_steam_key'); await settle();
   assert.deepEqual(mock.calls[1], ['clear', 9, 'credential_steam_key']);
   assert.equal(f.calls.filter(call => call[0] === 'save').length, 1);
@@ -1018,7 +1023,7 @@ test('public CS2 query uses the single page capability with explicit account and
   const f = fixture({moduleId: 'cs2', routeId: 'query', invoke: async () => cacheResponse()}); await settle();
   assert.deepEqual(f.calls[0], ['invoke', 'query', {}]);
   f.input('account', 'synthetic-domain'); f.input('platform', '5e'); f.input('action', 'match');
-  f.input('match_id', 'fivee-10001'); f.submit(); await settle();
+  f.input('match_id', 'fivee-10001'); await f.submit(); await settle();
   assert.deepEqual(f.calls[1], ['invoke', 'query', {account: 'synthetic-domain', action: 'match', platform: '5e', match_id: 'fivee-10001'}]);
   assert.doesNotMatch(f.text(), /留存政策限制/); f.close();
 });
@@ -1051,9 +1056,9 @@ test('new completed page actions have fresh metadata keys while an ambiguous sub
     return clone(f.view);
   }}});
   try {
-    f.input('account', '123'); f.submit(); await settle();
-    f.submit(); await settle(); await settle();
-    f.submit(); await settle(); await settle();
+    f.input('account', '123'); await f.submit(); await settle();
+    await f.submit(); await settle(); await settle();
+    await f.submit(); await settle(); await settle();
     assert.equal(requests.length, 3);
     assert.equal(requests[0].idempotency_key, requests[1].idempotency_key);
     assert.notEqual(requests[1].idempotency_key, requests[2].idempotency_key);
@@ -1071,22 +1076,28 @@ for (const routeId of ['collage', 'wishlist', 'analysis']) {
       : fixture({moduleId: routeId === 'analysis' ? 'dota2' : 'steam', routeId, invoke: call});
     try {
       f.input('account', '123'); if (routeId === 'analysis') f.input('match_id', '100');
-      f.submit(); await settle(); assert.equal(requests, 1);
-      f.page.update({...f.context, available: false});
+      await f.submit(); await settle(); assert.equal(requests, 1);
+      f.page.update({...f.context, available: false}); await runtime.nextTick();
       assert.equal(f.container.querySelector('button[type=submit]').disabled, true);
       f.page.update({...f.context, available: true}); await settle();
       assert.equal(requests, 1, 'resume never replays a submission');
       assert.equal(f.container.querySelector('button[type=submit]').disabled, false);
       assert.equal(f.container.querySelector('[name=account]').value, '123');
-      f.submit(); await settle(); assert.equal(requests, 2);
+      await f.submit(); await settle(); assert.equal(requests, 2);
       old.resolve(routeId === 'collage' ? f.view : analysisResponse('partial_success'));
-      await settle(); assert.equal(f.container.querySelector('button[type=submit]').disabled, true, 'stale finally cannot unlock new work');
+      await settle();
+      const submit = f.container.querySelector('button[type=submit]');
+      if (modern) {
+        assert.equal(submit.disabled, false);
+        assert.equal(submit.getAttribute('aria-disabled'), 'true', 'stale finally cannot unlock new work');
+        assert.equal(submit.getAttribute('aria-busy'), 'true');
+      } else assert.equal(submit.disabled, true, 'stale finally cannot unlock new work');
       f.page.update({...f.context, available: false});
       f.page.update({...f.context, available: true});
       f.page.update({...f.context, boundary: 'permanent-boundary'});
       f.page.update({...f.context, available: true});
       fresh.resolve(routeId === 'collage' ? f.view : analysisResponse('partial_success'));
-      await settle(); f.submit(); await settle(); assert.equal(requests, 2);
+      await settle(); await f.submit(); await settle(); assert.equal(requests, 2);
       assert.doesNotMatch(f.text(), /ID32 456|任务 job-1/);
     } finally {old.resolve(null); fresh.resolve(null); f.close();}
   });
@@ -1100,11 +1111,11 @@ for (const routeId of ['collage', 'wishlist', 'analysis']) {
       : fixture({moduleId: routeId === 'analysis' ? 'dota2' : 'steam', routeId, available: false, invoke: async () => {requests++; return response;}});
     try {
       f.input('account', '123'); if (routeId === 'analysis') f.input('match_id', '100');
-      f.submit(); await settle(); assert.equal(requests, 0);
+      await f.submit(); await settle(); assert.equal(requests, 0);
       for (let index = 0; index < 3; index++) {
         f.page.update({...f.context, available: true}); await settle();
         assert.equal(requests, index);
-        f.submit(); await settle(); await settle();
+        await f.submit(); await settle(); await settle();
         assert.equal(requests, index + 1, 'one listener and one request per fresh action');
         assert.equal(f.container.querySelector('button[type=submit]').disabled, false);
         f.page.update({...f.context, available: false});
@@ -1119,8 +1130,8 @@ for (const routeId of ['collage', 'wishlist', 'analysis']) {
       : fixture({moduleId: routeId === 'analysis' ? 'dota2' : 'steam', routeId, invoke: async () => {requests++; return analysisResponse('error');}});
     try {
       f.input('account', '123'); if (routeId === 'analysis') f.input('match_id', '100');
-      f.revokeScope(); f.submit(); await settle();
-      f.restoreScope(); f.page.update({...f.context, available: true}); f.submit(); await settle();
+      f.revokeScope(); await f.submit(); await settle();
+      f.restoreScope(); f.page.update({...f.context, available: true}); await f.submit(); await settle();
       assert.equal(requests, 0);
       assert.equal(f.container.querySelector('button[type=submit]').disabled, true);
     } finally {f.close();}
@@ -1142,7 +1153,7 @@ test('Steam pause cancels scheduled polling and resume only permits an explicit 
   globalThis.clearTimeout = timer => {if (!scheduled.delete(timer)) originalClearTimeout(timer);};
   const f = jobFixture({jobs: {async status() {polls++; return {...f.view, status: 'running'};}}});
   try {
-    f.input('account', '123'); f.submit(); await settle();
+    f.input('account', '123'); await f.submit(); await settle();
     assert.equal(polls, 1); assert.equal(scheduled.size, 1);
     f.page.update({...f.context, available: false}); assert.equal(scheduled.size, 0);
     f.page.update({...f.context, available: true}); await settle();
@@ -1161,7 +1172,7 @@ test('CS2 consumes actual frozen-Core Gateway serialized profile/recent/stats/la
     try {
       await settle(); f.input('account', projection.target?.id || '76561197960265851'); f.input('action', action);
       if (action === 'match') f.input('match_id', projection.data.match_id);
-      f.submit(); await settle();
+      await f.submit(); await settle();
       const output = f.container.querySelector('.steam-dlc-public-result');
       assert.match(output.textContent, /1\.2/u, name);
       assert.match(output.textContent, /0\.0/u, name);
@@ -1185,7 +1196,7 @@ test('CS2 canonical decimal statistics display across recent, focus and roster w
   const response = cs2Response('perfect', {match_id: 'PVP@decimal', players: [focus, bad], focus}, {detail: 'full_match'});
   const f = fixture({moduleId: 'cs2', routeId: 'query', invoke: async (_id, parameters) => parameters.action ? response : cacheResponse()});
   try {
-    await settle(); f.input('account', focus.account_id); f.input('action', 'match'); f.input('match_id', 'PVP@decimal'); f.submit(); await settle();
+    await settle(); f.input('account', focus.account_id); f.input('action', 'match'); f.input('match_id', 'PVP@decimal'); await f.submit(); await settle();
     const rows = [...f.container.querySelectorAll('.steam-dlc-public-result table tr')].map(row => [...row.querySelectorAll('td')].map(cell => cell.textContent));
     assert.deepEqual(rows[1].slice(-3), ['1.2', '0', '88.5']);
     assert.deepEqual(rows[2].slice(-3), ['未知', '未知', '未知']);
@@ -1196,9 +1207,9 @@ test('CS2 canonical decimal statistics display across recent, focus and roster w
 test('Steam durable job validates legacy then publishes exact PNG and revokes preview on close', async () => {
   const f = jobFixture();
   try {
-    f.input('account', '123'); f.input('mode', 'legacy'); f.submit(); await settle();
+    f.input('account', '123'); f.input('mode', 'legacy'); await f.submit(); await settle();
     assert.equal(f.submissions.length, 0); assert.match(f.text(), /兼容旧布局最多200/);
-    f.input('mode', 'dense'); f.input('limit', '1500.9'); f.submit(); await settle(); await settle();
+    f.input('mode', 'dense'); f.input('limit', '1500.9'); await f.submit(); await settle(); await settle();
     assert.equal(f.submissions.length, 1); assert.equal(f.submissions[0].parameters.limit, 1500);
     assert.equal(f.submissions[0].parameters.account, '76561197960265851');
     assert.equal(f.created[0].size, Buffer.from(PNG, 'base64').length);
@@ -1213,7 +1224,7 @@ test('Steam job distinguishes unverified classification from a verified empty se
   try {
     f.view.status = 'failed'; f.view.summary = {};
     f.view.progress = {reason: 'metadata_incomplete', source_returned: 20, metadata_unexamined: 20, selected: null, pending: null, counters: {metadata_failed: 1}};
-    f.input('account', '123'); f.submit(); await settle(); await settle();
+    f.input('account', '123'); await f.submit(); await settle(); await settle();
     assert.match(f.text(), /未视为空库/); assert.match(f.text(), /类型尚未验证20项/);
     assert.match(f.text(), /元数据请求失败1次/); assert.match(f.text(), /已选待确认/);
     assert.equal(f.container.querySelector('[data-action="job-retry"]').disabled, false);
@@ -1224,7 +1235,7 @@ test('Steam legacy all-app output keeps unverified coverage generic without clai
   const f = jobFixture();
   try {
     Object.assign(f.view.summary, {selected: 20, generated: 20, all_apps: true, complete_source: true, classification_complete: false, metadata_unexamined: 20, metadata_failures: 1});
-    f.input('account', '123'); f.submit(); await settle(); await settle();
+    f.input('account', '123'); await f.submit(); await settle(); await settle();
     assert.match(f.text(), /类型尚未验证20项（未区分未检查与已检查但类型未知）/u); assert.match(f.text(), /元数据请求失败1次/);
     assert.doesNotMatch(f.text(), /已按全部应用设置入图|已检查20项|未检查20项/u);
     assert.doesNotMatch(f.text(), /来源覆盖不完整/);
@@ -1239,7 +1250,7 @@ test('Steam live top20 summary distinguishes the unselected tail from examined r
       examined: 20, unexamined: 247, classification_unknown: 0, metadata_unexamined: 247,
       all_apps: true, classification_complete: false,
     });
-    f.input('account', '123'); f.submit(); await settle(); await settle();
+    f.input('account', '123'); await f.submit(); await settle(); await settle();
     assert.match(f.text(), /已选20 · 已生成20/u);
     assert.match(f.text(), /已检查20项 · 未检查247项 · 已检查中类型未知0项/u);
     assert.doesNotMatch(f.text(), /类型尚未验证247项|已按全部应用设置入图/u);
@@ -1250,7 +1261,7 @@ test('Steam exact games selection qualifies known eligibility without claiming u
   const f = jobFixture();
   try {
     Object.assign(f.view.summary, {selected: 20, eligible: 20, eligible_complete: false, selection_exact: true, all_apps: false, classification_complete: false, examined: 20, unexamined: 80, classification_unknown: 0, metadata_unexamined: 80});
-    f.input('account', '123'); f.submit(); await settle(); await settle();
+    f.input('account', '123'); await f.submit(); await settle(); await settle();
     assert.match(f.text(), /已确认符合20/); assert.match(f.text(), /选集排序已验证，剩余未检查/);
     assert.doesNotMatch(f.text(), /已按全部应用设置入图/);
   } finally {f.close();}
@@ -1261,7 +1272,7 @@ test('Steam classification coverage distinguishes checked unknown rows from the 
   try {
     f.view.summary = {}; f.view.status = 'failed';
     f.view.progress = {examined: 20, unexamined: 247, classification_unknown: 2, metadata_unexamined: 249, selected: null};
-    f.input('account', '123'); f.submit(); await settle(); await settle();
+    f.input('account', '123'); await f.submit(); await settle(); await settle();
     assert.match(f.text(), /已检查20项 · 未检查247项 · 已检查中类型未知2项/u);
     assert.match(f.text(), /已选待确认/u);
     assert.doesNotMatch(f.text(), /类型尚未验证249项|已按全部应用设置入图/u);
@@ -1272,12 +1283,12 @@ test('Steam shortcuts keep finite1000 distinct from all and reject malformed dec
   const f = jobFixture({jobs: {async result() {return {entries: [], next_cursor: null};}}});
   try {
     f.input('account', '123');
-    for (const value of ['1001', '1500.9', '2.5e3']) {f.input('limit', value); f.submit(); await settle();}
+    for (const value of ['1001', '1500.9', '2.5e3']) {f.input('limit', value); await f.submit(); await settle();}
     assert.deepEqual(f.submissions.map(request => request.parameters.limit), [1001, 1500, 2500]);
-    for (const value of ['', '19.99', '20abc', 'NaN', 'Infinity', '9007199254740992']) {f.input('limit', value); f.submit(); await settle();}
+    for (const value of ['', '19.99', '20abc', 'NaN', 'Infinity', '9007199254740992']) {f.input('limit', value); await f.submit(); await settle();}
     assert.equal(f.submissions.length, 3);
-    f.click('limit-1000'); f.submit(); await settle(); assert.equal(f.submissions.at(-1).parameters.limit_mode, 'top');
-    f.click('limit-all'); f.submit(); await settle(); assert.equal(f.submissions.at(-1).parameters.limit_mode, 'all');
+    f.click('limit-1000'); await f.submit(); await settle(); assert.equal(f.submissions.at(-1).parameters.limit_mode, 'top');
+    f.click('limit-all'); await f.submit(); await settle(); assert.equal(f.submissions.at(-1).parameters.limit_mode, 'all');
     assert.equal(f.submissions.at(-1).parameters.limit, 500);
     assert.ok(f.submissions.every(request => request.handler_id === 'steam_wall' && typeof request.idempotency_key === 'string'));
   } finally {f.close();}
@@ -1296,7 +1307,7 @@ test('Steam job status separates metrics, reason and recovery guidance', async (
   try {
     f.view.status = 'failed';
     f.view.summary = {reason: 'resource_budget', generated: 1};
-    f.input('account', '123'); f.submit(); await settle(); await settle();
+    f.input('account', '123'); await f.submit(); await settle(); await settle();
     const status = f.container.querySelector('.steam-dlc-job-status');
     const sections = [...status.querySelectorAll('p')].map(part => part.textContent);
     assert.equal(status.getAttribute('role'), 'status');
@@ -1313,7 +1324,7 @@ test('Steam job cursor paginates results and cancellation uses exact current rev
     async result(id, options) {page++; assert.equal(options.page_size, 20); return {entries: [], next_cursor: page === 1 ? 'cursor-2' : null};},
   }});
   try {
-    f.input('account', '123'); f.submit(); await settle();
+    f.input('account', '123'); await f.submit(); await settle();
     f.click('job-results'); await settle(); f.click('job-next'); await settle(); assert.equal(page, 2);
     f.click('job-cancel'); await settle(); assert.deepEqual(f.changes[0], ['cancel', 'job-1', 7]);
   } finally {f.close();}
@@ -1341,7 +1352,7 @@ test('CS2 full match and last display scores, focus KDA/rating and the actual pl
     const f = fixture({moduleId: 'cs2', routeId: 'query', invoke: async (_id, parameters) => parameters.action ? cs2Response('perfect', {match_id: 'PVP@10001', map: 'de_mirage', scores: [13, 5], players: [focus, other], focus}, {detail: 'full_match'}) : cacheResponse()});
     await settle(); f.input('account', focus.account_id); f.input('action', action);
     if (action === 'match') { f.input('match_id', 'PVP@10001'); f.input('focus', focus.account_id); }
-    f.submit(); await settle();
+    await f.submit(); await settle();
     const output = f.container.querySelector('.steam-dlc-public-result');
     assert.match(output.textContent, /比分：13 : 5/); assert.match(output.textContent, /K\/D\/A：23\/10\/7 · rating：1.6/);
     assert.match(output.textContent, /完整比赛/); assert.match(output.textContent, /2026-10-24T00:00:00Z/);
@@ -1356,7 +1367,7 @@ for (const platform of ['official', '5e']) {
   test(`CS2 ${platform} summary displays known scores/KDA, unknown rating and its bounded coverage`, async () => {
     const response = cs2Response(platform, {match_id: 'summary-10001', map: null, scores: [0, null], kills: 7, deaths: 0, assists: null, rating: null, players: null, focus: {id: platform === '5e' ? 'example-domain' : '76561197960265851'}});
     const f = fixture({moduleId: 'cs2', routeId: 'query', invoke: async (_id, parameters) => parameters.action ? response : cacheResponse()});
-    await settle(); f.input('account', response.document.blocks[1].fields.cs2.target.id); f.input('platform', platform); f.input('action', 'match'); f.input('match_id', 'summary-10001'); f.submit(); await settle();
+    await settle(); f.input('account', response.document.blocks[1].fields.cs2.target.id); f.input('platform', platform); f.input('action', 'match'); f.input('match_id', 'summary-10001'); await f.submit(); await settle();
     const output = f.container.querySelector('.steam-dlc-public-result');
     assert.match(output.textContent, /比分：0 : 未知/); assert.match(output.textContent, /K\/D\/A：7\/0\/未知 · rating：未知/);
     assert.match(output.textContent, /有界近期玩家摘要/); assert.match(output.textContent, /该来源提供该玩家的近期样本摘要/);
@@ -1371,7 +1382,7 @@ test('CS2 empty full roster and empty recent list remain explicit source states 
     const f = fixture({moduleId: 'cs2', routeId: 'query', invoke: async (_id, parameters) => parameters.action ? response : cacheResponse()});
     await settle(); f.input('account', '76561197960265851'); f.input('action', kind);
     if (kind === 'match') f.input('match_id', 'PVP@empty');
-    f.submit(); await settle();
+    await f.submit(); await settle();
     const output = f.container.querySelector('.steam-dlc-public-result');
     assert.match(output.textContent, kind === 'match' ? /来源未提供可用玩家名单/ : /来源当前样本没有可展示的比赛/);
     if (kind === 'match') assert.match(output.textContent, /比分：未知 : 未知/);
@@ -1383,7 +1394,7 @@ test('CS2 empty full roster and empty recent list remain explicit source states 
 test('Steam corrupt PNG resource cannot become a download or claimed success', async () => {
   const corrupt = Buffer.from(PNG, 'base64'); corrupt[45] ^= 1;
   const f = jobFixture({jobs: {async resource() {return new Blob([corrupt], {type: 'image/png'});}}});
-  try {f.input('account', '123'); f.submit(); await settle(); await settle(); assert.equal(f.container.querySelector('a[download]'), null); assert.equal(f.created.length, 0);}
+  try {f.input('account', '123'); await f.submit(); await settle(); await settle(); assert.equal(f.container.querySelector('a[download]'), null); assert.equal(f.created.length, 0);}
   finally {f.close();}
 });
 
@@ -1391,8 +1402,8 @@ test('Steam late job result is fenced after context revocation and never cancels
   const late = deferred();
   const f = jobFixture({jobs: {status: () => late.promise}});
   try {
-    f.input('account', '123'); f.submit(); await settle();
-    f.page.update({...f.context, available: false}); const before = f.container.innerHTML;
+    f.input('account', '123'); await f.submit(); await settle();
+    f.page.update({...f.context, available: false}); await runtime.nextTick(); const before = f.container.innerHTML;
     late.resolve({...f.view, summary: {generated: 9999}}); await settle();
     assert.equal(f.container.innerHTML, before); assert.equal(f.created.length, 0); assert.equal(f.changes.length, 0);
   } finally {f.close();}
@@ -1400,7 +1411,7 @@ test('Steam late job result is fenced after context revocation and never cancels
 
 test('Dota ordinary configuration remains editable when independent credential status fails', async () => {
   const f = fixture({credentials: {async status() {throw Error('private upstream detail');}}});
-  try {await settle(); assert.match(f.text(), /普通配置已读取/); assert.doesNotMatch(f.text(), /配置读取未完成|private upstream detail/); f.input('timezone', 'UTC'); f.submit(); await settle(); assert.ok(f.calls.some(call => call[0] === 'save'));}
+  try {await settle(); assert.match(f.text(), /普通配置已读取/); assert.doesNotMatch(f.text(), /配置读取未完成|private upstream detail/); f.input('timezone', 'UTC'); await f.submit(); await settle(); assert.ok(f.calls.some(call => call[0] === 'save'));}
   finally {f.close();}
 });
 
@@ -1418,7 +1429,7 @@ test('actual Dota six-field snapshot with integer enum mounts a select and saves
     assert.equal(control.tagName, 'SELECT'); assert.equal(control.options.length, 7);
     const label = f.container.querySelector(`label[for="${control.id}"]`); assert.ok(label);
     assert.equal(control.getAttribute('aria-labelledby'), label.id);
-    f.input('poll_interval_seconds', '2'); f.submit(); await settle();
+    f.input('poll_interval_seconds', '2'); await f.submit(); await settle();
     assert.deepEqual(f.calls.find(call => call[0] === 'save')[2], {poll_interval_seconds: 900});
   } finally {f.close();}
 });
@@ -1432,8 +1443,8 @@ test('wishlist page requests explicit account and twenty-item local pages withou
     }}}]}};
   }});
   try {
-    f.submit(); await settle(); assert.equal(f.calls.length, 0);
-    f.input('account', '123'); f.submit(); await settle();
+    await f.submit(); await settle(); assert.equal(f.calls.length, 0);
+    f.input('account', '123'); await f.submit(); await settle();
     assert.equal(f.calls[0][2].page, 1); assert.match(f.text(), /第1\/2页|第1\/2/);
     assert.match(f.text(), /未发售/); assert.match(f.text(), /本地区未提供价格/);
     assert.equal(f.container.querySelector('a[target=_blank]').href, 'https://store.steampowered.com/app/123/');
@@ -1444,14 +1455,14 @@ test('wishlist page requests explicit account and twenty-item local pages withou
 
 test('job transport failures never render raw exception messages', async () => {
   const f = jobFixture({jobs: {async submit() {throw Error('PRIVATE_BACKEND_DETAIL');}}});
-  try {f.input('account', '123'); f.submit(); await settle(); assert.doesNotMatch(f.text(), /PRIVATE_BACKEND_DETAIL/); assert.match(f.text(), /任务操作未完成/);}
+  try {f.input('account', '123'); await f.submit(); await settle(); assert.doesNotMatch(f.text(), /PRIVATE_BACKEND_DETAIL/); assert.match(f.text(), /任务操作未完成/);}
   finally {f.close();}
 });
 
 test('job previews are immediately revoked on owner boundary change', async () => {
   const f = jobFixture();
   try {
-    f.input('account', '123'); f.submit(); await settle(); await settle();
+    f.input('account', '123'); await f.submit(); await settle(); await settle();
     assert.equal(f.created.length, 1);
     f.page.update({...f.context, boundary: 'new-owner-boundary'});
     assert.deepEqual(f.revoked, ['blob:job-1']); assert.equal(f.container.querySelector('a[download]'), null);
@@ -1473,25 +1484,29 @@ for (const status of ['error', 'partial_success']) {
     const response = analysisResponse(status);
     const f = fixture({moduleId: 'dota2', routeId: 'analysis', invoke: () => pending.promise});
     try {
-      f.submit(); await settle();
+      await f.submit(); await settle();
       assert.match(f.text(), /请提供有效比赛ID和明确焦点玩家/);
       assert.equal(f.calls.length, 0, 'empty input must not query a source');
-      f.input('match_id', '0'); f.input('account', 'Focus'); f.submit(); await settle();
+      f.input('match_id', '0'); f.input('account', 'Focus'); await f.submit(); await settle();
       assert.match(f.text(), /请提供有效比赛ID和明确焦点玩家/);
       assert.equal(f.calls.length, 0, 'invalid input must not query a source');
-      f.input('match_id', '12345'); f.submit(); await settle();
+      f.input('match_id', '12345'); await f.submit(); await settle();
       assert.deepEqual(f.calls, [['invoke', 'analyze_explicit', {match_id: '12345', account: 'Focus', refresh: false}]]);
       assert.doesNotMatch(f.text(), /请提供有效比赛ID和明确焦点玩家/);
       const result = f.container.querySelector('.steam-dlc-public-result');
-      const button = f.container.querySelector('[data-action=analysis-query]');
+      const button = f.container.querySelector(modern ? '[data-action=query]' : '[data-action=analysis-query]');
       assert.match(result.textContent, /正在读取公开结算与可用时间线/);
-      assert.equal(button.disabled, true);
-      f.submit(); assert.equal(f.calls.length, 1, 'pending requests remain single flight');
+      if (modern) {
+        assert.equal(button.disabled, false);
+        assert.equal(button.getAttribute('aria-disabled'), 'true');
+        assert.equal(button.getAttribute('aria-busy'), 'true');
+      } else assert.equal(button.disabled, true);
+      await f.submit(); assert.equal(f.calls.length, 1, 'pending requests remain single flight');
       pending.resolve(response); await settle();
       assert.doesNotMatch(f.text(), /请提供有效比赛ID和明确焦点玩家|正在读取公开结算与可用时间线/);
       assert.match(result.textContent, status === 'error' ? /查询未完成/ : /仅基础结算.*来源未提供团战时间线/);
       assert.equal(button.disabled, false);
-      pending = deferred(); f.input('match_id', '67890'); f.submit(); await settle();
+      pending = deferred(); f.input('match_id', '67890'); await f.submit(); await settle();
       assert.deepEqual(f.calls.at(-1), ['invoke', 'analyze_explicit', {match_id: '67890', account: 'Focus', refresh: false}]);
       assert.equal(f.calls.length, 2);
       assert.match(result.textContent, /正在读取公开结算与可用时间线/);
@@ -1507,16 +1522,17 @@ for (const key of ['owner', 'runtimeId']) {
     const pending = deferred();
     const f = fixture({moduleId: 'dota2', routeId: 'analysis', invoke: () => pending.promise});
     try {
-      f.input('match_id', '12345'); f.input('account', 'Focus'); f.submit(); await settle();
+      f.input('match_id', '12345'); f.input('account', 'Focus'); await f.submit(); await settle();
       assert.equal(f.calls.length, 1);
       f.page.update({...f.context, [key]: 'revoked-analysis-context'});
+      await runtime.nextTick();
       const before = f.container.innerHTML;
       const response = analysisResponse('partial_success');
       response.document.blocks.push({kind: 'text', text: 'Late analysis must not appear'});
       pending.resolve(response); await settle();
       assert.equal(f.container.innerHTML, before);
       assert.doesNotMatch(f.text(), /Late analysis must not appear|ID32 456/);
-      f.submit(); await settle();
+      await f.submit(); await settle();
       assert.equal(f.calls.length, 1, 'revoked context cannot start another query');
     } finally {pending.resolve(analysisResponse('error')); f.close();}
   });
@@ -1531,7 +1547,7 @@ test('Dota analysis page shows focus, settlement-only completeness and missing s
     ]}, model_facts: {data_completeness: 'settlement_only', focus: {account_id32: '456', name: 'Focus', hero_id: 1, kills: 0, deaths: 4, assists: null}, missing_sections: ['teamfights', 'purchases'], missing_fields: ['hero_damage'], truncated_sections: [], source: 'opendota', fetched_at: '2026-01-01T00:00:00Z'}};
   }});
   try {
-    f.input('match_id', '12345'); f.input('account', 'Focus'); f.submit(); await settle();
+    f.input('match_id', '12345'); f.input('account', 'Focus'); await f.submit(); await settle();
     assert.match(f.text(), /仅基础结算/); assert.match(f.text(), /ID32 456/); assert.match(f.text(), /K\/D\/A 0\/4\/未知/);
     assert.match(f.text(), /团战、购买时间线/); assert.match(f.text(), /来源未提供团战数据/);
     assert.doesNotMatch(f.text(), /AI短评已生成|K\/D\/A 0\/4\/0/);
@@ -1542,7 +1558,7 @@ test('Dota analysis page shows focus, settlement-only completeness and missing s
 test('wishlist privacy, rate limit and failure remain distinct after Core sanitizes the message', async () => {
   for (const [code, expected] of [['not_public', /愿望单未公开或来源受限/], ['rate_limited', /愿望单来源限流/], ['upstream_error', /愿望单来源请求失败/]]) {
     const f = fixture({moduleId: 'steam', routeId: 'wishlist', invoke: async () => ({...cacheResponse(), status: 'error', error: {code, message: '查询未完成，请检查输入或稍后重试。'}})});
-    try {f.input('account', '123'); f.submit(); await settle(); assert.match(f.text(), expected); assert.doesNotMatch(f.text(), /本次公开愿望单为空|共0项/);}
+    try {f.input('account', '123'); await f.submit(); await settle(); assert.match(f.text(), expected); assert.doesNotMatch(f.text(), /本次公开愿望单为空|共0项/);}
     finally {f.close();}
   }
 });

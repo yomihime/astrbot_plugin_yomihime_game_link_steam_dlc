@@ -1,23 +1,23 @@
+import {primaryForm} from './template-adapter.js';
 export function mountWishlistForm(root, {options, active, field, say}) {
   const document = root.ownerDocument, cleanups = [];
   let generation = 0, disposed = false, pending = false, page = 1, pages = 1;
   const problem = message => Object.assign(Error(message), {publicMessage: message});
   const node = (tag, text) => {const value = document.createElement(tag); if (text !== undefined) value.textContent = text; return value;};
   const listen = (target, type, callback) => {target.addEventListener(type, callback); cleanups.push(() => target.removeEventListener(type, callback));};
-  const form = node('form'), grid = options.presentation?.grid(form) || form;
+  const primary = primaryForm(root, options, {id: 'wishlist-query', label: '读取愿望单'});
+  const {body: form, actions} = primary, grid = options.presentation?.grid(form) || form;
   const account = field(grid, 'account', 'SteamID64 / Dota ID32（明确账号）');
   const country = field(grid, 'country', '地区', null, 'CN');
   const language = field(grid, 'language', 'Steam语言', null, 'schinese');
-  const actions = node('div'); actions.className = 'steam-dlc-actions';
-  const submit = node('button', '读取愿望单'); submit.type = 'submit'; submit.className = 'ui-button'; submit.dataset.action = 'wishlist-query';
   const previous = node('button', '上一页'), next = node('button', '下一页');
   for (const [button, name] of [[previous, 'wishlist-previous'], [next, 'wishlist-next']]) {button.type = 'button'; button.className = 'ui-button'; button.dataset.action = name; button.disabled = true;}
-  actions.append(submit, previous, next); form.append(actions);
+  actions.append(previous, next); form.append(actions);
   const results = node('section'); results.className = 'steam-dlc-public-result'; results.setAttribute('aria-live', 'polite');
   const sync = () => {
-    submit.disabled = disposed || !active() || pending;
-    previous.disabled = submit.disabled || page <= 1; next.disabled = submit.disabled || page >= pages;
-    form.setAttribute('aria-busy', String(pending));
+    const unavailable = disposed || !active();
+    primary.sync(unavailable, pending);
+    previous.disabled = unavailable || pending || page <= 1; next.disabled = unavailable || pending || page >= pages;
     for (const input of form.querySelectorAll('input,select')) input.disabled = disposed || !active();
   };
   const run = async requested => {
@@ -50,10 +50,11 @@ export function mountWishlistForm(root, {options, active, field, say}) {
     } catch (error) {if (!disposed && active() && ticket === generation) {results.replaceChildren(node('p', error.publicMessage || '愿望单请求未完成，请稍后重试。')); say('愿望单查询未完成。', 'error');}}
     finally {if (!disposed && ticket === generation) {pending = false; sync();}}
   };
-  listen(form, 'submit', event => {event.preventDefault(); void run(1);});
+  cleanups.push(primary.bind(() => run(1)));
   listen(previous, 'click', () => {if (page > 1) void run(page - 1);});
   listen(next, 'click', () => {if (page < pages) void run(page + 1);});
-  root.append(node('p', '匿名读取第一方公开愿望单，每页20项，仅补全当前页商店资料。私有、空单、限流与请求失败分别报告。'), node('h3', '查询条件'), form, node('h3', '愿望单结果'), results);
+  root.append(node('p', '匿名读取第一方公开愿望单，每页20项，仅补全当前页商店资料。私有、空单、限流与请求失败分别报告。'), ...(options.presentation?.template ? [] : [node('h3', '查询条件')]), form);
+  primary.result(node('h3', '愿望单结果'), results);
   options.presentation?.actions(actions);
   sync();
   return {

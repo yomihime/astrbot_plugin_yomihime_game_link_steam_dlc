@@ -1,3 +1,4 @@
+import {primaryForm} from './template-adapter.js';
 // Explicit public focus facts only. Host model generation remains COMMAND-only.
 import {metric} from './metric.js';
 const ANALYSIS_LABELS = {"timeline": "发育时间线", "purchases": "购买时间线", "lane": "对线位置", "teamfights": "团战", "objectives": "目标事件", "team_advantage": "团队经济/经验差", "benchmarks": "表现基准", "players": "玩家名单", "invalid_player": "无效玩家记录", "gold_t": "经济时间线", "xp_t": "经验时间线", "team_gold": "团队经济差", "team_xp": "团队经验差", "teamfight_players": "团战玩家记录", "account_id32": "玩家账号", "player_slot": "玩家位置", "name": "玩家名称", "hero_id": "英雄", "team": "阵营", "outcome": "胜负", "kills": "击杀", "deaths": "死亡", "assists": "助攻", "last_hits": "补刀", "denies": "反补", "gold_per_min": "每分钟金钱", "xp_per_min": "每分钟经验", "hero_damage": "英雄伤害", "tower_damage": "建筑伤害", "hero_healing": "治疗量", "items": "装备", "backpack": "背包", "level": "等级"};
@@ -10,21 +11,20 @@ export function mountAnalysisForm(root, {options, active, field, renderResult, s
   const document = root.ownerDocument, listeners = [];
   let disposed = false, generation = 0, busy = false;
   const node = (tag, text) => {const value = document.createElement(tag); if (text !== undefined) value.textContent = text; return value;};
-  const form = node('form'), grid = options.presentation?.grid(form) || form;
+  const primary = primaryForm(root, options, {id: 'analysis-query', label: '查看指定玩家分析'});
+  const {body: form, actions} = primary, grid = options.presentation?.grid(form) || form;
   const match = field(grid, 'match_id', '比赛ID'); match.maxLength = 20; match.inputMode = 'numeric';
   const account = field(grid, 'account', '焦点玩家（Dota ID32 / SteamID64 / 本场唯一昵称）');
   const refresh = field(grid, 'refresh', '来源缓存', ['false', 'true'], 'false');
   refresh.options[0].textContent = '优先有效缓存'; refresh.options[1].textContent = '刷新公开来源';
-  const submit = node('button', '查看指定玩家分析'); submit.type = 'submit'; submit.className = 'ui-button'; submit.dataset.variant = 'primary'; submit.dataset.action = 'analysis-query';
-  const actions = node('div'); actions.className = 'steam-dlc-actions'; actions.append(submit); form.append(actions);
+  form.append(actions);
   const result = node('section'); result.className = 'steam-dlc-public-result'; result.setAttribute('aria-live', 'polite');
   const sync = () => {
-    submit.disabled = disposed || !active() || busy;
-    form.setAttribute('aria-busy', String(busy));
+    primary.sync(disposed || !active(), busy);
     for (const input of form.querySelectorAll('input,select')) input.disabled = disposed || !active();
   };
-  const run = async event => {
-    event.preventDefault(); if (!active() || disposed || busy) return;
+  const run = async () => {
+    if (!active() || disposed || busy) return;
     const parameters = {match_id: match.value.trim(), account: account.value.trim(), refresh: refresh.value === 'true'};
     if (!/^[1-9][0-9]{0,19}$/u.test(parameters.match_id) || !parameters.account) {say('请提供有效比赛ID和明确焦点玩家。', 'error'); return;}
     say('');
@@ -48,8 +48,9 @@ export function mountAnalysisForm(root, {options, active, field, renderResult, s
     } catch {if (!disposed && active() && ticket === generation) {result.replaceChildren(node('p', '分析请求未完成，请核对比赛与焦点后重试。')); say('未取得可确认的分析结果。', 'error');}}
     finally {if (!disposed && ticket === generation) {busy = false; sync();}}
   };
-  form.addEventListener('submit', run); listeners.push(() => form.removeEventListener('submit', run));
-  root.append(node('p', '按明确比赛与玩家读取OpenDota公开事实。未收录的时间线、装备、团战或目标保持未知，不提交录像解析。'), node('h3', '分析条件'), form, node('h3', '分析结果'), result);
+  listeners.push(primary.bind(run));
+  root.append(node('p', '按明确比赛与玩家读取OpenDota公开事实。未收录的时间线、装备、团战或目标保持未知，不提交录像解析。'), ...(options.presentation?.template ? [] : [node('h3', '分析条件')]), form);
+  primary.result(node('h3', '分析结果'), result);
   options.presentation?.actions(actions);
   sync();
   return {
