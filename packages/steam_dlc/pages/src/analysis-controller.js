@@ -49,7 +49,7 @@ export function mountAnalysisForm(root, {options, active, field, renderResult, s
     finally {if (!disposed && ticket === generation) {busy = false; sync();}}
   };
   form.addEventListener('submit', run); listeners.push(() => form.removeEventListener('submit', run));
-  root.append(node('p', '按明确比赛与玩家读取OpenDota公开事实。未收录的时间线、装备、团战或目标保持未知，不提交录像解析。'), form, result);
+  root.append(node('p', '按明确比赛与玩家读取OpenDota公开事实。未收录的时间线、装备、团战或目标保持未知，不提交录像解析。'), node('h3', '分析条件'), form, node('h3', '分析结果'), result);
   options.presentation?.actions(actions);
   sync();
   return {

@@ -140,8 +140,10 @@ for (const moduleId of ['steam', 'dota2', 'cs2', 'deadlock']) {
     assert.match(f.text(), /运行健康请在模块管理中查看/);
     if (moduleId === 'cs2') { assert.match(f.text(), /完美收录官匹与 5E/); assert.doesNotMatch(f.text(), /Leetify|留存政策限制/); }
     if (moduleId === 'deadlock') assert.match(f.text(), /使用社区来源最近 20 条已收录记录/);
-    assert.ok(f.container.querySelector('.ui-page .ui-page-header h1'));
-    assert.ok(f.container.querySelector('.ui-settings-layout .ui-settings-group'));
+    assert.ok(f.container.querySelector('.ui-page .ui-surface h2'));
+    assert.ok(!f.container.querySelector('.ui-page-header'), 'shell owns the page heading');
+    assert.ok([...f.container.querySelectorAll('summary')].some(node => node.textContent === '数据来源与范围'));
+    assert.ok(f.container.querySelector('[data-action="' + (moduleId === 'steam' ? 'refresh-cache' : 'refresh-status') + '"]'));
     if (moduleId === 'steam') {
       await settle();
       assert.deepEqual(f.calls, [['invoke', 'wall_cache_status', {}]]);
@@ -820,6 +822,22 @@ test('Dota budget rejects zero, empty restores default, and subscription toggles
   f.close();
 });
 
+test('settings group fields by task and place credentials in the side panel', async () => {
+  const mock = credentialMock(['credential_steam_key']);
+  const f = fixture({moduleId: 'steam', credentials: mock.services}); mock.bind(f); await settle();
+  assert.deepEqual([...f.container.querySelectorAll('.steam-dlc-config-group h3')].map(node => node.textContent), ['查询与回复', '游戏生涯拼图']);
+  assert.ok(f.container.querySelector('.ui-settings-aside [name=credential_steam_key]'));
+  assert.ok(f.container.querySelector('.steam-dlc-limit-field [name=poster_limit]'));
+  assert.ok(f.container.querySelector('.steam-dlc-limit-field [data-action=reset-poster_limit]'));
+  assert.ok(!f.container.querySelector('.ui-page-header'), 'shell owns the page heading');
+  f.input('credential_steam_key', 'synthetic-secret');
+  const secret = f.container.querySelector('[name=credential_steam_key]');
+  f.page.dispose();
+  assert.equal(secret.value, '');
+  assert.equal(f.container.querySelector('.ui-settings-aside [name=credential_steam_key]'), null);
+  f.dom.window.close();
+});
+
 test('credential draft is ephemeral, submits with latest shared CAS and never enters ordinary config', async () => {
   const mock = credentialMock(['credential_steam_key']);
   const f = fixture({moduleId: 'steam', credentials: mock.services}); mock.bind(f); await settle();
@@ -1265,6 +1283,29 @@ test('Steam shortcuts keep finite1000 distinct from all and reject malformed dec
   } finally {f.close();}
 });
 
+test('Steam collage aspect choices display their actual ratios', () => {
+  const f = jobFixture();
+  try {
+    const aspect = f.container.querySelector('[name=aspect]');
+    assert.deepEqual([...aspect.options].map(option => [option.value, option.textContent]), [['2:3', '2:3'], ['9:16', '9:16'], ['1:2', '1:2']]);
+  } finally {f.close();}
+});
+
+test('Steam job status separates metrics, reason and recovery guidance', async () => {
+  const f = jobFixture();
+  try {
+    f.view.status = 'failed';
+    f.view.summary = {reason: 'resource_budget', generated: 1};
+    f.input('account', '123'); f.submit(); await settle(); await settle();
+    const status = f.container.querySelector('.steam-dlc-job-status');
+    const sections = [...status.querySelectorAll('p')].map(part => part.textContent);
+    assert.equal(status.getAttribute('role'), 'status');
+    assert.ok(sections.some(text => /已生成1/.test(text)));
+    assert.ok(sections.some(text => /资源预算不足/.test(text)));
+    assert.ok(sections.some(text => /不会从最后一项自动断点续跑/.test(text)));
+  } finally {f.close();}
+});
+
 test('Steam job cursor paginates results and cancellation uses exact current revision', async () => {
   let page = 0;
   const f = jobFixture({jobs: {
@@ -1503,5 +1544,22 @@ test('wishlist privacy, rate limit and failure remain distinct after Core saniti
     const f = fixture({moduleId: 'steam', routeId: 'wishlist', invoke: async () => ({...cacheResponse(), status: 'error', error: {code, message: '查询未完成，请检查输入或稍后重试。'}})});
     try {f.input('account', '123'); f.submit(); await settle(); assert.match(f.text(), expected); assert.doesNotMatch(f.text(), /本次公开愿望单为空|共0项/);}
     finally {f.close();}
+  }
+});
+
+test('home renders each bundled module artwork as a safe decorative SVG', () => {
+  for (const moduleId of ['steam', 'dota2', 'cs2', 'deadlock']) {
+    const f = fixture({moduleId, routeId: 'home'});
+    const mark = f.container.querySelector(`svg.steam-dlc-module-mark--${moduleId}`);
+    assert.ok(mark, `${moduleId}: missing home mark`);
+    assert.equal(mark.getAttribute('aria-hidden'), 'true');
+    const original = new f.container.ownerDocument.defaultView.DOMParser().parseFromString(readFileSync(new URL(`../../packages/steam_dlc/${moduleId}/assets/${moduleId}.svg`, import.meta.url), 'utf8'), 'image/svg+xml');
+    assert.deepEqual([...mark.querySelectorAll('path')].map(p => p.getAttribute('d')), [...original.querySelectorAll('path')].map(p => p.getAttribute('d')));
+    assert.equal(mark.querySelector('script, image, a, foreignObject'), null);
+    assert.equal(mark.querySelector('[onload], [href], [style]'), null);
+    f.page.dispose();
+    const settings = fixture({moduleId, routeId: 'settings'});
+    assert.equal(settings.container.querySelector('.steam-dlc-module-mark'), null);
+    settings.page.dispose();
   }
 });

@@ -851,15 +851,15 @@
       "resources": [
         {
           "path": "steam/assets/steam.svg",
-          "sha256": "cdfdd6aa4ee0935565ba5f99a2afe155dbc8adee5d467348adec071be4374f17"
+          "sha256": "63e6d9e7d332e86097f6dd4c7cfab7f0585bd7cfe6a7e6c5e6006135dcfc8311"
         },
         {
           "path": "pages/steam/entry.js",
-          "sha256": "51dcadfb60fef4de5a5dc22a32fed22c4f3bdad690be62071cd98e3628076127"
+          "sha256": "2d144d2dcabe7cce380622f5e1daa9fa49a0ad11675066b392deb0a83c14c5d9"
         },
         {
           "path": "pages/steam/style.css",
-          "sha256": "06a48bb5d92639a5059717bb990243ee94a79d82343a32e51ed7a04607fc0555"
+          "sha256": "ba5a6c64e22e8daacd5ae698f7f954718fdb964b84a3c7615ae1972b2862ffd5"
         }
       ],
       "sources": [
@@ -912,7 +912,7 @@
         {
           "source_id": "steam_wishlist",
           "host": "api.steampowered.com",
-          "timeout_seconds": 10.0,
+          "timeout_seconds": 10,
           "requests_per_minute": 60
         }
       ],
@@ -1798,15 +1798,15 @@
       "resources": [
         {
           "path": "dota2/assets/dota2.svg",
-          "sha256": "7a2879ee781f8e00ec2b5996362556742df2c99f0d682d9dbcdcdddae8a547a6"
+          "sha256": "63b88a2ee50d722e9b342011f40da2464098588be5bcf42d22b223aeb5f0c5ca"
         },
         {
           "path": "pages/dota2/entry.js",
-          "sha256": "51dcadfb60fef4de5a5dc22a32fed22c4f3bdad690be62071cd98e3628076127"
+          "sha256": "2d144d2dcabe7cce380622f5e1daa9fa49a0ad11675066b392deb0a83c14c5d9"
         },
         {
           "path": "pages/dota2/style.css",
-          "sha256": "06a48bb5d92639a5059717bb990243ee94a79d82343a32e51ed7a04607fc0555"
+          "sha256": "ba5a6c64e22e8daacd5ae698f7f954718fdb964b84a3c7615ae1972b2862ffd5"
         }
       ],
       "schedules": [
@@ -2491,15 +2491,15 @@
       "resources": [
         {
           "path": "cs2/assets/cs2.svg",
-          "sha256": "0de37bbfa8b3efb01809e974cb73440dc1bd232380a01dbe825532682d51d26e"
+          "sha256": "c098264ee29fe7fe292c9ad9f0d3ea0a6c44d38bb67af0a58c99b85c4bf95d5c"
         },
         {
           "path": "pages/cs2/entry.js",
-          "sha256": "51dcadfb60fef4de5a5dc22a32fed22c4f3bdad690be62071cd98e3628076127"
+          "sha256": "2d144d2dcabe7cce380622f5e1daa9fa49a0ad11675066b392deb0a83c14c5d9"
         },
         {
           "path": "pages/cs2/style.css",
-          "sha256": "06a48bb5d92639a5059717bb990243ee94a79d82343a32e51ed7a04607fc0555"
+          "sha256": "ba5a6c64e22e8daacd5ae698f7f954718fdb964b84a3c7615ae1972b2862ffd5"
         }
       ],
       "sources": [
@@ -3004,15 +3004,15 @@
       "resources": [
         {
           "path": "deadlock/assets/deadlock.svg",
-          "sha256": "4c632f937a0014adf9bf2256afede0a41cb6bda9da225169fada68e70ec0c001"
+          "sha256": "d788f956b3b83f117ec1e7bcf91025b3f3f31e8da2c9336b84946685fdb0d8b2"
         },
         {
           "path": "pages/deadlock/entry.js",
-          "sha256": "51dcadfb60fef4de5a5dc22a32fed22c4f3bdad690be62071cd98e3628076127"
+          "sha256": "2d144d2dcabe7cce380622f5e1daa9fa49a0ad11675066b392deb0a83c14c5d9"
         },
         {
           "path": "pages/deadlock/style.css",
-          "sha256": "06a48bb5d92639a5059717bb990243ee94a79d82343a32e51ed7a04607fc0555"
+          "sha256": "ba5a6c64e22e8daacd5ae698f7f954718fdb964b84a3c7615ae1972b2862ffd5"
         }
       ],
       "sources": [

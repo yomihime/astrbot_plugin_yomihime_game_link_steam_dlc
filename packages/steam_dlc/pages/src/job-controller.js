@@ -29,7 +29,8 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
   controls.all_apps.options[0].textContent = '全部应用'; controls.all_apps.options[1].textContent = '仅游戏';
   const limit = field(grid, 'limit', '数量（至少20，可手填超过1000）', null, '500'); limit.inputMode = 'decimal';
   const actions = node('div'); actions.className = 'steam-dlc-actions';
-  const action = (id, label, callback) => {
+  const jobActions = node('div'); jobActions.className = 'steam-dlc-actions';
+  const action = (id, label, callback, target = actions) => {
     const button = node('button', label); button.type = 'button'; button.className = 'ui-button'; button.dataset.action = id;
     on(button, 'click', () => {
       if (!available() || busy) return;
@@ -43,15 +44,18 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
         }
       } catch (error) {failed(error);}
     });
-    actions.append(button); return button;
+    target.append(button); return button;
   };
   for (const value of [20, 50, 100, 200, 500, 1000, 'all']) action(`limit-${value}`, value === 'all' ? '不限' : String(value), () => {
     controls.limit_mode.value = value === 'all' ? 'all' : 'top'; limit.disabled = value === 'all'; if (value !== 'all') limit.value = String(value);
   });
   on(controls.limit_mode, 'change', () => {limit.disabled = controls.limit_mode.value === 'all';});
   const submit = node('button', '提交拼图任务'); submit.type = 'submit'; submit.className = 'ui-button'; submit.dataset.action = 'generate'; submit.dataset.variant = 'primary'; actions.append(submit);
-  const jobId = field(grid, 'job_id', '任务ID（刷新后自动恢复）');
-  const status = node('p', '尚未提交任务。'); status.setAttribute('role', 'status');
+  const recoveryHeading = node('h3', '任务状态与恢复');
+  const recoveryGrid = options.presentation?.grid(form) || form;
+  const recoveryMount = recoveryGrid === form ? null : form.lastElementChild;
+  const jobId = field(recoveryGrid, 'job_id', '任务ID（刷新后自动恢复）');
+  const status = node('div', '尚未提交任务。'); status.className = 'steam-dlc-job-status'; status.setAttribute('role', 'status');
   const results = node('section'); results.className = 'steam-dlc-public-result';
   const sync = () => {
     const disabled = !available();
@@ -80,17 +84,26 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
     const resultEntries = summary.result_entries ?? progress.result_entries;
     if (Number.isSafeInteger(resultEntries) && resultEntries >= 0) publishedResults = Math.max(publishedResults, resultEntries);
     const count = value => Number.isSafeInteger(value) && value >= 0 ? String(value) : '待确认';
-    status.textContent = `任务 ${job.job_id} · ${states[job.status]} · 来源${count(summary.source_returned ?? progress.source_returned)} · ${(summary.eligible_complete ?? progress.eligible_complete) === false ? '已确认符合' : '符合'}${count(summary.eligible ?? progress.eligible)} · 已选${count(summary.selected ?? progress.selected)} · 已生成${count(summary.generated ?? progress.generated)} · 待处理${count(summary.pending ?? progress.pending)} · 缺图${count(summary.missing_images ?? progress.missing_images)}${explanation ? ` · ${explanation}` : ''}${reason === 'rate_limited' && knownWait ? ` · 来源建议等待${retryAfter}秒后再试（非自动重试或倒计时）。` : ''}${(summary.complete_source ?? progress.complete_source) === false ? ' · 来源覆盖不完整' : ''}`;
+    const metrics = [`来源${count(summary.source_returned ?? progress.source_returned)}`, `${(summary.eligible_complete ?? progress.eligible_complete) === false ? '已确认符合' : '符合'}${count(summary.eligible ?? progress.eligible)}`, `已选${count(summary.selected ?? progress.selected)}`, `已生成${count(summary.generated ?? progress.generated)}`, `待处理${count(summary.pending ?? progress.pending)}`, `缺图${count(summary.missing_images ?? progress.missing_images)}`];
+    const coverageNotes = [];
     const legacyUnknown = summary.metadata_unexamined ?? progress.metadata_unexamined;
     const coverage = ['examined', 'unexamined', 'classification_unknown'].map(key => summary[key] ?? progress[key]);
     const metadataFailures = summary.metadata_failures ?? summary.counters?.metadata_failed ?? progress.counters?.metadata_failed ?? 0;
-    if (coverage.some(value => value !== undefined)) status.textContent += ` · 已检查${count(coverage[0])}项 · 未检查${count(coverage[1])}项 · 已检查中类型未知${count(coverage[2])}项`;
-    else if (legacyUnknown) status.textContent += ` · 类型尚未验证${legacyUnknown}项（未区分未检查与已检查但类型未知）`;
-    if (summary.selection_exact === true && summary.all_apps === false) status.textContent += ` · 选集排序已验证${Number.isSafeInteger(coverage[1]) && coverage[1] > 0 ? '，剩余未检查' : ''}`;
-    if (metadataFailures) status.textContent += ` · 元数据请求失败${metadataFailures}次`;
-    if (['queued', 'running'].includes(job.status)) status.textContent += ' · 可刷新状态或取消任务；排队或执行中不能重试。';
-    else if (['failed', 'cancelled', 'interrupted'].includes(job.status)) status.textContent += ' · 核对条件后可稍后重试，显式重新执行并复用有效缓存；不会从最后一项自动断点续跑。';
-    if (publishedResults > 0) status.textContent += ` · 已发布图片资源${publishedResults}项，可点击“查询结果页”或使用 /ygl steam wall result ${job.job_id} 查看。`;
+    if ((summary.complete_source ?? progress.complete_source) === false) coverageNotes.push('来源覆盖不完整');
+    if (coverage.some(value => value !== undefined)) coverageNotes.push(`已检查${count(coverage[0])}项 · 未检查${count(coverage[1])}项 · 已检查中类型未知${count(coverage[2])}项`);
+    else if (legacyUnknown) coverageNotes.push(`类型尚未验证${legacyUnknown}项（未区分未检查与已检查但类型未知）`);
+    if (summary.selection_exact === true && summary.all_apps === false) coverageNotes.push(`选集排序已验证${Number.isSafeInteger(coverage[1]) && coverage[1] > 0 ? '，剩余未检查' : ''}`);
+    if (metadataFailures) coverageNotes.push(`元数据请求失败${metadataFailures}次`);
+    const nextSteps = [];
+    if (['queued', 'running'].includes(job.status)) nextSteps.push('可刷新状态或取消任务；排队或执行中不能重试。');
+    else if (['failed', 'cancelled', 'interrupted'].includes(job.status)) nextSteps.push('核对条件后可稍后重试，显式重新执行并复用有效缓存；不会从最后一项自动断点续跑。');
+    if (publishedResults > 0) nextSteps.push(`已发布图片资源${publishedResults}项，可点击“查询结果页”或使用 /ygl steam wall result ${job.job_id} 查看。`);
+    const parts = [node('p', `任务 ${job.job_id} · ${states[job.status]}`), node('p', metrics.join(' · '))];
+    if (explanation) parts.push(node('p', explanation));
+    if (reason === 'rate_limited' && knownWait) parts.push(node('p', `来源建议等待${retryAfter}秒后再试（非自动重试或倒计时）。`));
+    if (coverageNotes.length) parts.push(node('p', coverageNotes.join(' · ')));
+    if (nextSteps.length) parts.push(node('p', nextSteps.join(' ')));
+    status.replaceChildren(...parts);
     sync();
   };
   const resultPage = async pageCursor => {
@@ -131,7 +144,7 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
       else await resultPage(null);
     } catch (error) {handleError(error, ticket);}
   };
-  const cancel = action('job-cancel', '取消任务', async () => {if (!job || !['queued', 'running'].includes(job.status)) return; stop(); const ticket = ++generation; const value = await api().cancel(job.job_id, job.revision); if (current(ticket)) {show(value); await poll();}});
+  const cancel = action('job-cancel', '取消任务', async () => {if (!job || !['queued', 'running'].includes(job.status)) return; stop(); const ticket = ++generation; const value = await api().cancel(job.job_id, job.revision); if (current(ticket)) {show(value); await poll();}}, jobActions);
   const clearResults = () => {resultGeneration += 1; publishedResults = 0; cursor = null; revoke(); results.replaceChildren();};
   const handleError = (error, ticket) => {
     if (!current(ticket)) return;
@@ -142,10 +155,10 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
     status.textContent = '任务页面授权或运行上下文已失效，请重新进入页面。';
     say('页面授权或运行上下文已变化，请重新进入页面。', 'error'); sync();
   };
-  const retry = action('job-retry', '重新执行（复用有效缓存）', async () => {if (!job || !['failed', 'cancelled', 'interrupted'].includes(job.status)) return; stop(); clearResults(); const ticket = ++generation; const value = await api().retry(job.job_id, job.revision); if (current(ticket)) {show(value); await poll();}});
-  const next = action('job-next', '下一页结果', async () => {if (cursor) await resultPage(cursor);}); next.disabled = true;
-  action('job-results', '查询结果页', async () => {await resultPage(null);});
-  action('job-refresh', '恢复 / 刷新任务', async () => {if (!jobId.value.trim()) return; stop(); clearResults(); generation += 1; job = {job_id: jobId.value.trim()}; await poll();});
+  const retry = action('job-retry', '重新执行（复用有效缓存）', async () => {if (!job || !['failed', 'cancelled', 'interrupted'].includes(job.status)) return; stop(); clearResults(); const ticket = ++generation; const value = await api().retry(job.job_id, job.revision); if (current(ticket)) {show(value); await poll();}}, jobActions);
+  const next = action('job-next', '下一页结果', async () => {if (cursor) await resultPage(cursor);}, jobActions); next.disabled = true;
+  action('job-results', '查询结果页', async () => {await resultPage(null);}, jobActions);
+  action('job-refresh', '恢复 / 刷新任务', async () => {if (!jobId.value.trim()) return; stop(); clearResults(); generation += 1; job = {job_id: jobId.value.trim()}; await poll();}, jobActions);
   cancel.disabled = true; retry.disabled = true;
   on(form, 'submit', event => {
     event.preventDefault(); if (!available() || busy) return;
@@ -172,8 +185,11 @@ export function mountJobForm(root, {options, active, field, parseLimit, validate
       finally {if (current(ticket)) {busy = false; sync();}}
     })();
   });
-  form.append(actions); root.append(node('p', '不限覆盖来源实际返回范围。每批有资源预算，已完成页保留；关闭页面只停止轮询，取消需明确点击。'), form, status, results);
+  form.insertBefore(actions, recoveryMount);
+  form.insertBefore(recoveryHeading, recoveryMount);
+  form.append(jobActions); root.append(node('p', '不限覆盖来源实际返回范围。每批有资源预算，已完成页保留；关闭页面只停止轮询，取消需明确点击。'), node('h3', '创建拼图任务'), form, status, results);
   options.presentation?.actions(actions);
+  options.presentation?.actions(jobActions);
   sync();
   try {const saved = document.defaultView.sessionStorage.getItem(storageKey); if (saved) {jobId.value = saved; job = {job_id: saved}; void poll();}} catch { /* Manual recovery remains available. */ }
   return {
