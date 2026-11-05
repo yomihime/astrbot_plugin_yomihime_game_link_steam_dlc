@@ -1265,6 +1265,29 @@ test('Steam shortcuts keep finite1000 distinct from all and reject malformed dec
   } finally {f.close();}
 });
 
+test('Steam collage aspect choices display their actual ratios', () => {
+  const f = jobFixture();
+  try {
+    const aspect = f.container.querySelector('[name=aspect]');
+    assert.deepEqual([...aspect.options].map(option => [option.value, option.textContent]), [['2:3', '2:3'], ['9:16', '9:16'], ['1:2', '1:2']]);
+  } finally {f.close();}
+});
+
+test('Steam job status separates metrics, reason and recovery guidance', async () => {
+  const f = jobFixture();
+  try {
+    f.view.status = 'failed';
+    f.view.summary = {reason: 'resource_budget', generated: 1};
+    f.input('account', '123'); f.submit(); await settle(); await settle();
+    const status = f.container.querySelector('.steam-dlc-job-status');
+    const sections = [...status.querySelectorAll('p')].map(part => part.textContent);
+    assert.equal(status.getAttribute('role'), 'status');
+    assert.ok(sections.some(text => /已生成1/.test(text)));
+    assert.ok(sections.some(text => /资源预算不足/.test(text)));
+    assert.ok(sections.some(text => /不会从最后一项自动断点续跑/.test(text)));
+  } finally {f.close();}
+});
+
 test('Steam job cursor paginates results and cancellation uses exact current revision', async () => {
   let page = 0;
   const f = jobFixture({jobs: {

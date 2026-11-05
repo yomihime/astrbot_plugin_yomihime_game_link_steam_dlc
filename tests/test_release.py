@@ -216,6 +216,25 @@ class ReleaseResourcesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "references"):
             release.inventory(self.root)
 
+    def test_logo_must_be_declared_owned_and_digest_pinned(self):
+        logo = self.package / "steam/assets/steam.svg"
+        logo.parent.mkdir(parents=True)
+        logo.write_bytes(b'<svg xmlns="http://www.w3.org/2000/svg"/>')
+        self.module["display"]["logo_resource"] = "steam/assets/steam.svg"
+        self.save_manifest()
+        with self.assertRaisesRegex(ValueError, "references"):
+            release.inventory(self.root)
+        self.module["resources"].append({"path": "steam/assets/steam.svg", "sha256": hashlib.sha256(logo.read_bytes()).hexdigest()})
+        self.save_manifest()
+        self.assertIn("packages/steam_dlc/steam/assets/steam.svg", release.inventory(self.root))
+        logo.write_bytes(b"changed")
+        with self.assertRaisesRegex(ValueError, "bytes differ"):
+            release.inventory(self.root)
+        self.module["resources"][-1]["path"] = "dota2/assets/dota2.svg"
+        self.save_manifest()
+        with self.assertRaisesRegex(ValueError, "allowlist"):
+            release.inventory(self.root)
+
     def test_duplicate_resource_and_hardlink_are_rejected(self):
         self.module["resources"] *= 2
         self.save_manifest()

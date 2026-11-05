@@ -87,6 +87,7 @@ const CHOICE_LABELS = {profile: '玩家资料', stats: '玩家统计', last: '�
 const CREDENTIALS = {steam: [['credential_steam_key', 'Steam Web API Key']], dota2: [['credential_opendota_key', 'OpenDota Key（可选）']], cs2: [['credential_perfect', '完美扫码授权'], ['credential_fivee', '5E 会话 Token']]};
 LABELS.poster_limit_mode = '作品数量模式';
 CHOICE_LABELS.top = '按时长取前 N 项'; CHOICE_LABELS.all = '不限（来源实际返回范围）';
+Object.assign(CHOICE_LABELS, {'2:3': '2:3', '9:16': '9:16', '1:2': '1:2'});
 
 export function parsePosterLimit(value) {
   if (typeof value !== 'string' || value.length > 128) throw Error('数量必须是完整有限数值。');
@@ -973,7 +974,7 @@ export function mountController(container, options) {
         matchId.required = action.value === 'match';
       };
       listen(action, 'change', fields); fields();
-      root.append(node('p', '页面查询始终需要明确账号，不读取本人默认绑定。5E 使用 domain；官匹与 5E 单场仅限来源近期玩家摘要。', 'steam-dlc-hint'));
+      root.append(node('p', '页面查询始终需要明确账号，不读取本人默认绑定。5E 使用 domain；官匹与 5E 单场仅限来源近期玩家摘要。', 'steam-dlc-hint'), node('h3', '查询条件'));
     const submit = node('button', '查询', 'ui-button'); submit.type = 'submit'; submit.dataset.variant = 'primary'; submit.dataset.action = 'query';
     const actions = node('div', undefined, 'steam-dlc-actions'); actions.append(submit); queryForm.append(actions);
     let failedPreview = null, formRevision = 0;
@@ -1063,15 +1064,15 @@ export function mountController(container, options) {
     listen(queryForm, 'submit', event => { event.preventDefault(); void run(false); });
       const status = node('button', '刷新来源状态', 'ui-button'); status.type = 'button'; status.dataset.action = 'query-status';
       listen(status, 'click', () => { void run(true); }); actions.append(status);
-    root.append(queryForm, recovery, result);
+    root.append(queryForm, recovery, node('h3', '查询结果'), result);
     options.presentation?.actions(actions);
     void run(true);
   };
 
   if (module && options.routeId === 'home') {
-    root.append(node('p', module.summary));
     if (moduleId !== 'steam') {
       const status = node('section', undefined, 'steam-dlc-source-panel');
+      root.append(node('h3', '来源状态'));
       const refresh = node('button', '刷新来源状态', 'ui-button'); refresh.type = 'button'; refresh.dataset.action = 'refresh-status';
       const refreshStatus = async () => {
         if (!active() || pending) return;
@@ -1088,25 +1089,30 @@ export function mountController(container, options) {
       };
       listen(refresh, 'click', () => { void refreshStatus(); }); root.append(status, refresh); void refreshStatus();
     }
-    root.append(node('h3', '命令帮助'));
+    const help = node('details', undefined, 'steam-dlc-disclosure');
+    help.append(node('summary', '命令帮助'));
     const list = node('dl', undefined, 'steam-dlc-help');
     for (const [command, help] of module.commands) {
       const term = node('dt');
       term.append(node('code', command));
       list.append(term, node('dd', help));
     }
-    root.append(list);
+    help.append(list);
+    root.append(help);
     if (moduleId === 'steam') {
-      root.append(node('h3', '时长海报墙'));
-      root.append(node('p', '游戏生涯拼图用累计小时映射每张作品的目标面积，提供单机、标准和长玩预设。大图跨行、小图填空，封面保持纵向比例；旧布局可以显式选择。未知时长不补零。', 'steam-dlc-hint'));
-      root.append(node('p', '公开主页与近期记录各有其样本范围；完整游戏库需要可选 Steam Key，完整性以本次来源返回为准。默认纵向 2:3，可切换 9:16 或 1:2；作品数量和输出预算共同约束分页，兼容旧布局最多 200 项。包含全部应用会纳入软件，旧设置中的关闭值继续保留。', 'steam-dlc-hint'));
+      const details = node('details', undefined, 'steam-dlc-disclosure');
+      details.append(node('summary', '游戏生涯拼图说明'));
+      details.append(node('p', '游戏生涯拼图用累计小时映射每张作品的目标面积，提供单机、标准和长玩预设。大图跨行、小图填空，封面保持纵向比例；旧布局可以显式选择。未知时长不补零。', 'steam-dlc-hint'));
+      details.append(node('p', '公开主页与近期记录各有其样本范围；完整游戏库需要可选 Steam Key，完整性以本次来源返回为准。默认纵向 2:3，可切换 9:16 或 1:2；作品数量和输出预算共同约束分页，兼容旧布局最多 200 项。包含全部应用会纳入软件，旧设置中的关闭值继续保留。', 'steam-dlc-hint'));
+      root.append(details, node('h3', '缓存状态'));
       cacheValue = node('p', '尚未读取缓存状态。', 'steam-dlc-cache-value');
       cacheButton = node('button', '刷新缓存状态'); cacheButton.className = 'ui-button'; cacheButton.type = 'button'; cacheButton.dataset.action = 'refresh-cache';
       listen(cacheButton, 'click', () => { void refreshCache(); });
       root.append(cacheValue, cacheButton);
     }
-    if (moduleId === 'dota2') root.append(node('p', '账号可用 Dota ID32 或 SteamID64。订阅创建、查看和取消通过当前群或私聊中的命令完成。OpenDota Key 可选，匿名与有 Key 都遵守同一每小时预算；模型短评失败不会阻止基础通知。', 'steam-dlc-hint'));
+    if (moduleId === 'dota2') { const details = node('details', undefined, 'steam-dlc-disclosure'); details.append(node('summary', '账号与订阅说明'), node('p', '账号可用 Dota ID32 或 SteamID64。订阅创建、查看和取消通过当前群或私聊中的命令完成。OpenDota Key 可选，匿名与有 Key 都遵守同一每小时预算；模型短评失败不会阻止基础通知。', 'steam-dlc-hint')); root.append(details); }
   } else if (module && options.routeId === 'settings') {
+    root.append(node('h3', '普通设置'));
     form = node('form');
     listen(form, 'submit', event => { event.preventDefault(); void save(); });
     const actions = node('div', undefined, 'steam-dlc-actions');

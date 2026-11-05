@@ -53,7 +53,7 @@ export function mountWishlistForm(root, {options, active, field, say}) {
   listen(form, 'submit', event => {event.preventDefault(); void run(1);});
   listen(previous, 'click', () => {if (page > 1) void run(page - 1);});
   listen(next, 'click', () => {if (page < pages) void run(page + 1);});
-  root.append(node('p', '匿名读取第一方公开愿望单，每页20项，仅补全当前页商店资料。私有、空单、限流与请求失败分别报告。'), form, results);
+  root.append(node('p', '匿名读取第一方公开愿望单，每页20项，仅补全当前页商店资料。私有、空单、限流与请求失败分别报告。'), node('h3', '查询条件'), form, node('h3', '愿望单结果'), results);
   options.presentation?.actions(actions);
   sync();
   return {

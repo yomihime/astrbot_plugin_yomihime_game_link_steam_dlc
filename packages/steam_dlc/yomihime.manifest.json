@@ -855,11 +855,11 @@
         },
         {
           "path": "pages/steam/entry.js",
-          "sha256": "51dcadfb60fef4de5a5dc22a32fed22c4f3bdad690be62071cd98e3628076127"
+          "sha256": "86f4fa32becd7a7213828a6223f4ff5c46cf3afa532d52b8382a6b5f8e73de6f"
         },
         {
           "path": "pages/steam/style.css",
-          "sha256": "06a48bb5d92639a5059717bb990243ee94a79d82343a32e51ed7a04607fc0555"
+          "sha256": "888e4ce57f618bfbb77cfc38e647fef17775814b399042249371a32c6beaada5"
         }
       ],
       "sources": [
@@ -1802,11 +1802,11 @@
         },
         {
           "path": "pages/dota2/entry.js",
-          "sha256": "51dcadfb60fef4de5a5dc22a32fed22c4f3bdad690be62071cd98e3628076127"
+          "sha256": "86f4fa32becd7a7213828a6223f4ff5c46cf3afa532d52b8382a6b5f8e73de6f"
         },
         {
           "path": "pages/dota2/style.css",
-          "sha256": "06a48bb5d92639a5059717bb990243ee94a79d82343a32e51ed7a04607fc0555"
+          "sha256": "888e4ce57f618bfbb77cfc38e647fef17775814b399042249371a32c6beaada5"
         }
       ],
       "schedules": [
@@ -2495,11 +2495,11 @@
         },
         {
           "path": "pages/cs2/entry.js",
-          "sha256": "51dcadfb60fef4de5a5dc22a32fed22c4f3bdad690be62071cd98e3628076127"
+          "sha256": "86f4fa32becd7a7213828a6223f4ff5c46cf3afa532d52b8382a6b5f8e73de6f"
         },
         {
           "path": "pages/cs2/style.css",
-          "sha256": "06a48bb5d92639a5059717bb990243ee94a79d82343a32e51ed7a04607fc0555"
+          "sha256": "888e4ce57f618bfbb77cfc38e647fef17775814b399042249371a32c6beaada5"
         }
       ],
       "sources": [
@@ -3008,11 +3008,11 @@
         },
         {
           "path": "pages/deadlock/entry.js",
-          "sha256": "51dcadfb60fef4de5a5dc22a32fed22c4f3bdad690be62071cd98e3628076127"
+          "sha256": "86f4fa32becd7a7213828a6223f4ff5c46cf3afa532d52b8382a6b5f8e73de6f"
         },
         {
           "path": "pages/deadlock/style.css",
-          "sha256": "06a48bb5d92639a5059717bb990243ee94a79d82343a32e51ed7a04607fc0555"
+          "sha256": "888e4ce57f618bfbb77cfc38e647fef17775814b399042249371a32c6beaada5"
         }
       ],
       "sources": [

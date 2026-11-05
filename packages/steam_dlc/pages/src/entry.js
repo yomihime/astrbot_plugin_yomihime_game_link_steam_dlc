@@ -67,7 +67,7 @@ export function mount(container, options) {
       subtitle: settings ? '维护查询、输出设置与来源授权。' : module?.summary,
     }),
     h(SettingsLayout, {}, {
-      default: () => h(SettingsGroup, {title: settings ? '模块设置与来源' : workspaceTitle || '命令与可用状态', number: '01'}, {
+      default: () => h(SettingsGroup, {title: settings ? '模块设置与来源' : workspaceTitle || '状态与帮助', number: '01'}, {
         default: () => h('div', {ref: element => { host = element; }}),
       }),
       aside: () => h(Surface, {title: settings ? '设置说明' : '数据与账号'}, {default: () => [

@@ -14,6 +14,10 @@
 .steam-dlc-message:empty,.steam-dlc-field-error:empty { display:none; }
 .steam-dlc-help dt { margin-top:16px; overflow-wrap:anywhere; }
 .steam-dlc-help dd { margin:4px 0 12px; color:var(--ui-muted); }
+.steam-dlc-disclosure { border-top:1px solid var(--ui-border); padding:12px 0; }
+.steam-dlc-disclosure summary { cursor:pointer; font-weight:600; min-height:40px; display:list-item; padding:8px 0; }
+.steam-dlc-disclosure summary:focus-visible { outline:2px solid var(--ui-accent); outline-offset:3px; }
+.steam-dlc-source-panel:empty { display:none; }
 .steam-dlc-view .steam-dlc-cache-value { overflow-wrap:anywhere; }
 .steam-dlc-credentials { margin-top:32px; border-top:1px solid var(--ui-border); padding-top:16px; }
 .steam-dlc-credential { max-width:640px; margin:20px 0; min-width:0; }
@@ -22,11 +26,13 @@
 .steam-dlc-credential-status { color:var(--ui-muted); font-size:13px; }
 .steam-dlc-qr { display:block; width:260px; max-width:100%; height:auto; margin:12px 0; }
 .steam-dlc-qr:not([src]) { display:none; }
-.steam-dlc-public-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.steam-dlc-public-form { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; }
 .steam-dlc-public-field { display:grid; gap:6px; min-width:0; }
 .steam-dlc-public-field input,.steam-dlc-public-field select { width:100%; min-width:0; }
 .steam-dlc-public-form .steam-dlc-actions { grid-column:1/-1; margin-top:4px; }
 .steam-dlc-public-result { margin-top:24px; }
+.steam-dlc-job-status { border-left:3px solid var(--ui-border); padding:4px 0 4px 12px; margin:16px 0; overflow-wrap:anywhere; }
+.steam-dlc-job-status p { margin:6px 0; }
 .steam-dlc-preview { margin:20px 0; display:grid; gap:12px; justify-items:start; }
 .steam-dlc-preview img { display:block; max-width:100%; height:auto; }
 .steam-dlc-table { max-width:100%; overflow-x:auto; }
