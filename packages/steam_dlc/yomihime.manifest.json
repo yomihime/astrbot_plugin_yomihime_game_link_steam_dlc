@@ -859,7 +859,7 @@
         },
         {
           "path": "pages/steam/style.css",
-          "sha256": "dcc75a75ecf92ab8d93ef17fa95540603106e55e2238b3d64d2442f3f1f3af8c"
+          "sha256": "bb75abbfa33baff0c1279de0e813f675d3f9633f1180142fc7295c6061996a7c"
         }
       ],
       "sources": [
@@ -1806,7 +1806,7 @@
         },
         {
           "path": "pages/dota2/style.css",
-          "sha256": "dcc75a75ecf92ab8d93ef17fa95540603106e55e2238b3d64d2442f3f1f3af8c"
+          "sha256": "bb75abbfa33baff0c1279de0e813f675d3f9633f1180142fc7295c6061996a7c"
         }
       ],
       "schedules": [
@@ -2499,7 +2499,7 @@
         },
         {
           "path": "pages/cs2/style.css",
-          "sha256": "dcc75a75ecf92ab8d93ef17fa95540603106e55e2238b3d64d2442f3f1f3af8c"
+          "sha256": "bb75abbfa33baff0c1279de0e813f675d3f9633f1180142fc7295c6061996a7c"
         }
       ],
       "sources": [
@@ -3012,7 +3012,7 @@
         },
         {
           "path": "pages/deadlock/style.css",
-          "sha256": "dcc75a75ecf92ab8d93ef17fa95540603106e55e2238b3d64d2442f3f1f3af8c"
+          "sha256": "bb75abbfa33baff0c1279de0e813f675d3f9633f1180142fc7295c6061996a7c"
         }
       ],
       "sources": [
