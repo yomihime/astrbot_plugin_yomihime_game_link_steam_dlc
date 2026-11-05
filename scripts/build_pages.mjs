@@ -1,6 +1,7 @@
 import {resolve, dirname, posix} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
-import {readFile, writeFile} from 'node:fs/promises';
+import {lstat, mkdir, readFile, realpath, writeFile} from 'node:fs/promises';
+import {moduleAppearance} from '../packages/steam_dlc/pages/src/appearance.js';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // CI checks out the paired Core separately; local development keeps its worktree.
@@ -8,6 +9,39 @@ export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const defaultCore = resolve(root, process.env.YGL_CORE_ROOT || 'worktrees/game-link-dlc-support');
 export const modules = ['steam', 'dota2', 'cs2', 'deadlock'];
 export const externalModules = ['vue', 'naive-ui', '@game-link/ui'];
+
+export function presentationPath(moduleId) {
+  if (!modules.includes(moduleId)) throw Error('Invalid presentation owner');
+  return `pages/dist/presentation-${moduleId}.js`;
+}
+
+export function buildPresentation(moduleId) {
+  presentationPath(moduleId);
+  const appearance = moduleAppearance(moduleId);
+  return `export const presentation = ${JSON.stringify({schemaVersion: 1, appearance})};\n`;
+}
+
+async function presentationFileExists(destination) {
+  const current = await lstat(destination).catch(error => {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  });
+  if (!current) return false;
+  if (!current.isFile() || current.nlink > 1 || await realpath(destination) !== destination) {
+    throw Error('Presentation output must be a regular unshared file at its declared path');
+  }
+  return true;
+}
+
+async function writePresentation(destination, code) {
+  const directory = dirname(destination);
+  const parent = dirname(directory);
+  if (await realpath(parent) !== parent) throw Error('Presentation output parent is not a direct path');
+  await mkdir(directory, {recursive: true});
+  if (await realpath(directory) !== directory) throw Error('Presentation output directory is not a direct path');
+  await presentationFileExists(destination);
+  await writeFile(destination, code);
+}
 
 /** Mirrors Core's fixed-pair external projection, not builtin page paths.
  * Digest changes the directory name but not its depth, avoiding a hash cycle. */
@@ -57,6 +91,14 @@ async function main() {
     const destination = resolve(root, `packages/steam_dlc/pages/${moduleId}/entry.js`);
     const current = await readFile(destination, 'utf8').catch(error => { if (error.code === 'ENOENT') return null; throw error; });
     if (current !== code) { drift.push(moduleId); if (!check) await writeFile(destination, code); }
+    const path = presentationPath(moduleId);
+    const presentation = buildPresentation(moduleId);
+    const target = resolve(root, 'packages/steam_dlc', path);
+    const existing = await presentationFileExists(target) ? await readFile(target, 'utf8') : null;
+    if (existing !== presentation) {
+      drift.push(path);
+      if (!check) await writePresentation(target, presentation);
+    }
   }
   if (check && drift.length) throw Error('Page build drift: ' + drift.join(', '));
   console.log(JSON.stringify({inspection: 'passed', mode: check ? 'check' : 'build', changed: drift, runtimeImport: runtimeImport('steam'), bytes: Buffer.byteLength(code)}));

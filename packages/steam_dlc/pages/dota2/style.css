@@ -69,3 +69,14 @@
 .steam-dlc-module-mark--cs2 { color:var(--ui-brand-cs2,var(--ui-muted)); }
 .steam-dlc-module-mark--deadlock { color:var(--ui-brand-deadlock,var(--ui-muted)); }
 @media(max-width:399px) { .steam-dlc-module-mark { width:48px; height:48px; margin-left:12px; } }
+
+/* Modern Core supplies the module's resolved logo slot. */
+.ui-page-template.steam-dlc-view .steam-dlc-module-mark {
+  color:var(--ui-logo);
+  float:none;
+  margin:0;
+}
+.ui-page-template.steam-dlc-view .steam-dlc-config-group {
+  border-top:0;
+  padding-top:0;
+}

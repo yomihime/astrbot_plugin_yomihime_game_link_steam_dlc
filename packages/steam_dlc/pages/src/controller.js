@@ -1,3 +1,4 @@
+import {primaryForm} from './template-adapter.js';
 // Configuration lifecycle controller shared as source by four independently
 // captured page builds. Presentation components live in the public facade.
 import {mountJobForm} from './job-controller.js';
@@ -174,6 +175,7 @@ function partitionFor(context, key, claim) {
 /** Controller behind the public facade; contains no Core implementation imports. */
 export function mountController(container, options) {
   const document = container.ownerDocument;
+  const template = options.presentation?.template;
   const initialIdentity = identity(options.context);
   const moduleId = options.context.owner.startsWith('steam_dlc/')
     ? options.context.owner.slice('steam_dlc/'.length) : '';
@@ -214,7 +216,7 @@ export function mountController(container, options) {
   const message = node('p', '', 'steam-dlc-message');
   message.setAttribute('role', 'status');
   message.setAttribute('aria-live', 'polite');
-  root.append(availability);
+  if (!template) root.append(availability);
   container.replaceChildren(root);
   const current = () => {
     if (options.scope.signal.aborted || !options.scope.isCurrent()) scopeInvalid = true;
@@ -237,12 +239,13 @@ export function mountController(container, options) {
   };
   const say = (text, tone = 'warning') => {
     if (messageTimer !== null) { clearTimeout(messageTimer); messageTimer = null; }
-    message.textContent = text;
+    if (template) template.publish({notice: text ? {key: 'custom', text, tone, role: 'status'} : undefined});
+    else message.textContent = text;
     message.dataset.tone = tone;
     if (text && tone === 'success') {
       messageTimer = setTimeout(() => {
         messageTimer = null;
-        if (current()) message.textContent = '';
+        if (current()) {if (template) template.publish({notice: undefined}); else message.textContent = '';}
       }, 3500);
     }
   };
@@ -255,7 +258,7 @@ export function mountController(container, options) {
         : '当前页面入口不可用，请在模块管理中刷新状态后重新进入。';
   };
 
-  let form, saveButton, refreshButton, discardButton;
+  let form, saveButton, refreshButton, discardButton, themeReset;
   const retainDrafts = () => {
     if (!partition || !current()) return;
     partition.drafts = new Map([...drafts].filter(([name, draft]) => {
@@ -274,6 +277,7 @@ export function mountController(container, options) {
     revoked = true; generation += 1; pending = false; ready = false;
     if (drafts.size) draftVersion += 1;
     drafts.clear(); baseline = null;
+    template?.publish({themeField: undefined, themeValue: '', themeError: undefined});
     for (const { control } of controls.values()) control.value = '';
     credentialGeneration += 1; stopAuthorization(); clearCredentialInputs(); credentialSnapshot = null; authorizationSession = null;
     credentialPending = false; authorizationPending = false;
@@ -282,10 +286,21 @@ export function mountController(container, options) {
     retainDrafts();
     updateAvailability();
     root.setAttribute('aria-busy', String(pending || credentialPending));
-    if (saveButton) {
-      saveButton.setAttribute('aria-disabled', String(!active() || pending || credentialPending || authorizationSession?.state === 'waiting' || !ready || !drafts.size));
-      refreshButton.setAttribute('aria-disabled', String(!active() || pending || credentialPending));
-      discardButton.setAttribute('aria-disabled', String(!active() || pending || credentialPending || !drafts.size));
+    if (template) {
+      template.publish({availability: availability.textContent, pending: pending || credentialPending});
+      if (options.routeId === 'home') template.actionState('refresh', {disabled: !active(), busy: pending});
+      if (form) {
+        template.actionState('save', {disabled: !active() || authorizationSession?.state === 'waiting' || (!pending && (!ready || !drafts.size)), busy: pending || credentialPending});
+        template.actionState('refresh', {disabled: !active()});
+        template.actionState('discard', {disabled: !active() || !drafts.size});
+        template.publish({themeReadonly: !active() || !baseline});
+        themeReset?.setAttribute('aria-disabled', String(!active() || !baseline));
+      }
+    }
+    if (form) {
+      saveButton?.setAttribute('aria-disabled', String(!active() || pending || credentialPending || authorizationSession?.state === 'waiting' || !ready || !drafts.size));
+      refreshButton?.setAttribute('aria-disabled', String(!active() || pending || credentialPending));
+      discardButton?.setAttribute('aria-disabled', String(!active() || pending || credentialPending || !drafts.size));
       for (const { control, reset } of controls.values()) {
         control.disabled = !active() || !baseline;
         reset.setAttribute('aria-disabled', String(!active() || !baseline));
@@ -339,14 +354,25 @@ export function mountController(container, options) {
     if (next === undefined) drafts.delete(name);
     else drafts.set(name, next);
     draftVersion += 1;
-    controls.get(name).error.textContent = '';
-    controls.get(name).control.setAttribute('aria-invalid', 'false');
+    if (template && name === 'reply_theme') template.publish({themeError: undefined});
+    else controls.get(name).error.textContent = '';
+    controls.get(name)?.control.setAttribute('aria-invalid', 'false');
     const cannotRetain = drafts.size && (!partition || [...drafts.values()].some(value => value.kind === 'set'
       && typeof (value.rawValue ?? value.value) === 'string' && (value.rawValue ?? value.value).length > MAX_RETAINED_VALUE_LENGTH));
     say(cannotRetain ? '输入超过草稿保留上限，请先修正再切页。' : drafts.size ? '有未保存的修改。' : '', 'warning');
     sync();
   };
   const displayValues = () => {
+    if (template) {
+      const name = 'reply_theme', descriptor = baseline.descriptors[name], choices = choicesFor(name);
+      template.publish({
+        themeField: {id: name, label: LABELS[name], control: 'select', hint: descriptor.description,
+          choices: choices.map(({label}, index) => ({value: String(index), label}))},
+        themeValue: String(choices.findIndex(choice => same(choice.value, effective(name)))),
+        themeError: baseline.fields[name].state !== 'valid' && !drafts.has(name)
+          ? '当前配置无效，请修改或恢复默认后保存。' : undefined,
+      });
+    }
     for (const [name, { control, error, hint }] of controls) {
       hint.textContent = baseline.descriptors[name].description;
       const value = effective(name);
@@ -365,16 +391,39 @@ export function mountController(container, options) {
       control.setAttribute('aria-invalid', String(Boolean(error.textContent)));
     }
   };
+  let fieldsBuilt = false;
   const buildFields = () => {
     const groups = new Map();
     const groupTitle = name => moduleId === 'steam' && name.startsWith('poster_') ? '游戏生涯拼图'
       : moduleId === 'dota2' && ['subscription_enabled', 'poll_interval_seconds', 'opendota_rph', 'commentary_enabled'].includes(name) ? '订阅与数据来源' : '查询与回复';
     for (const name of fieldNames) {
+      if (template && name === 'reply_theme') {
+        template.bind(name, value => {
+          if (!active() || !baseline) return;
+          const choice = choicesFor(name)[Number(value)];
+          if (choice) edit(name, choice.value === null ? {kind: 'clear'} : {kind: 'set', value: choice.value});
+          displayValues();
+        });
+        const reset = node('button', template.text('resetDefault'), 'ui-button');
+        themeReset = reset;
+        reset.type = 'button';
+        reset.dataset.action = 'reset-reply_theme';
+        listen(reset, 'click', () => {
+          if (!active() || !baseline) return;
+          edit(name, {kind: 'clear'});
+          displayValues();
+        });
+        form.append(reset);
+        continue;
+      }
       const title = groupTitle(name);
       if (!groups.has(title)) {
         const section = node('section', undefined, 'steam-dlc-config-group');
-        section.append(node('h3', title));
-        form.insertBefore(section, form.querySelector(':scope > .steam-dlc-actions'));
+        if (template) (template.groupHost(title) || form).append(section);
+        else {
+          section.append(node('h3', title));
+          form.insertBefore(section, form.querySelector(':scope > .steam-dlc-actions'));
+        }
         groups.set(title, {section, grid: options.presentation?.grid(section)});
       }
       const {section, grid} = groups.get(title);
@@ -401,7 +450,7 @@ export function mountController(container, options) {
         if (descriptor.value_schema.maximum !== undefined) control.max = String(descriptor.value_schema.maximum); control.step = '1';
         if (name === 'poster_limit') {control.type = 'text'; control.inputMode = 'decimal'; control.removeAttribute('min'); control.removeAttribute('max');}
       }
-      const reset = node('button', '恢复默认');
+      const reset = node('button', template?.text('resetDefault') || '恢复默认');
       reset.className = 'ui-button';
       reset.type = 'button';
       reset.dataset.action = `reset-${name}`;
@@ -452,7 +501,7 @@ export function mountController(container, options) {
       const field = baseline.fields[name];
       if (draft.kind === 'clear' ? !field.present : field.state === 'valid' && same(field.value, draft.value)) { drafts.delete(name); draftVersion += 1; }
     }
-    if (!controls.size) buildFields();
+    if (!fieldsBuilt) {buildFields(); fieldsBuilt = true;}
     displayValues();
     ready = true;
   };
@@ -513,8 +562,11 @@ export function mountController(container, options) {
           catch (error) { problem = error.message; }
         }
       } else if (isChoice(name) && !choicesFor(name).some(choice => same(choice.value, draft.value))) problem = '请选择当前可用的选项。';
-      controls.get(name).error.textContent = problem;
-      controls.get(name).control.setAttribute('aria-invalid', String(Boolean(problem)));
+      if (template && name === 'reply_theme') template.publish({themeError: problem || undefined});
+      else {
+        controls.get(name).error.textContent = problem;
+        controls.get(name).control.setAttribute('aria-invalid', String(Boolean(problem)));
+      }
       if (problem) valid = false;
     }
     if (controls.has('poster_mode') && effective('poster_mode') === 'legacy' && effective('poster_limit') > 200) {
@@ -969,7 +1021,8 @@ export function mountController(container, options) {
     return success;
   };
   const buildPublicForm = () => {
-    const queryForm = node('form', undefined, 'steam-dlc-public-form');
+    const primary = primaryForm(root, options, {id: 'query', legacyLabel: '查询', className: 'steam-dlc-public-form'});
+    const {body: queryForm, actions} = primary;
     const result = node('section', undefined, 'steam-dlc-public-result'); result.setAttribute('aria-live', 'polite');
     const grid = options.presentation?.grid(queryForm) || queryForm;
     const account = publicField(grid, 'account', '玩家账号（SteamID64 / 5E domain）');
@@ -986,9 +1039,9 @@ export function mountController(container, options) {
         matchId.required = action.value === 'match';
       };
       listen(action, 'change', fields); fields();
-      root.append(node('p', '页面查询始终需要明确账号，不读取本人默认绑定。5E 使用 domain；官匹与 5E 单场仅限来源近期玩家摘要。', 'steam-dlc-hint'), node('h3', '查询条件'));
-    const submit = node('button', '查询', 'ui-button'); submit.type = 'submit'; submit.dataset.variant = 'primary'; submit.dataset.action = 'query';
-    const actions = node('div', undefined, 'steam-dlc-actions'); actions.append(submit); queryForm.append(actions);
+      root.append(node('p', '页面查询始终需要明确账号，不读取本人默认绑定。5E 使用 domain；官匹与 5E 单场仅限来源近期玩家摘要。', 'steam-dlc-hint'));
+      if (!template) root.append(node('h3', '查询条件'));
+    queryForm.append(actions);
     let failedPreview = null, formRevision = 0;
     const recovery = node('div', undefined, 'steam-dlc-actions'); recovery.hidden = true;
     const retry = node('button', '重试资料卡预览', 'ui-button'); retry.type = 'button'; retry.dataset.action = 'query-preview-retry';
@@ -999,7 +1052,7 @@ export function mountController(container, options) {
     const clearRecovery = () => {formRevision += 1; failedPreview = null; recovery.hidden = true;};
     listen(queryForm, 'input', clearRecovery); listen(queryForm, 'change', clearRecovery);
     const syncQuery = () => {
-      queryForm.setAttribute('aria-busy', String(pending));
+      primary.sync(!active(), pending);
       for (const button of [...actions.querySelectorAll('button'), retry, textOnly]) button.setAttribute('aria-disabled', String(!active() || pending));
       for (const input of queryForm.querySelectorAll('input,select')) input.disabled = !active();
       if (active()) fields();
@@ -1015,7 +1068,7 @@ export function mountController(container, options) {
       const explicitRecovery = mode !== 'normal';
       if (explicitRecovery && (!failedPreview || failedPreview.formRevision !== formRevision)) return;
       const parameters = explicitRecovery ? {...failedPreview.parameters} : statusOnly ? {} : {account: account.value.trim()};
-      if (!statusOnly && !explicitRecovery && (!parameters.account || !queryForm.checkValidity())) { say('请填写明确账号并检查输入范围。', 'error'); return; }
+      if (!statusOnly && !explicitRecovery && (!parameters.account || ![...queryForm.querySelectorAll('input,select')].every(input => input.checkValidity()))) { say('请填写明确账号并检查输入范围。', 'error'); return; }
       if (!statusOnly && !explicitRecovery) {
         Object.assign(parameters, {action: action.value, platform: platform.value});
         if (!season.disabled && season.value.trim()) parameters.season = season.value.trim();
@@ -1073,10 +1126,11 @@ export function mountController(container, options) {
     };
     listen(retry, 'click', () => { void run(false, 'preview'); });
     listen(textOnly, 'click', () => { void run(false, 'text'); });
-    listen(queryForm, 'submit', event => { event.preventDefault(); void run(false); });
+    listeners.push(primary.bind(() => run(false)));
       const status = node('button', '刷新来源状态', 'ui-button'); status.type = 'button'; status.dataset.action = 'query-status';
       listen(status, 'click', () => { void run(true); }); actions.append(status);
-    root.append(queryForm, recovery, node('h3', '查询结果'), result);
+    root.append(queryForm);
+    primary.result(recovery, node('h3', '查询结果'), result);
     options.presentation?.actions(actions);
     void run(true);
   };
@@ -1099,7 +1153,14 @@ export function mountController(container, options) {
           if (current() && ticket === previewGeneration) { pending = false; refresh.setAttribute('aria-disabled', String(!active())); sync(); }
         }
       };
-      listen(refresh, 'click', () => { void refreshStatus(); }); root.append(status, refresh); void refreshStatus();
+      if (template) {
+        template.bind('refresh', refreshStatus, {label: refresh.textContent});
+        root.append(status);
+      } else {
+        listen(refresh, 'click', () => { void refreshStatus(); });
+        root.append(status, refresh);
+      }
+      void refreshStatus();
     }
     const help = node('details', undefined, 'steam-dlc-disclosure');
     help.append(node('summary', '命令帮助'));
@@ -1119,11 +1180,28 @@ export function mountController(container, options) {
       root.append(details, node('h3', '缓存状态'));
       cacheValue = node('p', '尚未读取缓存状态。', 'steam-dlc-cache-value');
       cacheButton = node('button', '刷新缓存状态'); cacheButton.className = 'ui-button'; cacheButton.type = 'button'; cacheButton.dataset.action = 'refresh-cache';
-      listen(cacheButton, 'click', () => { void refreshCache(); });
-      root.append(cacheValue, cacheButton);
+      if (template) {
+        template.bind('refresh', refreshCache, {label: cacheButton.textContent});
+        root.append(cacheValue);
+      } else {
+        listen(cacheButton, 'click', () => { void refreshCache(); });
+        root.append(cacheValue, cacheButton);
+      }
     }
     if (moduleId === 'dota2') { const details = node('details', undefined, 'steam-dlc-disclosure'); details.append(node('summary', '账号与订阅说明'), node('p', '账号可用 Dota ID32 或 SteamID64。订阅创建、查看和取消通过当前群或私聊中的命令完成。OpenDota Key 可选，匿名与有 Key 都遵守同一每小时预算；模型短评失败不会阻止基础通知。', 'steam-dlc-hint')); root.append(details); }
   } else if (module && options.routeId === 'settings') {
+    const discard = () => {
+      if (!active() || pending || !baseline) return;
+      if (drafts.size) draftVersion += 1;
+      drafts.clear(); displayValues(); say('已放弃本模块修改。', 'success'); sync();
+    };
+    if (template) {
+      form = node('div');
+      root.append(form);
+      template.bind('save', save, {type: 'submit', disabled: true});
+      template.bind('refresh', () => read(true), {});
+      template.bind('discard', discard, {});
+    } else {
     form = node('form');
     listen(form, 'submit', event => { event.preventDefault(); void save(); });
     const actions = node('div', undefined, 'steam-dlc-actions');
@@ -1141,15 +1219,12 @@ export function mountController(container, options) {
     discardButton.type = 'button';
     discardButton.dataset.action = 'discard';
     listen(refreshButton, 'click', () => { void read(true); });
-    listen(discardButton, 'click', () => {
-      if (!active() || pending || !baseline) return;
-      if (drafts.size) draftVersion += 1;
-      drafts.clear(); displayValues(); say('已放弃本模块修改。', 'success'); sync();
-    });
+    listen(discardButton, 'click', discard);
     actions.append(saveButton, refreshButton, discardButton);
     options.presentation?.actions(actions);
     root.append(form);
     form.append(actions);
+    }
     root.append(node('p', '回复主题中的“跟随核心”清除模块覆盖值。恢复默认先形成草稿，保存后生效。', 'steam-dlc-hint'));
   } else if (moduleId === 'cs2' && options.routeId === 'query') buildPublicForm(false);
   else if (moduleId === 'steam' && options.routeId === 'collage') {
@@ -1171,7 +1246,7 @@ export function mountController(container, options) {
     listeners.push(analysis.dispose);
   }
   else root.append(node('p', '该页面入口未声明，请返回模块列表重新进入。'));
-  root.append(message);
+  if (!template) root.append(message);
 
   const dispose = () => {
     if (disposed) return;

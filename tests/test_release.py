@@ -118,6 +118,38 @@ class ReleaseResourcesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "allowlist"):
             release.inventory(self.root)
 
+    def test_optional_presentation_is_hash_pinned_and_separate_from_business(self):
+        relative = "pages/dist/presentation-steam.js"
+        path = self.package / relative
+        path.parent.mkdir(parents=True)
+        content = b"export const presentation = {schemaVersion: 1};\n"
+        path.write_bytes(content)
+        self.assertNotIn("packages/steam_dlc/" + relative, release.inventory(self.root))
+        row = {"path": relative, "sha256": hashlib.sha256(content).hexdigest()}
+        self.module["resources"].append(row)
+        self.save_manifest()
+        self.assertEqual(
+            release.inventory(self.root)["packages/steam_dlc/" + relative], content
+        )
+        path.write_bytes(b"changed")
+        with self.assertRaisesRegex(ValueError, "bytes differ"):
+            release.inventory(self.root)
+        path.write_bytes(content)
+        self.module["pages"].append({"entry": relative})
+        self.save_manifest()
+        with self.assertRaisesRegex(ValueError, "business page resource"):
+            release.inventory(self.root)
+        self.module["pages"].pop()
+        for wrong in (
+            "pages/dist/presentation-cs2.js",
+            "pages/dist/presentation-steam.css",
+        ):
+            with self.subTest(path=wrong):
+                row["path"] = wrong
+                self.save_manifest()
+                with self.assertRaisesRegex(ValueError, "allowlist"):
+                    release.inventory(self.root)
+
     def test_shipped_logos_are_exactly_four_pinned_passive_svgs(self):
         from xml.etree import ElementTree
 

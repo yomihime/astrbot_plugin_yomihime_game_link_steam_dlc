@@ -33,6 +33,8 @@ def synchronize(root=ROOT, *, check=False):
             "entry.js": source_bytes(package / base / "entry.js", root),
             "style.css": style,
         }
+        presentation_path = f"pages/dist/presentation-{module_id}.js"
+        presentation = source_bytes(package / presentation_path, root)
         # The digest changes a directory name, never projection depth.
         projected_entry = (
             f"module-assets/steam_dlc/{module_id}/pages/p{'0' * 64}/{base}/entry.js"
@@ -147,15 +149,29 @@ def synchronize(root=ROOT, *, check=False):
                     **common,
                 }
             )
-        page_resource_paths = {f"{base}/{name}" for name in sources}
-        resources = [
-            resource
-            for resource in module.get("resources", [])
-            if resource["path"] not in page_resource_paths
-        ] + [
-            {"path": f"{base}/{name}", "sha256": hashlib.sha256(payload).hexdigest()}
-            for name, payload in sources.items()
-        ]
+        page_resource_paths = {f"{base}/{name}" for name in sources} | {
+            presentation_path
+        }
+        resources = (
+            [
+                resource
+                for resource in module.get("resources", [])
+                if resource["path"] not in page_resource_paths
+            ]
+            + [
+                {
+                    "path": f"{base}/{name}",
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                }
+                for name, payload in sources.items()
+            ]
+            + [
+                {
+                    "path": presentation_path,
+                    "sha256": hashlib.sha256(presentation).hexdigest(),
+                }
+            ]
+        )
         if module.get("pages") != pages or module.get("resources") != resources:
             drift.append(f"manifest:{module_id}")
             if not check:

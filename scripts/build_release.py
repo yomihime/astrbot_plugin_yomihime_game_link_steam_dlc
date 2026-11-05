@@ -150,6 +150,7 @@ def inventory(root):
     resources = {}
     for module in manifest["modules"]:
         declared = set()
+        presentation = f"pages/dist/presentation-{module['module_id']}.js"
         for resource in module.get("resources", []):
             relative = resource["path"]
             page_resource = isinstance(relative, str) and relative in {
@@ -161,7 +162,7 @@ def inventory(root):
             )
             if (
                 not isinstance(relative, str)
-                or not (page_resource or logo_resource)
+                or not (page_resource or logo_resource or relative == presentation)
                 or relative.casefold() in resources
                 or re.fullmatch(r"[0-9a-f]{64}", resource["sha256"]) is None
             ):
@@ -172,6 +173,10 @@ def inventory(root):
         referenced = {
             name for page in pages for name in (page["entry"], *page.get("styles", []))
         }
+        if presentation in referenced:
+            raise ValueError("presentation cannot be a business page resource")
+        if presentation in declared:
+            referenced.add(presentation)
         logo = module.get("display", {}).get("logo_resource")
         if logo is not None:
             if logo != f"{module['module_id']}/assets/{module['module_id']}.svg":

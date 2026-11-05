@@ -5,7 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {buildPage, defaultCore, modules, projectedEntry, runtimeImport} from '../../scripts/build_pages.mjs';
+import {buildPage, buildPresentation, defaultCore, modules, presentationPath, projectedEntry, runtimeImport} from '../../scripts/build_pages.mjs';
 
 // REQ-04/06/08: this matrix comes from required published product entries,
 // independently of the generator's current list and direct mount fixtures.
@@ -59,6 +59,32 @@ test('published manifest closes the required module route and public explicit ca
   assertPublishedRoutes(manifest);
 });
 
+test('each published presentation is a pure owner-specific palette with the approved colors', async () => {
+  const packageRoot = new URL('../../packages/steam_dlc/', import.meta.url);
+  const manifest = JSON.parse(await readFile(new URL('yomihime.manifest.json', packageRoot), 'utf8'));
+  const expected = {
+    steam: ['#3478aa', '#72b8e8'],
+    dota2: ['#b63d34', '#ed776c'],
+    cs2: ['#b46b1d', '#f0af61'],
+    deadlock: ['#76599d', '#b99bdd'],
+  };
+  for (const module of manifest.modules) {
+    const id = module.module_id;
+    const path = presentationPath(id);
+    const declarations = module.resources.filter(item => item.path.startsWith('pages/dist/'));
+    assert.deepEqual(declarations.map(item => item.path), [path]);
+    assert.ok(module.pages.every(page => page.entry !== path && !page.styles.includes(path)));
+    const bytes = await readFile(new URL(path, packageRoot));
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), declarations[0].sha256);
+    assert.equal(bytes.toString('utf8'), buildPresentation(id));
+    const exports = await import('data:text/javascript;base64,' + bytes.toString('base64'));
+    const [light, dark] = expected[id];
+    assert.deepEqual(Object.keys(exports), ['presentation']);
+    assert.deepEqual(exports.presentation, {schemaVersion: 1, appearance: {light: {logo: light}, dark: {logo: dark}}});
+  }
+  assert.throws(() => buildPresentation('steam_extra'), /Invalid presentation owner/);
+});
+
 test('published auxiliary descriptors select their real built forms with only the declared capability', async () => {
   const manifest = JSON.parse(await readFile(new URL('../../packages/steam_dlc/yomihime.manifest.json', import.meta.url), 'utf8'));
   assertPublishedRoutes(manifest);
@@ -72,7 +98,7 @@ test('published auxiliary descriptors select their real built forms with only th
     }
   }
   const {JSDOM} = await import('jsdom');
-  const {mount, installDOM} = await import('./source-build.mjs');
+  const {mount, installDOM, runtime} = await import('./source-build.mjs');
   for (const module of manifest.modules) {
     for (const descriptor of module.pages.filter(page => ['wishlist', 'analysis'].includes(page.route_id))) {
       const dom = new JSDOM('<!doctype html><main></main>', {url: 'http://localhost/'});
@@ -97,10 +123,21 @@ test('published auxiliary descriptors select their real built forms with only th
       try {
         assert.ok(container.querySelector('[name=account]'), 'published route must mount its explicit account form');
         assert.doesNotMatch(container.textContent, /该页面入口未声明/);
+        // The Core template publishes its bound action on the first Vue render.
+        await runtime.nextTick();
         assert.equal(calls.length, 0, 'no automatic account lookup or query');
-        container.querySelector('[name=account]').value = '123';
-        if (descriptor.route_id === 'analysis') container.querySelector('[name=match_id]').value = '12345';
-        container.querySelector('form').dispatchEvent(new dom.window.Event('submit', {bubbles: true, cancelable: true}));
+        const form = container.querySelector('form');
+        const submit = form.querySelector('button[type=submit]');
+        assert.ok(submit && !submit.disabled, 'the published route is ready for a user submission');
+        const enter = (name, value) => {
+          const input = form.elements.namedItem(name);
+          input.value = value;
+          input.dispatchEvent(new dom.window.Event('input', {bubbles: true}));
+        };
+        enter('account', '123');
+        if (descriptor.route_id === 'analysis') enter('match_id', '12345');
+        assert.equal(calls.length, 0, 'entering the fields does not query');
+        form.requestSubmit(submit);
         for (let i = 0; i < 16; i++) await Promise.resolve();
         assert.deepEqual(calls, descriptor.route_id === 'wishlist'
           ? [['wishlist_explicit', {account: '123', country: 'CN', language: 'schinese', page: 1}]]
