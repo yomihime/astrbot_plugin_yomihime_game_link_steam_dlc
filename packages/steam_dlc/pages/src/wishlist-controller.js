@@ -2,15 +2,18 @@ import {primaryForm} from './template-adapter.js';
 export function mountWishlistForm(root, {options, active, field, say}) {
   const document = root.ownerDocument, cleanups = [];
   let generation = 0, disposed = false, pending = false, page = 1, pages = 1;
-  const problem = message => Object.assign(Error(message), {publicMessage: message});
-  const node = (tag, text) => {const value = document.createElement(tag); if (text !== undefined) value.textContent = text; return value;};
+  const {text: t, bind} = options.copy;
+  const copy = (key, params) => () => t(`wishlist.${key}`, params);
+  const publicKey = Symbol();
+  const problem = key => Object.assign(Error(key), {[publicKey]: key});
+  const node = (tag, text) => {const value = document.createElement(tag); if (text) bind(value, text); return value;};
   const listen = (target, type, callback) => {target.addEventListener(type, callback); cleanups.push(() => target.removeEventListener(type, callback));};
-  const primary = primaryForm(root, options, {id: 'wishlist-query', label: '读取愿望单'});
+  const primary = primaryForm(root, options, {id: 'wishlist-query', label: copy('query')});
   const {body: form, actions} = primary, grid = options.presentation?.grid(form) || form;
-  const account = field(grid, 'account', 'SteamID64 / Dota ID32（明确账号）');
-  const country = field(grid, 'country', '地区', null, 'CN');
-  const language = field(grid, 'language', 'Steam语言', null, 'schinese');
-  const previous = node('button', '上一页'), next = node('button', '下一页');
+  const account = field(grid, 'account', copy('account'));
+  const country = field(grid, 'country', copy('region'), null, 'CN');
+  const language = field(grid, 'language', copy('language'), null, 'schinese');
+  const previous = node('button', copy('previous')), next = node('button', copy('next'));
   for (const [button, name] of [[previous, 'wishlist-previous'], [next, 'wishlist-next']]) {button.type = 'button'; button.className = 'ui-button'; button.dataset.action = name; button.disabled = true;}
   actions.append(previous, next); form.append(actions);
   const results = node('section'); results.className = 'steam-dlc-public-result'; results.setAttribute('aria-live', 'polite');
@@ -23,38 +26,49 @@ export function mountWishlistForm(root, {options, active, field, say}) {
   const run = async requested => {
     if (!active() || disposed || pending) return;
     const parameters = {account: account.value.trim(), country: country.value.trim().toUpperCase(), language: language.value.trim(), page: requested};
-    if (!parameters.account) {say('请提供明确账号。', 'error'); return;}
+    if (!parameters.account) {say(copy('accountRequired'), 'error'); return;}
     const ticket = ++generation; pending = true; sync();
     try {
       const response = await options.services.invoke('wishlist_explicit', parameters);
       if (disposed || !active() || ticket !== generation) return;
       if (response?.status === 'error') {
-        const errors = {not_public: '愿望单未公开或来源受限，请确认公开设置后重试。', rate_limited: '愿望单来源限流，请稍后重试。', upstream_error: '愿望单来源请求失败，请稍后重试。', unparsed: '愿望单来源结构无法验证，请稍后重试。', parameter_error: '请检查账号、地区、语言或页码。', module_unavailable: '愿望单服务或本次授权暂不可用。'};
-        throw problem(errors[response.error?.code] || '愿望单来源暂不可用，请稍后重试。');
+        const codes = ['not_public', 'rate_limited', 'upstream_error', 'unparsed', 'parameter_error', 'module_unavailable'];
+        const code = response.error?.code;
+        throw problem(codes.includes(code) ? `error.${code}` : 'sourceUnavailable');
       }
       const data = response?.document?.blocks?.find(block => block?.kind === 'fields' && block.fields?.wishlist)?.fields.wishlist;
-      if (!data || !Array.isArray(data.items) || data.items.length > 20 || !Number.isSafeInteger(data.pages) || data.page !== requested) throw Error('愿望单结果无法验证。');
-      page = data.page; pages = data.pages; results.replaceChildren(node('p', `共${data.total}项 · 第${page}/${pages}页 · 地区${data.region} · 愿望单来源时间${data.fetched_at} · 商店补全时间${data.store_fetched_at || '未取得'}`));
+      if (!data || !Array.isArray(data.items) || data.items.length > 20 || !Number.isSafeInteger(data.pages) || data.page !== requested) throw Error('wishlist_result_invalid');
+      page = data.page; pages = data.pages; results.replaceChildren(node('p', () => t('wishlist.summary', {
+        total: data.total, page: data.page, pages: data.pages, region: data.region,
+        fetchedAt: data.fetched_at, storeFetchedAt: data.store_fetched_at || t('wishlist.notFetched'),
+      })));
       for (const item of data.items) {
-        const row = node('article'), title = node('a', `${item.name || '名称未提供'} · AppID ${item.app_id}`);
+        const row = node('article'), title = node('a', () => t('wishlist.itemTitle', {name: item.name || t('wishlist.nameUnavailable'), appId: item.app_id}));
         // Construct the official link from validated numeric AppID only.
-        if (!/^[1-9][0-9]*$/u.test(item.app_id)) throw Error('愿望单AppID无法验证。');
+        if (!/^[1-9][0-9]*$/u.test(item.app_id)) throw Error('wishlist_app_id_invalid');
         title.href = `https://store.steampowered.com/app/${item.app_id}/`; title.target = '_blank'; title.rel = 'noopener noreferrer';
-        const priceStates = {free: '免费', unreleased: '未发售', no_local_price: '本地区未提供价格', region_locked: '来源明确标记地区受限', region_or_store_unavailable: '商店或地区不可用', fetch_failed: '商店补全失败'};
-        const releases = {unreleased: '未发售', released: '已发售', unknown: '发售状态未知'};
-        row.append(title, node('p', `添加：${new Date(item.date_added * 1000).toISOString()} · ${item.price || priceStates[item.price_state] || '价格未知'} · 币种${item.currency || '未提供'} · 折扣${item.discount_percent ?? '未知'}% · ${releases[item.release_state] || '发售状态未知'}`)); results.append(row);
+        const addedAt = new Date(item.date_added * 1000).toISOString();
+        const priceStates = ['free', 'unreleased', 'no_local_price', 'region_locked', 'region_or_store_unavailable', 'fetch_failed'];
+        const releaseStates = ['unreleased', 'released'];
+        row.append(title, node('p', () => t('wishlist.itemDetails', {
+          addedAt,
+          price: item.price || t(`wishlist.price.${priceStates.includes(item.price_state) ? item.price_state : 'unknown'}`),
+          currency: item.currency || t('wishlist.notProvided'),
+          discount: item.discount_percent == null ? t('wishlist.unknown') : `${item.discount_percent}%`,
+          release: t(`wishlist.release.${releaseStates.includes(item.release_state) ? item.release_state : 'unknown'}`),
+        }))); results.append(row);
       }
-      if (data.state === 'empty') results.append(node('p', '来源返回的本次公开愿望单为空。'));
-      if (data.enrichment_failed) results.append(node('p', '愿望单已读取；当前页商店补全失败，未将缺失价格视为免费。'));
+      if (data.state === 'empty') results.append(node('p', copy('empty')));
+      if (data.enrichment_failed) results.append(node('p', copy('enrichmentFailed')));
       previous.disabled = page <= 1; next.disabled = page >= pages;
-    } catch (error) {if (!disposed && active() && ticket === generation) {results.replaceChildren(node('p', error.publicMessage || '愿望单请求未完成，请稍后重试。')); say('愿望单查询未完成。', 'error');}}
+    } catch (error) {if (!disposed && active() && ticket === generation) {results.replaceChildren(node('p', copy(error?.[publicKey] || 'requestFailed'))); say(copy('queryFailed'), 'error');}}
     finally {if (!disposed && ticket === generation) {pending = false; sync();}}
   };
   cleanups.push(primary.bind(() => run(1)));
   listen(previous, 'click', () => {if (page > 1) void run(page - 1);});
   listen(next, 'click', () => {if (page < pages) void run(page + 1);});
-  root.append(node('p', '匿名读取第一方公开愿望单，每页20项，仅补全当前页商店资料。私有、空单、限流与请求失败分别报告。'), ...(options.presentation?.template ? [] : [node('h3', '查询条件')]), form);
-  primary.result(node('h3', '愿望单结果'), results);
+  root.append(node('p', copy('description')), ...(options.presentation?.template ? [] : [node('h3', copy('filters'))]), form);
+  primary.result(node('h3', copy('results')), results);
   options.presentation?.actions(actions);
   sync();
   return {

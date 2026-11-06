@@ -1,74 +1,78 @@
+import {createPageCopy, dlcText} from './copy.js';
 import {primaryForm} from './template-adapter.js';
 // Configuration lifecycle controller shared as source by four independently
 // captured page builds. Presentation components live in the public facade.
 import {mountJobForm} from './job-controller.js';
 import {mountWishlistForm} from './wishlist-controller.js';
 import {mountAnalysisForm} from './analysis-controller.js';
-import {metric} from './metric.js';
-export const MODULES = Object.freeze({
-  steam: {
+import {metric as formatMetric} from './metric.js';
+const compiledModuleId = typeof __DLC_MODULE_ID__ === 'string' ? __DLC_MODULE_ID__ : null;
+const moduleDefinitions = translate => Object.freeze({
+  ...(!compiledModuleId || compiledModuleId === 'steam' ? {steam: ((t) => ({
     title: 'Steam',
-    summary: '商店搜索、游戏详情与公开账号资料。共享关联是用户自行声明的账号信息，所有权尚未验证。',
-    source: 'Steam 商店和 Community 提供公开样本；完整库 full 使用可选 Steam Key。是否完整以本次来源返回为准，私密库、缺少 Key 与上游失败会分别说明。',
+    summary: t('module.steam.summary'),
+    source: t('module.steam.source'),
     commands: [
-      ['/ygl steam bind <Dota ID32、SteamID64 或 profiles URL>', '在私聊中关联当前用户的 Steam 账号。'],
-      ['/ygl steam binding', '在私聊中查看当前用户关联。'],
-      ['/ygl steam unbind', '在私聊中解除当前用户关联。'],
-      ['/ygl steam search <游戏名或 AppID> [--country CC] [--language english]', '商店默认 CN / schinese；展示本次地区、币种和来源时间对应的当前价格。'],
-      ['/ygl steam app <AppID> [--country CC] [--language english]', '查看商店详情与当前可用价格；图片失败时保留文字结果。'],
-      ['/ygl steam profile [账号]', '查看公开资料；昵称、头像、等级逐项标明可用性。'],
-      ['/ygl steam recent [账号]', '查看主页最近展示的公开样本，范围以本次来源返回为准。'],
-      ['/ygl steam games [账号]', '查看来源可用的公开样本；完整游戏库增强需要可选 Steam Key。'],
-      ['/ygl steam wall [账号] [--source games|recent|full] [--all-apps] [--limit N] [--refresh]', '生成游戏生涯拼图。来源、时间预设、比例与数量受已保存设置及输出预算约束；完整库需要可选 Key。'],
-      ['/ygl steam wall status|result|cancel|retry <任务ID>', '查看本人任务状态、逐图结果、取消或重试。result支持 --page N --image N，每次只返回选中一张，不自动刷屏。'],
-      ['/ygl steam status', '查看使用说明。'],
-      ['/ygl steam wishlist [账号] [--page N] [--country CN]', '匿名查看公开愿望单，每页20项；模型与页面必须提供明确账号。'],
+      ['/ygl steam bind <Dota ID32、SteamID64 或 profiles URL>', t('help.linkYourSteamAccountInA')],
+      ['/ygl steam binding', t('help.viewYourLinkedAccountInA')],
+      ['/ygl steam unbind', t('help.unlinkYourAccountInADirect')],
+      ['/ygl steam search <游戏名或 AppID> [--country CC] [--language english]', t('help.theStoreDefaultsAreCnAnd')],
+      ['/ygl steam app <AppID> [--country CC] [--language english]', t('help.viewStoreDetailsAndCurrentPrices')],
+      ['/ygl steam profile [账号]', t('help.viewAPublicProfileWithSeparate')],
+      ['/ygl steam recent [账号]', t('help.viewTheRecentPublicSampleShown')],
+      ['/ygl steam games [账号]', t('help.viewTheAvailablePublicSampleFull')],
+      ['/ygl steam wall [账号] [--source games|recent|full] [--all-apps] [--limit N] [--refresh]', t('help.createAGameHistoryCollageSaved')],
+      ['/ygl steam wall status|result|cancel|retry <任务ID>', t('help.checkYourJobStatusOrResults')],
+      ['/ygl steam status', t('help.viewUsageHelp')],
+      ['/ygl steam wishlist [账号] [--page N] [--country CN]', t('help.viewAPublicWishlistAnonymously20')],
     ],
-  },
-  dota2: {
+  }))(key => translate(key, 'steam'))} : {}),
+  ...(!compiledModuleId || compiledModuleId === 'dota2' ? {dota2: ((t) => ({
     title: 'Dota2',
-    summary: '近期战绩、样本统计、可读资料与个人战报已实现，使用 OpenDota 公开数据，不提交解析。',
-    source: '数据来自 OpenDota 社区公开记录。样本统计按有效字段分别计算，未收录与缺失数据保持未知，不补零。',
+    summary: t('module.dota2.summary'),
+    source: t('module.dota2.source'),
     commands: [
-      ['/ygl dota2 recent [账号] [--limit N]', '默认 5 场，最多 20 场；省略账号时使用当前用户的 Steam 关联。'],
-      ['/ygl dota2 profile [账号]', '查看精简玩家资料；省略账号时使用当前用户的 Steam 关联。'],
-      ['/ygl dota2 stats [账号] [--limit N]', '默认20场，范围1–20；显示实际有效样本、独立分母和本次英雄/模式分布。'],
-      ['/ygl dota2 last [账号]', '查询该玩家上一场基础结算；省略账号时使用当前用户关联。'],
-      ['/ygl dota2 match <match_id> [--account <账号>]', '指定账号查看个人焦点，无账号保持全场概览；不读取默认关联，不提交解析。'],
-      ['/ygl dota2 status', '查看功能说明。'],
-      ['/ygl dota2 analyze <比赛ID> --account <玩家账号或本场唯一昵称>', '查看指定玩家的对线、装备、团战和证据边界；网页与模型查询展示公开事实；聊天命令可选生成模型短评。'],
-      ['/ygl dota2 watch [账号]', '在当前群或私聊创建自己的比赛订阅；省略账号使用当前 Steam 绑定。'],
-      ['/ygl dota2 watchlist', '在当前会话查看自己的订阅；首次建立基线，不补发旧比赛。'],
-      ['/ygl dota2 unwatch <订阅ID>', '取消当前会话中自己的订阅。'],
+      ['/ygl dota2 recent [账号] [--limit N]', t('help.defaultsTo5MatchesUpTo')],
+      ['/ygl dota2 profile [账号]', t('help.viewACompactPlayerProfileIf')],
+      ['/ygl dota2 stats [账号] [--limit N]', t('help.defaultsTo20MatchesWithA')],
+      ['/ygl dota2 last [账号]', t('help.viewThePlayersLatestBasicMatch')],
+      ['/ygl dota2 match <match_id> [--account <账号>]', t('help.specifyAnAccountToFocusOn')],
+      ['/ygl dota2 status', t('help.viewFeatureHelp')],
+      ['/ygl dota2 analyze <比赛ID> --account <玩家账号或本场唯一昵称>', t('help.reviewTheSelectedPlayersLanesItems')],
+      ['/ygl dota2 watch [账号]', t('help.createYourOwnMatchSubscriptionIn')],
+      ['/ygl dota2 watchlist', t('help.viewYourSubscriptionsInTheCurrent')],
+      ['/ygl dota2 unwatch <订阅ID>', t('help.cancelYourSubscriptionInTheCurrent')],
     ],
-  },
-  cs2: {
-    title: 'CS2', summary: '完美平台、完美收录官匹与 5E 玩家资料、近期战绩、赛季统计和来源单场查询。',
-    source: '完美扫码与 5E Token 在可信管理页设置。登录主体只用于请求授权，不替换玩家绑定。官匹与 5E 单场只提供来源近期样本中的玩家摘要。',
+  }))(key => translate(key, 'dota2'))} : {}),
+  ...(!compiledModuleId || compiledModuleId === 'cs2' ? {cs2: ((t) => ({
+    title: 'CS2', summary: t('module.cs2.summary'),
+    source: t('module.cs2.source'),
     commands: [
-      ['/ygl cs2 status', '查看来源和凭据配置状态；上游有效性在查询时验证。'],
-      ['/ygl cs2 profile [SteamID64] --platform perfect [--season S16]', '完美/官匹可复用本人 Steam 绑定；模型查询必须明确账号。'],
-      ['/ygl cs2 recent [SteamID64] --platform official [--limit 5]', '官匹展示完美平台已收录的比赛。'],
-      ['/ygl cs2 stats <5E-domain> --platform 5e [--season 2026S5]', '5E domain 与 SteamID 分开；统计注明来源赛季口径。'],
-      ['/ygl cs2 last [SteamID64] --platform perfect', '查看来源最近一场；官匹与 5E 返回有界玩家摘要。'],
-      ['/ygl cs2 match <来源比赛ID> --platform perfect [--focus SteamID64]', '完美可返回完整名单及焦点；官匹/5E 另需 --account，限定在该玩家近期样本。'],
+      ['/ygl cs2 status', t('help.viewSourceAndCredentialStatusUpstream')],
+      ['/ygl cs2 profile [SteamID64] --platform perfect [--season S16]', t('help.perfectWorldAndOfficialLookupsCan')],
+      ['/ygl cs2 recent [SteamID64] --platform official [--limit 5]', t('help.officialMatchResultsAreLimitedTo')],
+      ['/ygl cs2 stats <5E-domain> --platform 5e [--season 2026S5]', t('help.a5eDomainIsSeparateFrom')],
+      ['/ygl cs2 last [SteamID64] --platform perfect', t('help.viewTheLatestMatchFromThe')],
+      ['/ygl cs2 match <来源比赛ID> --platform perfect [--focus SteamID64]', t('help.perfectWorldCanReturnAFull')],
     ],
-  },
-  deadlock: {
-    title: 'Deadlock', summary: '玩家资料、近期样本、统计与单场焦点查询，数据来自 Deadlock API 社区已收录记录。',
-    source: '使用社区来源最近 20 条已收录记录，范围和更新时间以该来源为准。未收录、受保护、尚未解析与空结果分别报告；缺失段位保持未知。',
+  }))(key => translate(key, 'cs2'))} : {}),
+  ...(!compiledModuleId || compiledModuleId === 'deadlock' ? {deadlock: ((t) => ({
+    title: 'Deadlock', summary: t('module.deadlock.summary'),
+    source: t('module.deadlock.source'),
     commands: [
-      ['/ygl deadlock profile [账号]', '查看来源已收录资料与最近可用排位记录。'],
-      ['/ygl deadlock recent [账号] [--limit N]', '默认 20 条，范围 1–20；仅指来源已收录近期记录。'],
-      ['/ygl deadlock stats [账号] [--limit N]', '默认 20 条，范围 1–20；按有效分母计算，缺失字段保持未知。'],
-      ['/ygl deadlock last [账号]', '查看有界窗口最近有效记录，详情失败不暗换另一场。'],
-      ['/ygl deadlock match <match_id> [--account <账号>]', '按明确账号精确匹配个人焦点，不读取默认关联。'],
-      ['/ygl deadlock status', '查看功能与来源范围。'],
+      ['/ygl deadlock profile [账号]', t('help.viewTheRecordedProfileAndLatest')],
+      ['/ygl deadlock recent [账号] [--limit N]', t('help.defaultsTo20RecordsWithA2')],
+      ['/ygl deadlock stats [账号] [--limit N]', t('help.defaultsTo20RecordsWithA')],
+      ['/ygl deadlock last [账号]', t('help.viewTheMostRecentValidRecord')],
+      ['/ygl deadlock match <match_id> [--account <账号>]', t('help.matchThePlayerFocusAgainstThe')],
+      ['/ygl deadlock status', t('help.viewFeaturesAndSourceCoverage')],
     ],
-  },
+  }))(key => translate(key, 'deadlock'))} : {}),
 });
 
-export const authorizationLabel = state => displayLabel({waiting: '等待扫码确认', authorized: '授权成功', completed: '授权完成', cancelled: '已取消', expired: '已过期', failed: '授权失败'}, state, '状态未知');
+export const MODULES = moduleDefinitions((key, owner) => compiledModuleId ? key : dlcText(key, undefined, 'zh-CN', owner));
+
+export const authorizationLabel = (state, t = (key, params) => dlcText(key, params, 'zh-CN', 'cs2')) => displayLabel({waiting: t('authorization.waitingForScanConfirmation'), authorized: t('authorization.authorized'), completed: t('authorization.authorizationComplete'), cancelled: t('authorization.cancelled'), expired: t('authorization.expired'), failed: t('authorization.authorizationFailed')}, state, t('authorization.statusUnknown'));
 
 const displayLabel = (labels, key, fallback) => Object.hasOwn(labels, key) ? labels[key] : fallback;
 
@@ -83,28 +87,41 @@ const SETTINGS = Object.freeze({
   dota2: ['timezone', 'reply_theme', 'subscription_enabled', 'poll_interval_seconds', 'opendota_rph', 'commentary_enabled'],
   cs2: ['reply_theme', 'default_platform'], deadlock: ['reply_theme'],
 });
-const LABELS = {timezone: '输出时区', reply_theme: '回复主题', poster_source: '游戏库来源', poster_mode: '拼图布局', poster_preset: '时长预设', poster_aspect: '输出比例', poster_quality: '输出清晰度', poster_fit: '封面适配', poster_include_apps: '包含软件等全部应用', poster_limit: '作品数量上限', subscription_enabled: '启用比赛订阅', poll_interval_seconds: '订阅检查间隔（秒）', opendota_rph: '每小时请求上限', commentary_enabled: '启用模型短评', default_platform: '默认 CS2 来源'};
-const CHOICE_LABELS = {profile: '玩家资料', stats: '玩家统计', last: '上一场比赛', match: '比赛详情', games: '公开主页样本', recent: '近期公开样本', full: '完整游戏库（需要 Key）', dense: '游戏生涯拼图', legacy: '兼容旧布局', single: '单机', standard: '标准', long: '长玩', normal: '标准', hd: '高清', cover: '等比裁切填充', contain: '保留完整封面', perfect: '完美平台', official: '完美收录官匹', '5e': '5E'};
-const CREDENTIALS = {steam: [['credential_steam_key', 'Steam Web API Key']], dota2: [['credential_opendota_key', 'OpenDota Key（可选）']], cs2: [['credential_perfect', '完美扫码授权'], ['credential_fivee', '5E 会话 Token']]};
-LABELS.poster_limit_mode = '作品数量模式';
-CHOICE_LABELS.top = '按时长取前 N 项'; CHOICE_LABELS.all = '不限（来源实际返回范围）';
-Object.assign(CHOICE_LABELS, {'2:3': '2:3', '9:16': '9:16', '1:2': '1:2'});
+const settingLabels = (t, moduleId) => {
+  const labels = {reply_theme: t('setting.replyTheme')};
+  if (moduleId === 'steam') Object.assign(labels, {poster_source: t('setting.gameLibrarySource'), poster_mode: t('setting.collageLayout'), poster_preset: t('setting.playtimePreset'), poster_aspect: t('setting.outputAspectRatio'), poster_quality: t('setting.outputQuality'), poster_fit: t('setting.coverFit'), poster_include_apps: t('setting.includeAllAppsIncludingSoftware'), poster_limit: t('setting.itemLimit'), poster_limit_mode: t('choice.itemCountMode')});
+  if (moduleId === 'dota2') Object.assign(labels, {timezone: t('setting.outputTimeZone'), subscription_enabled: t('setting.enableMatchSubscriptions'), poll_interval_seconds: t('setting.subscriptionCheckIntervalSeconds'), opendota_rph: t('setting.hourlyRequestLimit'), commentary_enabled: t('setting.enableModelCommentary')});
+  if (moduleId === 'cs2') labels.default_platform = t('setting.defaultCs2Source');
+  return labels;
+};
+const choiceLabels = (t, moduleId) => {
+  const labels = {standard: t('choice.standard')};
+  if (moduleId === 'steam') Object.assign(labels, {games: t('choice.publicProfileSample'), recent: t('choice.recentPublicSample'), full: t('choice.fullLibraryKeyRequired'), dense: t('route.collage'), legacy: t('choice.legacyLayout'), single: t('choice.singlePlayer'), long: t('choice.longPlay'), normal: t('choice.standard'), hd: t('choice.highDefinition'), cover: t('choice.cropToFill'), contain: t('choice.showFullCover'), top: t('choice.topNByPlaytime'), all: t('choice.unlimitedAsReturnedByTheSource')});
+  if (['dota2', 'cs2', 'deadlock'].includes(moduleId)) Object.assign(labels, {profile: t('choice.playerProfile'), stats: t('choice.playerStats'), last: t('choice.latestMatch'), match: t('choice.matchDetails')});
+  if (moduleId === 'dota2') labels.opendota = t('choice.opendotaKeyOptional');
+  if (moduleId === 'cs2') Object.assign(labels, {perfect: t('choice.perfectWorld'), official: t('choice.officialMatchesRecordedByPerfectWorld'), '5e': '5E'});
+  return labels;
+};
+const credentialLabels = (t, moduleId) => moduleId === 'steam' ? {steam: [['credential_steam_key', 'Steam Web API Key']]}
+  : moduleId === 'dota2' ? {dota2: [['credential_opendota_key', t('choice.opendotaKeyOptional')]]}
+    : moduleId === 'cs2' ? {cs2: [['credential_perfect', t('choice.perfectWorldQrAuthorization')], ['credential_fivee', t('choice.5eSessionToken')]]} : {};
 
-export function parsePosterLimit(value) {
-  if (typeof value !== 'string' || value.length > 128) throw Error('数量必须是完整有限数值。');
+
+export function parsePosterLimit(value, translate = dlcText) {
+  if (typeof value !== 'string' || value.length > 128) throw Error(translate('validation.enterACompleteFiniteNumber'));
   const raw = value.trim();
   const match = /^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:[eE]([+-]?\d+))?$/u.exec(raw);
-  if (!match) throw Error('数量必须是完整有限数值，不能包含其他文字。');
+  if (!match) throw Error(translate('validation.enterACompleteFiniteNumberWithout'));
   const fraction = match[3] ?? match[4] ?? '';
   const digits = (match[2] || '0') + fraction;
   const exponent = Number(match[5] || 0) - fraction.length;
-  if (!Number.isSafeInteger(exponent) || exponent > 128) throw Error('数量超过安全数值范围，请选择不限。');
+  if (!Number.isSafeInteger(exponent) || exponent > 128) throw Error(translate('validation.theCountExceedsTheSafeRange'));
   let integer = BigInt(digits);
   if (exponent < -256) integer = 0n;
   else integer = exponent >= 0 ? integer * 10n ** BigInt(exponent) : integer / 10n ** BigInt(-exponent);
   if (match[1] === '-') integer = -integer;
-  if (integer > BigInt(Number.MAX_SAFE_INTEGER)) throw Error('数量超过安全数值范围，请选择不限。');
-  if (integer < 20n) throw Error('数量向零截断后至少为20。');
+  if (integer > BigInt(Number.MAX_SAFE_INTEGER)) throw Error(translate('validation.theCountExceedsTheSafeRange'));
+  if (integer < 20n) throw Error(translate('validation.theCountMustBeAtLeast'));
   return Number(integer);
 }
 
@@ -113,9 +130,9 @@ const PNG_CRC = Uint32Array.from({length: 256}, (_, index) => {
   for (let bit = 0; bit < 8; bit++) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
   return value >>> 0;
 });
-function previewPNG(encoded, window) {
+function previewPNG(encoded, window, translate = dlcText) {
   const direct = encoded instanceof Uint8Array;
-  if (!direct && (typeof encoded !== 'string' || !encoded.length || encoded.length > 24000000 || encoded.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(encoded))) throw Error('图片内容无法验证。');
+  if (!direct && (typeof encoded !== 'string' || !encoded.length || encoded.length > 24000000 || encoded.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(encoded))) throw Error(translate('validation.theImageCouldNotBeVerified'));
   const binary = direct ? Array.from({length: Math.ceil(encoded.length / 32768)}, (_, index) => String.fromCharCode(...encoded.subarray(index * 32768, (index + 1) * 32768))).join('') : window.atob(encoded);
   if (!binary.startsWith('\x89PNG\r\n\x1a\n')) throw Error('invalid_images');
   const bytes = direct ? encoded : Uint8Array.from(binary, char => char.charCodeAt(0));
@@ -175,14 +192,26 @@ function partitionFor(context, key, claim) {
 /** Controller behind the public facade; contains no Core implementation imports. */
 export function mountController(container, options) {
   const document = container.ownerDocument;
+  let context = {...options.context};
+  const moduleId = compiledModuleId || (options.context.owner.startsWith('steam_dlc/')
+    ? options.context.owner.slice('steam_dlc/'.length) : '');
   const template = options.presentation?.template;
+  const copy = options.copy || createPageCopy(() => context.locale, undefined, moduleId);
+  const t = copy.text;
+  const metric = value => formatMetric(value, t);
+  const themeLabel = options.themeLabel || ((value, fallback) => value === null && fallback === copy.textAt('zh-CN', 'choice.followCore') ? t('choice.followCore') : fallback);
+  const configHint = (name, description) => {
+    const key = 'configHint.' + name;
+    return copy.textAt('zh-CN', key) === description ? t(key) : description;
+  };
+  const choose = (labels, value, fallback) => displayLabel(labels(t), value, fallback);
   const initialIdentity = identity(options.context);
-  const moduleId = options.context.owner.startsWith('steam_dlc/')
-    ? options.context.owner.slice('steam_dlc/'.length) : '';
   const module = MODULES[moduleId];
+  const currentSettingLabels = () => settingLabels(t, moduleId);
+  const currentChoiceLabels = () => choiceLabels(t, moduleId);
+  const currentCredentialLabels = credentialLabels(t, moduleId);
   const partition = module ? partitionFor(options.context, initialIdentity, options.routeId === 'settings') : null;
   const partitionToken = partition?.token;
-  let context = { ...options.context };
   let disposed = false, revoked = false, scopeInvalid = false, generation = 0;
   let pending = false, ready = false, baseline = null;
   let credentialPending = false, authorizationPending = false, credentialSnapshot = null, credentialGeneration = 0;
@@ -202,7 +231,8 @@ export function mountController(container, options) {
   const listeners = [];
   const node = (tag, text, className) => {
     const element = document.createElement(tag);
-    if (text !== undefined) element.textContent = text;
+    if (typeof text === 'function') copy.bind(element, text);
+    else if (text !== undefined) element.textContent = text;
     if (className) element.className = className;
     return element;
   };
@@ -237,25 +267,31 @@ export function mountController(container, options) {
       options.onNavigationStateChange?.();
     }
   };
+  let notice;
+  const publishNotice = () => {
+    const text = typeof notice?.text === 'function' ? notice.text() : notice?.text;
+    if (template) template.publish({notice: text ? {key: 'custom', text, tone: notice.tone, role: 'status'} : undefined});
+    else message.textContent = text || '';
+  };
   const say = (text, tone = 'warning') => {
     if (messageTimer !== null) { clearTimeout(messageTimer); messageTimer = null; }
-    if (template) template.publish({notice: text ? {key: 'custom', text, tone, role: 'status'} : undefined});
-    else message.textContent = text;
+    notice = {text, tone};
+    publishNotice();
     message.dataset.tone = tone;
     if (text && tone === 'success') {
       messageTimer = setTimeout(() => {
         messageTimer = null;
-        if (current()) {if (template) template.publish({notice: undefined}); else message.textContent = '';}
+        if (current()) {notice = undefined; publishNotice();}
       }, 3500);
     }
   };
   const updateAvailability = () => {
     root.dataset.theme = context.theme;
     availability.textContent = !current()
-      ? '页面上下文已失效，请重新进入本模块。'
+      ? t('availability.thisPageContextExpiredOpenThe')
       : context.available
-        ? '当前页面入口可用。运行健康请在模块管理中查看；此处不检测上游服务。'
-        : '当前页面入口不可用，请在模块管理中刷新状态后重新进入。';
+        ? t('availability.thisPageIsAvailableCheckRuntime')
+        : t('availability.thisPageIsUnavailableRefreshIts');
   };
 
   let form, saveButton, refreshButton, discardButton, themeReset;
@@ -338,11 +374,13 @@ export function mountController(container, options) {
     return draft ? draft.kind === 'clear' ? baseline.descriptors[name].default : draft.value
       : baseline.fields[name].value;
   };
-  const choicesFor = name => name === 'poster_include_apps'
-    ? [{ value: false, label: '仅游戏' }, { value: true, label: '全部应用' }]
+  const choicesFor = name => name === 'reply_theme'
+    ? baseline.descriptors[name].choices.map(({value, label}) => ({value, label: themeLabel(value, label)}))
+    : name === 'poster_include_apps'
+    ? [{ value: false, label: t('settings.gamesOnly') }, { value: true, label: t('settings.allApps') }]
     : baseline.descriptors[name].value_schema?.type === 'boolean'
-      ? [{value: false, label: '关闭'}, {value: true, label: '开启'}]
-      : baseline.descriptors[name].choices || baseline.descriptors[name].value_schema?.enum?.map(value => ({value, label: CHOICE_LABELS[value] || String(value)}));
+      ? [{value: false, label: t('settings.off')}, {value: true, label: t('settings.on')}]
+      : baseline.descriptors[name].choices || baseline.descriptors[name].value_schema?.enum?.map(value => ({value, label: choose(currentChoiceLabels, value, String(value))}));
   const isChoice = name => Boolean(choicesFor(name));
   const edit = (name, draft) => {
     if (!active() || !baseline) return;
@@ -355,26 +393,37 @@ export function mountController(container, options) {
     else drafts.set(name, next);
     draftVersion += 1;
     if (template && name === 'reply_theme') template.publish({themeError: undefined});
-    else controls.get(name).error.textContent = '';
+    else copy.bind(controls.get(name).error, () => '');
     controls.get(name)?.control.setAttribute('aria-invalid', 'false');
     const cannotRetain = drafts.size && (!partition || [...drafts.values()].some(value => value.kind === 'set'
       && typeof (value.rawValue ?? value.value) === 'string' && (value.rawValue ?? value.value).length > MAX_RETAINED_VALUE_LENGTH));
-    say(cannotRetain ? '输入超过草稿保留上限，请先修正再切页。' : drafts.size ? '有未保存的修改。' : '', 'warning');
+    say(cannotRetain ? () => t('settings.draftTooLong') : drafts.size ? () => t('settings.youHaveUnsavedChanges') : '', 'warning');
     sync();
   };
-  const displayValues = () => {
+  const publishThemeField = () => {
     if (template) {
       const name = 'reply_theme', descriptor = baseline.descriptors[name], choices = choicesFor(name);
       template.publish({
-        themeField: {id: name, label: LABELS[name], control: 'select', hint: descriptor.description,
+        themeField: {id: name, label: choose(currentSettingLabels, name, name), control: 'select', hint: configHint(name, descriptor.description),
           choices: choices.map(({label}, index) => ({value: String(index), label}))},
         themeValue: String(choices.findIndex(choice => same(choice.value, effective(name)))),
         themeError: baseline.fields[name].state !== 'valid' && !drafts.has(name)
-          ? '当前配置无效，请修改或恢复默认后保存。' : undefined,
+          ? t('settings.invalidCurrentValue') : undefined,
       });
     }
+  };
+  const relabelFields = () => {
+    publishThemeField();
+    for (const [name, {control}] of controls) if (isChoice(name)) {
+      choicesFor(name).forEach(({label}, index) => {
+        if (control.options[index]) control.options[index].textContent = label;
+      });
+    }
+  };
+  const displayValues = () => {
+    publishThemeField();
     for (const [name, { control, error, hint }] of controls) {
-      hint.textContent = baseline.descriptors[name].description;
+      copy.bind(hint, () => configHint(name, baseline?.descriptors[name]?.description || ''));
       const value = effective(name);
       if (isChoice(name)) {
         const choices = choicesFor(name);
@@ -386,16 +435,17 @@ export function mountController(container, options) {
         control.value = String(choices.findIndex(choice => same(choice.value, value)));
       } else if (drafts.get(name)?.rawValue !== undefined) control.value = drafts.get(name).rawValue;
       else control.value = typeof value === 'string' || typeof value === 'number' ? String(value) : '';
-      error.textContent = baseline.fields[name].state !== 'valid' && !drafts.has(name)
-        ? '当前配置无效，请修改或恢复默认后保存。' : '';
+      const invalid = baseline.fields[name].state !== 'valid' && !drafts.has(name);
+      copy.bind(error, invalid ? () => t('settings.invalidCurrentValue') : () => '');
       control.setAttribute('aria-invalid', String(Boolean(error.textContent)));
     }
   };
   let fieldsBuilt = false;
   const buildFields = () => {
     const groups = new Map();
-    const groupTitle = name => moduleId === 'steam' && name.startsWith('poster_') ? '游戏生涯拼图'
-      : moduleId === 'dota2' && ['subscription_enabled', 'poll_interval_seconds', 'opendota_rph', 'commentary_enabled'].includes(name) ? '订阅与数据来源' : '查询与回复';
+    const groupId = name => moduleId === 'steam' && name.startsWith('poster_') ? 'poster'
+      : moduleId === 'dota2' && ['subscription_enabled', 'poll_interval_seconds', 'opendota_rph', 'commentary_enabled'].includes(name) ? 'subscriptions' : 'workspace';
+    const groupLabels = {poster: 'route.collage', subscriptions: 'section.subscriptions', workspace: 'section.queryAndReply'};
     for (const name of fieldNames) {
       if (template && name === 'reply_theme') {
         template.bind(name, value => {
@@ -404,7 +454,7 @@ export function mountController(container, options) {
           if (choice) edit(name, choice.value === null ? {kind: 'clear'} : {kind: 'set', value: choice.value});
           displayValues();
         });
-        const reset = node('button', template.text('resetDefault'), 'ui-button');
+        const reset = node('button', () => template.text('resetDefault'), 'ui-button');
         themeReset = reset;
         reset.type = 'button';
         reset.dataset.action = 'reset-reply_theme';
@@ -416,26 +466,26 @@ export function mountController(container, options) {
         form.append(reset);
         continue;
       }
-      const title = groupTitle(name);
-      if (!groups.has(title)) {
+      const id = groupId(name);
+      if (!groups.has(id)) {
         const section = node('section', undefined, 'steam-dlc-config-group');
-        if (template) (template.groupHost(title) || form).append(section);
+        if (template) (template.groupHost(id) || form).append(section);
         else {
-          section.append(node('h3', title));
+          section.append(node('h3', () => t(groupLabels[id])));
           form.insertBefore(section, form.querySelector(':scope > .steam-dlc-actions'));
         }
-        groups.set(title, {section, grid: options.presentation?.grid(section)});
+        groups.set(id, {section, grid: options.presentation?.grid(section)});
       }
-      const {section, grid} = groups.get(title);
+      const {section, grid} = groups.get(id);
       const descriptor = baseline.descriptors[name];
       const row = node('div', undefined, 'steam-dlc-field');
-      const label = node('label', LABELS[name] || name);
+      const label = node('label', () => choose(currentSettingLabels, name, name));
       const control = node(isChoice(name) ? 'select' : 'input');
       control.className = 'ui-control';
       control.id = `steam-dlc-${moduleId}-${name}`;
       label.htmlFor = control.id;
       control.name = name;
-      const hint = node('p', descriptor.description, 'steam-dlc-hint');
+      const hint = node('p', () => configHint(name, descriptor.description), 'steam-dlc-hint');
       hint.id = `${control.id}-hint`;
       const error = node('p', '', 'steam-dlc-field-error');
       error.id = `${control.id}-error`;
@@ -450,7 +500,7 @@ export function mountController(container, options) {
         if (descriptor.value_schema.maximum !== undefined) control.max = String(descriptor.value_schema.maximum); control.step = '1';
         if (name === 'poster_limit') {control.type = 'text'; control.inputMode = 'decimal'; control.removeAttribute('min'); control.removeAttribute('max');}
       }
-      const reset = node('button', template?.text('resetDefault') || '恢复默认');
+      const reset = node('button', () => template?.text('resetDefault') || t('settings.restoreDefault'));
       reset.className = 'ui-button';
       reset.type = 'button';
       reset.dataset.action = `reset-${name}`;
@@ -462,12 +512,12 @@ export function mountController(container, options) {
       const resets = node('div', undefined, 'steam-dlc-actions'); resets.append(reset);
       if (name === 'poster_limit') {
         for (const value of [20, 50, 100, 200, 500, 1000, 'all']) {
-          const shortcut = node('button', value === 'all' ? '不限' : String(value), 'ui-button'); shortcut.type = 'button';
+          const shortcut = node('button', () => value === 'all' ? t('settings.unlimited') : String(value), 'ui-button'); shortcut.type = 'button';
           listen(shortcut, 'click', () => {
             if (!active() || !baseline) return;
             if (controls.has('poster_limit_mode')) edit('poster_limit_mode', {kind: 'set', value: value === 'all' ? 'all' : 'top'});
             if (value !== 'all') edit(name, {kind: 'set', value});
-            else if (!controls.has('poster_limit_mode')) {say('当前配置尚未提供不限模式，请刷新模块版本。', 'warning'); return;}
+            else if (!controls.has('poster_limit_mode')) {say(() => t('settings.unlimitedModeUnavailable'), 'warning'); return;}
             displayValues();
           }); resets.append(shortcut);
         }
@@ -481,7 +531,7 @@ export function mountController(container, options) {
         } else if (descriptor.value_schema?.type === 'integer') {
           const rawValue = control.value;
           if (name === 'poster_limit') {
-            try { edit(name, {kind: 'set', value: parsePosterLimit(rawValue)}); }
+            try { edit(name, {kind: 'set', value: parsePosterLimit(rawValue, t)}); }
             catch { edit(name, {kind: 'set', value: null, rawValue}); }
             return;
           }
@@ -520,21 +570,21 @@ export function mountController(container, options) {
       catch (error) {
         if (!active() || ticket !== generation) return;
         credentialError(error);
-        if (active()) say('普通配置已读取；来源凭据状态未确认，请单独刷新凭据。', 'warning');
+        if (active()) say(() => t('settings.readWithUnconfirmedCredentials'), 'warning');
         return;
       }
       if (!active() || ticket !== generation) return;
-      say(drafts.size ? '已刷新；草稿已保留，请核对后保存。' : manual ? '已刷新。' : '', drafts.size ? 'warning' : 'success');
+      say(drafts.size ? () => t('settings.refreshedWithDraft') : manual ? () => t('settings.refreshed') : '', drafts.size ? 'warning' : 'success');
     } catch (error) {
       if (!active() || ticket !== generation) return;
       if (authorityErrors.has(errorCode(error))) {
         revokePartition();
-        say('管理授权或模块上下文已失效，请重新进入页面。', 'error');
+        say(() => t('settings.authorizationExpired'), 'error');
         sync();
         return;
       }
       ready = false;
-      say('配置读取未完成。请检查 Dashboard 授权与模块状态，再手动刷新。', 'error');
+      say(() => t('settings.settingsCouldNotBeReadCheck'), 'error');
     } finally {
       if (current() && ticket === generation) { pending = false; sync(); }
     }
@@ -544,33 +594,39 @@ export function mountController(container, options) {
     for (const [name, draft] of drafts) {
       if (draft.kind === 'clear') continue;
       const descriptor = baseline.descriptors[name];
-      let problem = '';
+      let problem;
       if (name === 'timezone') {
         const schema = descriptor.value_schema;
         if (typeof draft.value !== 'string' || draft.value.length < (schema.minLength ?? 0)
-          || draft.value.length > (schema.maxLength ?? Infinity)) problem = '请输入符合长度要求的 IANA 时区。';
+          || draft.value.length > (schema.maxLength ?? Infinity)) problem = () => t('settings.enterAnIanaTimeZoneWithin');
         else {
           try { new Intl.DateTimeFormat('zh-CN', { timeZone: draft.value }).format(); }
-          catch { problem = '请输入有效的 IANA 时区，例如 Asia/Shanghai。'; }
+          catch { problem = () => t('settings.enterAValidIanaTimeZone'); }
         }
       } else if (descriptor.value_schema?.type === 'integer') {
         const schema = descriptor.value_schema;
         if (draft.rawValue !== undefined || !Number.isSafeInteger(draft.value)
-          || draft.value < schema.minimum || draft.value > schema.maximum) problem = `请输入 ${schema.minimum} 到 ${schema.maximum} 之间的整数。`;
+          || draft.value < schema.minimum || draft.value > schema.maximum) problem = () => t('settings.integerRange', {minimum: schema.minimum, maximum: schema.maximum});
         if (name === 'poster_limit') {
-          try { parsePosterLimit(draft.rawValue ?? String(draft.value)); }
-          catch (error) { problem = error.message; }
+          const raw = draft.rawValue ?? String(draft.value);
+          try { parsePosterLimit(raw, t); }
+          catch {
+            problem = () => {
+              try { parsePosterLimit(raw, t); }
+              catch (error) { return error.message; }
+            };
+          }
         }
-      } else if (isChoice(name) && !choicesFor(name).some(choice => same(choice.value, draft.value))) problem = '请选择当前可用的选项。';
-      if (template && name === 'reply_theme') template.publish({themeError: problem || undefined});
+      } else if (isChoice(name) && !choicesFor(name).some(choice => same(choice.value, draft.value))) problem = () => t('settings.chooseAnAvailableOption');
+      if (template && name === 'reply_theme') template.publish({themeError: problem?.()});
       else {
-        controls.get(name).error.textContent = problem;
+        copy.bind(controls.get(name).error, problem || (() => ''));
         controls.get(name).control.setAttribute('aria-invalid', String(Boolean(problem)));
       }
       if (problem) valid = false;
     }
     if (controls.has('poster_mode') && effective('poster_mode') === 'legacy' && effective('poster_limit') > 200) {
-      controls.get('poster_limit').error.textContent = '兼容旧布局最多支持 200 项，请调整数量或选择游戏生涯拼图。';
+      copy.bind(controls.get('poster_limit').error, () => t('settings.legacyLimit'));
       controls.get('poster_limit').control.setAttribute('aria-invalid', 'true');
       valid = false;
     }
@@ -588,7 +644,7 @@ export function mountController(container, options) {
     const ticket = ++generation;
     pending = true;
     ready = false;
-    say('正在保存，请等待确认。');
+    say(() => t('settings.savingPleaseWaitForConfirmation'));
     sync();
     const accept = receipt => {
       if (!receipt || !Number.isSafeInteger(receipt.revision) || receipt.revision <= revision) throw Error('invalid_receipt');
@@ -621,24 +677,24 @@ export function mountController(container, options) {
       catch (error) {
         if (!active() || ticket !== generation) return;
         credentialError(error);
-        if (active()) say('普通配置已保存并核对；来源凭据状态未确认，请单独刷新凭据。', 'warning');
+        if (active()) say(() => t('settings.savedWithUnconfirmedCredentials'), 'warning');
         return;
       }
       if (!active() || ticket !== generation) return;
-      say(drafts.size ? '已保存本次提交；仍有新的未保存修改。' : '已保存。', drafts.size ? 'warning' : 'success');
+      say(drafts.size ? () => t('settings.savedWithNewerDraft') : () => t('settings.saved'), drafts.size ? 'warning' : 'success');
     } catch (error) {
       if (!active() || ticket !== generation) return;
       if (authorityErrors.has(errorCode(error))) {
         revokePartition();
-        say('管理授权或模块上下文已失效，请重新进入页面。', 'error');
+        say(() => t('settings.authorizationExpired'), 'error');
         sync();
         return;
       }
       const conflict = errorCode(error) === 'revision_conflict';
-      say(accepted ? '部分或全部修改已提交，状态暂未核实。请手动刷新并核对，不要重复提交。'
-        : conflict ? '配置已被其他操作修改。草稿已保留，请手动刷新、核对后再保存。'
-          : errorCode(error) === 'invalid_config' ? '配置未被接受。请检查字段，手动刷新并核对后再保存。'
-            : '保存结果尚未确认。草稿已保留，请手动刷新并核对，不要重复提交。', 'error');
+      say(accepted ? () => t('settings.partialWriteUnverified')
+        : conflict ? () => t('settings.configConflict')
+          : errorCode(error) === 'invalid_config' ? () => t('settings.invalidConfig')
+            : () => t('settings.saveUnverified'), 'error');
     } finally {
       if (current() && ticket === generation) { pending = false; sync(); }
     }
@@ -667,12 +723,12 @@ export function mountController(container, options) {
       const response = await options.services.invoke('wall_cache_status', {});
       if (!active() || ticket !== cacheGeneration) return;
       const value = validateCacheStatus(response);
-      cacheValue.textContent = `缓存：${value.items} 项 / ${value.bytes} 字节；上限 ${value.max_items} 项 / ${value.max_bytes} 字节；已淘汰 ${value.evictions} 项。`;
-      say('缓存状态已刷新。此操作只读取统计；普通刷新游戏库会继续复用有效原图。', 'success');
+      copy.bind(cacheValue, () => t('cache.summary', {items: value.items, bytes: value.bytes, maxItems: value.max_items, maxBytes: value.max_bytes, evictions: value.evictions}));
+      say(() => t('cache.cacheStatusRefreshedThisOnlyReads'), 'success');
     } catch {
       if (!active() || ticket !== cacheGeneration) return;
-      cacheValue.textContent = '缓存状态暂不可用。';
-      say('读取缓存状态失败，请稍后重试。', 'error');
+      copy.bind(cacheValue, () => t('cache.cacheStatusIsTemporarilyUnavailable'));
+      say(() => t('cache.couldNotReadCacheStatusTry'), 'error');
     } finally {
       if (current() && ticket === cacheGeneration) { pending = false; sync(); }
     }
@@ -688,22 +744,22 @@ export function mountController(container, options) {
   const credentialError = error => {
     if (authorityErrors.has(errorCode(error))) {
       revokePartition();
-      say('管理授权或页面上下文已失效，请重新进入。', 'error');
-    } else if (errorCode(error) === 'operation_cancelled') say('已取消操作。');
+      say(() => t('credential.authorizationExpired'), 'error');
+    } else if (errorCode(error) === 'operation_cancelled') say(() => t('credential.operationCancelled'));
     else {
       credentialSnapshot = null;
       say(errorCode(error) === 'revision_conflict'
-        ? '设置已被其他操作修改。凭据输入已清除，请刷新状态后重新操作。'
-        : '操作未完成或结果未确认。凭据输入已清除，请刷新并核对状态。', 'error');
+        ? () => t('credential.configConflict')
+        : () => t('credential.mutationUnverified'), 'error');
     }
   };
   const refreshCredentials = async () => {
-    if (!active() || !CREDENTIALS[moduleId] || !options.services.credentials?.status) return;
+    if (!active() || !currentCredentialLabels[moduleId] || !options.services.credentials?.status) return;
     const ticket = credentialGeneration, configTicket = generation;
     const value = await options.services.credentials.status();
     if (!active() || ticket !== credentialGeneration || configTicket !== generation) return;
     if (!value || !Number.isSafeInteger(value.revision) || value.revision < 1 || !value.fields) throw Error('invalid_credential_status');
-    for (const [field] of CREDENTIALS[moduleId]) {
+    for (const [field] of currentCredentialLabels[moduleId]) {
       const state = value.fields[field];
       if (state && (typeof state.configured !== 'boolean' || typeof state.decryptable !== 'boolean' || state.upstream !== 'unverified')) throw Error('invalid_credential_status');
     }
@@ -725,7 +781,7 @@ export function mountController(container, options) {
     const row = credentialControls.get(field);
     const token = row.input?.value.trim();
     if (!clear && (!token || token.length > 4096 || /[\x00-\x1f\x7f-\x9f]/u.test(token))) {
-      say('请输入 1 到 4096 字符的有效 Key 或 Token。', 'error'); return;
+      say(() => t('credential.enterAValidKeyOrToken'), 'error'); return;
     }
     const ticket = ++credentialGeneration;
     clearCredentialInputs(); credentialPending = true; sync();
@@ -738,7 +794,7 @@ export function mountController(container, options) {
       if (!active() || ticket !== credentialGeneration) return;
       const state = credentialSnapshot.fields[field];
       if (!state || state.configured === clear) throw Error('unverified_snapshot');
-      say(clear ? '凭据已清除。' : '凭据已保存；有效性会在来源请求时验证。', 'success');
+      say(clear ? () => t('credential.credentialsCleared') : () => t('credential.savedUnverifiedUpstream'), 'success');
     } catch (error) {
       if (active() && ticket === credentialGeneration) credentialError(error);
     } finally {
@@ -759,7 +815,7 @@ export function mountController(container, options) {
     const remaining = authorizationSession.expires_at * 1000 - Date.now();
     if (remaining <= 0) {
       stopAuthorization(); authorizationSession = {...authorizationSession, state: 'expired'};
-      say('二维码已超时，请重新登录。'); sync(); return;
+      say(() => t('credential.theQrCodeTimedOutSign')); sync(); return;
     }
     const delay = Math.min(remaining, Math.max(250, authorizationSession.next_poll_at * 1000 - Date.now()));
     authorizationTimer = setTimeout(() => { authorizationTimer = null; void authorize('poll'); }, delay);
@@ -791,15 +847,15 @@ export function mountController(container, options) {
         if (!active() || ticket !== credentialGeneration) return;
         if (step === 'revoke' && credentialSnapshot?.fields.credential_perfect?.configured !== false) throw Error('unverified_revocation');
         if (authorizationSession?.state === 'waiting') {
-          say(cancelRequested ? '正在取消扫码。' : '请使用完美 App 扫码并亲自确认授权；留在本页等待结果。');
+          say(cancelRequested ? () => t('credential.cancellingTheQrSession') : () => t('credential.scanWithThePerfectWorldApp'));
           if (step === 'begin') next = 'qr';
         } else {
           stopAuthorization();
           const state = authorizationSession?.state;
-          say(state === 'authorized' ? '完美授权已保存，玩家 Steam 绑定保持独立。'
-            : step === 'revoke' ? '完美授权已撤销。'
-              : state === 'expired' ? '二维码已过期，请重新登录。'
-                : state === 'cancelled' ? '扫码已取消。' : '授权会话已结束，请刷新状态。', state === 'authorized' || step === 'revoke' ? 'success' : 'warning');
+          say(state === 'authorized' ? () => t('credential.perfectWorldAuthorizationWasSavedThe')
+            : step === 'revoke' ? () => t('credential.perfectWorldAuthorizationWasRevoked')
+              : state === 'expired' ? () => t('credential.theQrCodeExpiredSignIn')
+                : state === 'cancelled' ? () => t('credential.theQrSessionWasCancelled') : () => t('credential.theAuthorizationSessionEndedRefreshThe'), state === 'authorized' || step === 'revoke' ? 'success' : 'warning');
           cancelRequested = false;
         }
       }
@@ -818,56 +874,57 @@ export function mountController(container, options) {
     }
   };
   const buildCredentials = () => {
-    const aliases = (CREDENTIALS[moduleId] || []).filter(([field]) => credentialSnapshot.fields[field]);
+    const aliases = (currentCredentialLabels[moduleId] || []).filter(([field]) => credentialSnapshot.fields[field]);
     if (!aliases.length) return;
     if (!credentialRoot) {
       credentialRoot = node('section', undefined, 'steam-dlc-credentials');
-      if (!options.presentation?.credentialHost) credentialRoot.append(node('h3', '来源凭据与授权'));
-      credentialRoot.append(node('p', '凭据只在可信管理入口提交。输入仅在当前页面保留；上游有效性在查询时验证。', 'steam-dlc-hint'));
+      if (!options.presentation?.credentialHost) credentialRoot.append(node('h3', () => t('section.sourceCredentials')));
+      credentialRoot.append(node('p', () => t('credential.submitCredentialsOnlyThroughTrustedAdministration'), 'steam-dlc-hint'));
       if (options.presentation?.credentialHost) options.presentation.credentialHost.append(credentialRoot);
       else root.insertBefore(credentialRoot, message);
     }
-    for (const [field, label] of aliases) {
+    for (const [field] of aliases) {
       if (credentialControls.has(field)) continue;
       const box = node('section', undefined, 'steam-dlc-credential');
       const status = node('p', '', 'steam-dlc-credential-status'); status.setAttribute('role', 'status');
       const actions = node('div', undefined, 'steam-dlc-actions');
       const row = {status, actions, buttons: []};
+      const label = () => currentCredentialLabels[moduleId].find(([name]) => name === field)[1];
       box.append(node('h4', label), status);
       const button = (action, text, callback) => {
         const value = node('button', text, 'ui-button'); value.type = 'button'; value.dataset.action = action;
         listen(value, 'click', () => { if (value.getAttribute('aria-disabled') !== 'true') callback(); }); actions.append(value); row.buttons.push(value); return value;
       };
       if (field === 'credential_perfect') {
-        row.qr = node('img', undefined, 'steam-dlc-qr'); row.qr.alt = '完美登录二维码，仅供本次管理员授权';
+        row.qr = node('img', undefined, 'steam-dlc-qr'); copy.bind(row.qr, () => t('credential.perfectWorldSignInQrCode'), 'alt');
         row.qr.setAttribute('referrerpolicy', 'no-referrer');
         box.append(row.qr);
-        button('perfect-begin', '扫码登录 / 重新登录', () => { void authorize('begin'); });
-        button('perfect-cancel', '取消扫码', () => { void authorize('cancel'); });
-        button('perfect-poll', '检查扫码状态', () => { void authorize('poll'); });
-        button('perfect-revoke', '撤销完美授权', () => { void authorize('revoke'); });
+        button('perfect-begin', () => t('credential.signInSignInAgainBy'), () => { void authorize('begin'); });
+        button('perfect-cancel', () => t('credential.cancelQrSignIn'), () => { void authorize('cancel'); });
+        button('perfect-poll', () => t('credential.checkQrSignInStatus'), () => { void authorize('poll'); });
+        button('perfect-revoke', () => t('credential.revokePerfectWorldAuthorization'), () => { void authorize('revoke'); });
       } else {
         const input = node('input'); input.type = 'password'; input.className = 'ui-control';
         input.id = `steam-dlc-${field}`; input.name = field; input.maxLength = 4096;
-        input.autocomplete = 'new-password'; input.spellcheck = false; input.setAttribute('aria-label', label);
+        input.autocomplete = 'new-password'; input.spellcheck = false; copy.bind(input, label, 'ariaLabel');
         row.input = input;
         if (options.presentation) {
-          const fieldLabel = node('label', label), hint = node('p', '来源凭据不会作为普通草稿保留。'), error = node('p');
+          const fieldLabel = node('label', label), hint = node('p', () => t('credential.sourceCredentialsAreNeverKeptAs')), error = node('p');
           hint.id = `${input.id}-hint`; error.id = `${input.id}-error`;
           options.presentation.field(box, {control: input, label: fieldLabel, hint, error});
         } else box.append(input);
         listen(input, 'input', sync);
-        button(`replace-${field}`, '保存凭据', () => { void credentialAction(field, false); });
-        button(`clear-${field}`, '清除凭据', () => { void credentialAction(field, true); });
+        button(`replace-${field}`, () => t('credential.saveCredentials'), () => { void credentialAction(field, false); });
+        button(`clear-${field}`, () => t('credential.clearCredentials'), () => { void credentialAction(field, true); });
       }
       box.append(actions); credentialControls.set(field, row); credentialRoot.append(box);
     }
     credentialChanged = () => {
       for (const [field, row] of credentialControls) {
         const state = credentialSnapshot?.fields[field];
-        row.status.textContent = !state ? '状态待刷新。' : !state.configured ? '未配置。'
-          : state.decryptable ? '已配置；上游有效性尚未验证。' : '已配置，但当前无法解密，请检查服务密钥后重新设置。';
-        if (field === 'credential_perfect' && authorizationSession) row.status.textContent += ` 当前扫码：${authorizationLabel(authorizationSession.state)}。`;
+        row.status.textContent = !state ? t('credential.refreshToCheckStatus') : !state.configured ? t('credential.notConfigured')
+          : state.decryptable ? t('credential.configuredUpstreamValidityIsUnverified') : t('credential.decryptionFailed');
+        if (field === 'credential_perfect' && authorizationSession) row.status.textContent += t('credential.qrSignInStatus', {status: authorizationLabel(authorizationSession.state, t)});
         if (row.input) row.input.disabled = !active() || pending || credentialPending || authorizationSession?.state === 'waiting';
         for (const button of row.buttons) {
           const action = button.dataset.action;
@@ -889,7 +946,7 @@ export function mountController(container, options) {
     input.id = `steam-dlc-${moduleId}-${options.routeId}-${name}`; input.name = name;
     input.className = 'ui-control'; text.htmlFor = input.id;
     if (choices) {
-      input.append(...choices.map(value => { const choice = node('option', (name === 'action' && value === 'recent' ? '近期战绩' : CHOICE_LABELS[value]) || '未知选项'); choice.value = value; return choice; }));
+      input.append(...choices.map(value => { const choice = node('option', () => (name === 'action' && value === 'recent' ? t('query.recentMatches') : choose(currentChoiceLabels, value, String(value))) || t('query.unknownOption')); choice.value = value; return choice; }));
     } else { input.type = 'text'; input.maxLength = 128; input.autocomplete = 'off'; }
     input.value = initial;
     const hint = node('p', '', 'steam-dlc-hint'), error = node('p', '', 'steam-dlc-field-error');
@@ -901,7 +958,7 @@ export function mountController(container, options) {
   const renderCS2 = (projection, target) => {
     if (!['profile', 'stats', 'match', 'recent'].includes(projection.kind)) return;
     const data = projection.data;
-    const text = value => typeof value === 'string' && value ? value : '未知';
+    const text = value => typeof value === 'string' && value ? value : t('query.unknown');
     const score = row => `${metric(row?.scores?.[0])} : ${metric(row?.scores?.[1])}`;
     const kda = row => `${metric(row?.kills)}/${metric(row?.deaths)}/${metric(row?.assists)}`;
     const table = (columns, rows) => {
@@ -912,47 +969,47 @@ export function mountController(container, options) {
       }
       wrap.append(element); target.append(wrap);
     };
-    const coverage = displayLabel({platform_recorded: '平台收录', recorded_official: '完美收录官匹', recent_first_page: '近期首批样本', recent_player_summary: '有界近期玩家摘要'}, projection.coverage, '范围未知');
+    const coverage = () => displayLabel({platform_recorded: t('query.recordedByPlatform'), recorded_official: t('choice.officialMatchesRecordedByPerfectWorld'), recent_first_page: t('query.firstBatchOfRecentSamples'), recent_player_summary: t('query.limitedRecentPlayerSummary')}, projection.coverage, t('query.coverageUnknown'));
     const full = projection.detail_level === 'full_match';
     if (['profile', 'stats'].includes(projection.kind)) {
-      target.append(node('p', `来源：${displayLabel(CHOICE_LABELS, projection.platform, '来源未知')} · 范围：${coverage}`, 'steam-dlc-hint'));
+      target.append(node('p', () => t('query.sourceCoverage', {source: choose(currentChoiceLabels, projection.platform, t('query.sourceUnknown')), coverage: coverage()}), 'steam-dlc-hint'));
       if (projection.kind === 'profile') {
         const rank = data.rank || {};
-        const rankValue = typeof rank.value === 'string' && rank.value.trim() && !/^[+-]?[\d.]+$/u.test(rank.value) ? rank.value : metric(rank.value);
-        target.append(node('p', `玩家：${text(data.nickname)} · 账号：${text(data.account_id || projection.target?.id)} · 段位：${rankValue} · 积分：${metric(rank.score)}`));
+        const rankValue = () => typeof rank.value === 'string' && rank.value.trim() && !/^[+-]?[\d.]+$/u.test(rank.value) ? rank.value : metric(rank.value);
+        target.append(node('p', () => t('query.playerRank', {player: text(data.nickname), account: text(data.account_id || projection.target?.id), rank: rankValue(), score: metric(rank.score)})));
       }
       const metrics = data.metrics || {};
-      table(['场次', 'K/D', 'rating', 'PW rating', 'ADR', 'RWS', '胜率'], [[...['matches', 'kd', 'rating', 'pw_rating', 'adr', 'rws', 'win_rate'].map(key => metric(metrics[key]))]]);
-      target.append(node('p', '未知表示来源未提供，不按 0 计算。', 'steam-dlc-hint'));
+      table([() => t('query.matches'), 'K/D', 'rating', 'PW rating', 'ADR', 'RWS', () => t('query.winRate')], [[...['matches', 'kd', 'rating', 'pw_rating', 'adr', 'rws', 'win_rate'].map(key => () => metric(metrics[key]))]]);
+      target.append(node('p', () => t('query.missingValuesStayUnknown'), 'steam-dlc-hint'));
       return;
     }
-    target.append(node('p', `来源：${displayLabel(CHOICE_LABELS, projection.platform, '来源未知')} · 范围：${coverage} · 详情：${displayLabel({full_match: '完整比赛', player_summary: '玩家摘要'}, projection.detail_level, '详情范围未知')}`, 'steam-dlc-hint'));
-    if (projection.detail_level === 'player_summary') target.append(node('p', '该来源提供该玩家的近期样本摘要。', 'steam-dlc-hint'));
-    if (projection.unavailable_reason && projection.unavailable_reason !== 'full_match_detail_unavailable') target.append(node('p', '部分详情暂不可用。', 'steam-dlc-hint'));
-    target.append(node('p', '未知表示来源未提供，不按 0 计算。', 'steam-dlc-hint'));
+    target.append(node('p', () => t('query.sourceCoverageDetail', {source: choose(currentChoiceLabels, projection.platform, t('query.sourceUnknown')), coverage: coverage(), detail: displayLabel({full_match: t('query.fullMatch'), player_summary: t('query.playerSummary')}, projection.detail_level, t('query.detailCoverageUnknown'))}), 'steam-dlc-hint'));
+    if (projection.detail_level === 'player_summary') target.append(node('p', () => t('query.thisSourceProvidesASummaryOf'), 'steam-dlc-hint'));
+    if (projection.unavailable_reason && projection.unavailable_reason !== 'full_match_detail_unavailable') target.append(node('p', () => t('query.someDetailsAreUnavailable'), 'steam-dlc-hint'));
+    target.append(node('p', () => t('query.missingValuesStayUnknown'), 'steam-dlc-hint'));
     if (projection.kind === 'recent') {
       if (!Array.isArray(data.matches) || !data.matches.length) {
-        target.append(node('p', '来源当前样本没有可展示的比赛。')); return;
+        target.append(node('p', () => t('query.noMatchesInSample'))); return;
       }
-      table(['比赛', '地图', '比分', 'K/D/A', 'rating', 'PW rating', 'ADR'], data.matches.map(row => [text(row?.match_id), text(row?.map), score(row), kda(row), metric(row?.rating), metric(row?.pw_rating), metric(row?.adr)]));
+      table([() => t('query.match'), () => t('query.map'), () => t('query.score'), 'K/D/A', 'rating', 'PW rating', 'ADR'], data.matches.map(row => [() => text(row?.match_id), () => text(row?.map), () => score(row), () => kda(row), () => metric(row?.rating), () => metric(row?.pw_rating), () => metric(row?.adr)]));
       return;
     }
-    target.append(node('p', `比赛：${text(data.match_id)} · 地图：${text(data.map)} · 比分：${score(data)}`));
+    target.append(node('p', () => t('query.matchSummary', {match: text(data.match_id), map: text(data.map), score: score(data)})));
     if (!full) {
-      target.append(node('p', `玩家：${text(data.focus?.id || projection.target?.id)} · K/D/A：${kda(data)} · rating：${metric(data.rating)} · PW rating：${metric(data.pw_rating)} · ADR：${metric(data.adr)}`));
+      target.append(node('p', () => t('query.playerMetrics', {player: text(data.focus?.id || projection.target?.id), kda: kda(data), rating: metric(data.rating), pwRating: metric(data.pw_rating), adr: metric(data.adr)})));
       return;
     }
-    if (data.focus && typeof data.focus === 'object') target.append(node('p', `焦点：${text(data.focus.nickname)} · ${text(data.focus.account_id)} · K/D/A：${kda(data.focus)} · rating：${metric(data.focus.rating)} · PW rating：${metric(data.focus.pw_rating)} · ADR：${metric(data.focus.adr)}`));
+    if (data.focus && typeof data.focus === 'object') target.append(node('p', () => t('query.focusMetrics', {player: text(data.focus.nickname), account: text(data.focus.account_id), kda: kda(data.focus), rating: metric(data.focus.rating), pwRating: metric(data.focus.pw_rating), adr: metric(data.focus.adr)})));
     if (!Array.isArray(data.players) || !data.players.length) {
-      target.append(node('p', '来源未提供可用玩家名单。')); return;
+      target.append(node('p', () => t('query.noUsableRoster'))); return;
     }
-    table(['玩家', '账号', '队伍', 'K/D/A', 'rating', 'PW rating', 'ADR'], data.players.map(row => [text(row?.nickname), text(row?.account_id), metric(row?.team), kda(row), metric(row?.rating), metric(row?.pw_rating), metric(row?.adr)]));
+    table([() => t('query.player'), () => t('query.account'), () => t('query.team'), 'K/D/A', 'rating', 'PW rating', 'ADR'], data.players.map(row => [() => text(row?.nickname), () => text(row?.account_id), () => metric(row?.team), () => kda(row), () => metric(row?.rating), () => metric(row?.pw_rating), () => metric(row?.adr)]));
   };
   const renderResult = (response, target) => {
     if (!response || response.schema_version !== 1 || !['success', 'partial_success', 'needs_selection', 'error'].includes(response.status)) throw Error('invalid_result');
     target.replaceChildren();
     if (response.status === 'error') {
-      target.append(node('p', typeof response.error?.message === 'string' ? response.error.message : '来源未返回可用结果。', 'steam-dlc-field-error'));
+      target.append(node('p', () => typeof response.error?.message === 'string' ? response.error.message : t('query.theSourceReturnedNoUsableResult'), 'steam-dlc-field-error'));
       return false;
     }
     if (!response.document || !Array.isArray(response.document.blocks)) throw Error('invalid_result');
@@ -963,28 +1020,28 @@ export function mountController(container, options) {
         head.append(...block.columns.map(value => node('th', String(value)))); table.append(head);
         for (const values of block.rows) {
           if (!Array.isArray(values)) continue;
-          const row = node('tr'); row.append(...values.map(value => node('td', value === null ? '未知' : typeof value === 'object' ? String(value.value ?? '') : String(value)))); table.append(row);
+          const row = node('tr'); row.append(...values.map(value => node('td', () => value === null ? t('query.unknown') : typeof value === 'object' ? String(value.value ?? '') : String(value)))); table.append(row);
         }
         wrap.append(table); target.append(wrap);
       }
       const data = block?.kind === 'fields' ? block.fields?.cs2 : null;
       if (block?.kind === 'fields' && !data) {
         const fields = node('dl');
-        for (const key of ['比赛ID', '焦点账号', '焦点名称', '英雄ID', '焦点胜负', '时长（秒）']) {
+        for (const [key, label] of [['比赛ID', 'query.matchId'], ['焦点账号', 'query.focusAccount'], ['焦点名称', 'query.focusName'], ['英雄ID', 'query.heroId'], ['焦点胜负', 'query.focusOutcome'], ['时长（秒）', 'query.durationSeconds']]) {
           if (!(key in (block.fields || {}))) continue;
           const value = block.fields[key];
-          fields.append(node('dt', key), node('dd', value === null ? '未知' : typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value) : '未提供'));
+          fields.append(node('dt', () => t(label)), node('dd', () => value === null ? t('query.unknown') : typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value) : t('query.notProvided')));
         }
         if (fields.childNodes.length) target.append(fields);
       }
       if (Array.isArray(data?.sources)) {
         const list = node('dl', undefined, 'steam-dlc-source-status');
         for (const source of data.sources) {
-          list.append(node('dt', displayLabel(CHOICE_LABELS, source.platform, '来源未知')), node('dd', source.credential_state === 'configured' ? '凭据已配置；查询时验证上游有效性。' : '需要在可信设置页授权。'));
+          list.append(node('dt', () => choose(currentChoiceLabels, source.platform, t('query.sourceUnknown'))), node('dd', () => source.credential_state === 'configured' ? t('query.credentialsConfiguredUpstreamValidityIsChecked') : t('query.authorizationIsRequiredInTrustedSettings')));
         }
         target.append(list);
       } else if (data?.data) {
-        if (typeof data.fetched_at === 'string') target.append(node('p', `采样：${data.fetched_at}${data.season ? ` · 赛季 ${data.season}` : ''}`, 'steam-dlc-hint'));
+        if (typeof data.fetched_at === 'string') target.append(node('p', () => t('query.sampleTimestamp', {time: data.fetched_at, season: data.season ? t('query.seasonSuffix', {season: data.season}) : ''}), 'steam-dlc-hint'));
         renderCS2(data, target);
       }
     }
@@ -1002,50 +1059,50 @@ export function mountController(container, options) {
       if (response.images.reduce((total, page) => total + (typeof page?.base64 === 'string' ? page.base64.length : Infinity), 0) > 4 * Math.ceil((16 * 1024 * 1024) / 3) + 32) throw Error('invalid_images');
       const pages = response.images.map(page => {
         if (page?.media_type !== 'image/png') throw Error('invalid_images');
-        return previewPNG(page.base64, document.defaultView);
+        return previewPNG(page.base64, document.defaultView, t);
       });
       if (pages.reduce((total, bytes) => total + bytes.length, 0) > 16 * 1024 * 1024) throw Error('invalid_images');
       for (const [index, bytes] of pages.entries()) {
         const url = document.defaultView.URL.createObjectURL(new document.defaultView.Blob([bytes], {type: 'image/png'}));
         previewURLs.push(url);
         const figure = node('figure', undefined, 'steam-dlc-preview'), image = node('img');
-        image.src = url; image.alt = `CS2 资料卡 ${index + 1}`;
+        image.src = url; copy.bind(image, () => t('query.profileCardAlt', {index: index + 1}), 'alt');
         figure.append(image); target.append(figure);
       }
-      if (!pages.length) target.append(node('p', '本次未提供资料卡，文字资料仍可查看。', 'steam-dlc-hint'));
+      if (!pages.length) target.append(node('p', () => t('query.noProfileCardWasReturnedText'), 'steam-dlc-hint'));
     } catch {
       revokePreviews();
       target.querySelectorAll('figure.steam-dlc-preview').forEach(figure => figure.remove());
-      target.append(node('p', '资料卡图片无法验证，已保留文字资料。', 'steam-dlc-hint'));
+      target.append(node('p', () => t('query.theProfileCardImageCouldNot'), 'steam-dlc-hint'));
     }
     return success;
   };
   const buildPublicForm = () => {
-    const primary = primaryForm(root, options, {id: 'query', legacyLabel: '查询', className: 'steam-dlc-public-form'});
+    const primary = primaryForm(root, {...options, copy}, {id: 'query', legacyLabel: () => t('query.search'), className: 'steam-dlc-public-form'});
     const {body: queryForm, actions} = primary;
     const result = node('section', undefined, 'steam-dlc-public-result'); result.setAttribute('aria-live', 'polite');
     const grid = options.presentation?.grid(queryForm) || queryForm;
-    const account = publicField(grid, 'account', '玩家账号（SteamID64 / 5E domain）');
+    const account = publicField(grid, 'account', () => t('query.playerAccountSteamid645eDomain'));
     account.required = true;
     let action, platform, limit, season, matchId, focus;
-      action = publicField(grid, 'action', '查询类型', ['profile', 'recent', 'stats', 'last', 'match'], 'profile');
-      platform = publicField(grid, 'platform', '来源', ['perfect', 'official', '5e'], 'perfect');
-      season = publicField(grid, 'season', '赛季（可选）');
-      limit = publicField(grid, 'limit', '近期展示数量', null, '5'); limit.type = 'number'; limit.min = '1'; limit.max = '20'; limit.step = '1';
-      matchId = publicField(grid, 'match_id', '来源比赛 ID'); focus = publicField(grid, 'focus', '单场焦点账号（可选）');
+      action = publicField(grid, 'action', () => t('query.searchType'), ['profile', 'recent', 'stats', 'last', 'match'], 'profile');
+      platform = publicField(grid, 'platform', () => t('query.source'), ['perfect', 'official', '5e'], 'perfect');
+      season = publicField(grid, 'season', () => t('query.seasonOptional'));
+      limit = publicField(grid, 'limit', () => t('query.recentMatchesToShow'), null, '5'); limit.type = 'number'; limit.min = '1'; limit.max = '20'; limit.step = '1';
+      matchId = publicField(grid, 'match_id', () => t('query.sourceMatchId')); focus = publicField(grid, 'focus', () => t('query.matchFocusAccountOptional'));
       const fields = () => {
         season.disabled = !['profile', 'stats'].includes(action.value);
         limit.disabled = action.value !== 'recent'; matchId.disabled = action.value !== 'match'; focus.disabled = action.value !== 'match';
         matchId.required = action.value === 'match';
       };
       listen(action, 'change', fields); fields();
-      root.append(node('p', '页面查询始终需要明确账号，不读取本人默认绑定。5E 使用 domain；官匹与 5E 单场仅限来源近期玩家摘要。', 'steam-dlc-hint'));
-      if (!template) root.append(node('h3', '查询条件'));
+      root.append(node('p', () => t('query.webLookupsAlwaysRequireAnExplicit'), 'steam-dlc-hint'));
+      if (!template) root.append(node('h3', () => t('section.queryCriteria')));
     queryForm.append(actions);
     let failedPreview = null, formRevision = 0;
     const recovery = node('div', undefined, 'steam-dlc-actions'); recovery.hidden = true;
-    const retry = node('button', '重试资料卡预览', 'ui-button'); retry.type = 'button'; retry.dataset.action = 'query-preview-retry';
-    const textOnly = node('button', '仅查询文字资料', 'ui-button'); textOnly.type = 'button'; textOnly.dataset.action = 'query-text-only';
+    const retry = node('button', () => t('query.retryCardPreview'), 'ui-button'); retry.type = 'button'; retry.dataset.action = 'query-preview-retry';
+    const textOnly = node('button', () => t('query.searchForTextDetailsOnly'), 'ui-button'); textOnly.type = 'button'; textOnly.dataset.action = 'query-text-only';
     recovery.append(retry, textOnly);
     // Form edits do not cancel the in-flight request: its finally still owns
     // releasing pending. They only invalidate recovery of its captured target.
@@ -1068,7 +1125,7 @@ export function mountController(container, options) {
       const explicitRecovery = mode !== 'normal';
       if (explicitRecovery && (!failedPreview || failedPreview.formRevision !== formRevision)) return;
       const parameters = explicitRecovery ? {...failedPreview.parameters} : statusOnly ? {} : {account: account.value.trim()};
-      if (!statusOnly && !explicitRecovery && (!parameters.account || ![...queryForm.querySelectorAll('input,select')].every(input => input.checkValidity()))) { say('请填写明确账号并检查输入范围。', 'error'); return; }
+      if (!statusOnly && !explicitRecovery && (!parameters.account || ![...queryForm.querySelectorAll('input,select')].every(input => input.checkValidity()))) { say(() => t('query.enterAnExplicitAccountAndCheck'), 'error'); return; }
       if (!statusOnly && !explicitRecovery) {
         Object.assign(parameters, {action: action.value, platform: platform.value});
         if (!season.disabled && season.value.trim()) parameters.season = season.value.trim();
@@ -1078,7 +1135,7 @@ export function mountController(container, options) {
       }
       const withPreview = parameters.action === 'profile' && mode !== 'text';
       const submittedRevision = formRevision;
-      const ticket = ++previewGeneration; pending = true; recovery.hidden = true; revokePreviews(); result.replaceChildren(node('p', '正在查询来源。')); sync(); syncQuery();
+      const ticket = ++previewGeneration; pending = true; recovery.hidden = true; revokePreviews(); result.replaceChildren(node('p', () => t('query.queryingTheSource'))); sync(); syncQuery();
       try {
         const response = await options.services[withPreview ? 'preview' : 'invoke']('query', parameters);
         if (!active() || ticket !== previewGeneration) return;
@@ -1087,39 +1144,39 @@ export function mountController(container, options) {
           // Known source errors have actionable guidance; module_unavailable
           // can also mean rendering failed and needs explicit preview recovery.
           const guidance = new Map([
-            ['auth_required', '所选来源需要授权。请在可信设置页完成完美扫码授权或配置 5E Token，核对来源后重新查询。'],
-            ['auth_expired', '所选来源的授权已过期。请在可信设置页重新授权后查询。'],
-            ['rate_limited', '来源请求限流，请稍后再查询；页面不会自动重试。'],
-            ['parameter_error', '查询参数不符合要求，请核对玩家账号、所选来源、赛季和比赛 ID 后重新查询。'],
-            ['not_public', '玩家资料未公开或来源访问受限，请核对公开设置与来源授权后重新查询。'],
-            ['not_found', '来源未找到对应玩家或记录，请核对玩家账号与所选来源后重新查询。'],
-            ['no_records', '来源当前暂无可用记录，可稍后重新查询已收录比赛。'],
-            ['unparsed', '来源尚未解析对应记录，请等待来源解析后再查询。'],
-            ['upstream_error', '所选来源暂时不可用，请稍后再查询。'],
+            ['auth_required', () => t('query.error.authRequired')],
+            ['auth_expired', () => t('query.error.authExpired')],
+            ['rate_limited', () => t('query.error.rateLimited')],
+            ['parameter_error', () => t('query.error.invalidParameters')],
+            ['not_public', () => t('query.error.notPublic')],
+            ['not_found', () => t('query.error.notFound')],
+            ['no_records', () => t('query.error.noRecords')],
+            ['unparsed', () => t('query.error.unparsed')],
+            ['upstream_error', () => t('query.error.upstreamUnavailable')],
           ]).get(response.schema_version === 1 ? response.error?.code : null);
           if (!guidance) throw Error('preview_unavailable');
           failedPreview = null;
           result.replaceChildren(node('p', guidance, 'steam-dlc-field-error'));
-          say('查询未完成，请按来源提示处理后重新查询。', 'warning');
+          say(() => t('query.theLookupDidNotFinishFollow'), 'warning');
           return;
         }
         const success = withPreview ? renderPreview(response, result) : renderResult(response, result);
         failedPreview = null;
-        if (response.status === 'needs_selection') say('需要补充选择，请按来源提示配置或改选。', 'warning');
-        else say(success ? '来源结果已更新。' : '查询未完成，请查看来源反馈。', success ? 'success' : 'warning');
+        if (response.status === 'needs_selection') say(() => t('query.aSelectionIsRequiredFollowThe'), 'warning');
+        else say(success ? () => t('query.sourceResultsUpdated') : () => t('query.theLookupDidNotFinishCheck'), success ? 'success' : 'warning');
       } catch (error) {
         if (!active() || ticket !== previewGeneration) return;
         revokePreviews();
         if (authorityErrors.has(errorCode(error))) {
           clearQuery(); revokePartition(); sync();
           publicInputs.forEach(input => { input.value = ''; }); syncQuery();
-          say('页面授权或运行上下文已变化，请重新进入页面。', 'error'); return;
+          say(() => t('query.pageAuthorizationOrRuntimeContextChanged'), 'error'); return;
         }
         const canRecover = withPreview && submittedRevision === formRevision;
         failedPreview = canRecover ? {parameters: {...parameters}, formRevision: submittedRevision} : null;
         recovery.hidden = !canRecover;
-        result.replaceChildren(node('p', canRecover ? '资料卡预览未完成，未取得可确认的文字或图片。可主动重试预览，或仅查询文字资料；每次操作会重新查询来源。' : '请求未完成，或返回内容不完整。请核对当前账号与来源后重新查询。', 'steam-dlc-field-error'));
-        say('未取得可确认结果。', 'error');
+        result.replaceChildren(node('p', () => canRecover ? t('query.cardPreviewDidNotFinishNo') : t('query.theRequestDidNotFinishOr'), 'steam-dlc-field-error'));
+        say(() => t('query.noVerifiedResultWasObtained'), 'error');
       } finally {
         if (current() && ticket === previewGeneration) { pending = false; sync(); syncQuery(); }
       }
@@ -1127,10 +1184,10 @@ export function mountController(container, options) {
     listen(retry, 'click', () => { void run(false, 'preview'); });
     listen(textOnly, 'click', () => { void run(false, 'text'); });
     listeners.push(primary.bind(() => run(false)));
-      const status = node('button', '刷新来源状态', 'ui-button'); status.type = 'button'; status.dataset.action = 'query-status';
+      const status = node('button', () => t('status.refreshSourceStatus'), 'ui-button'); status.type = 'button'; status.dataset.action = 'query-status';
       listen(status, 'click', () => { void run(true); }); actions.append(status);
     root.append(queryForm);
-    primary.result(recovery, node('h3', '查询结果'), result);
+    primary.result(recovery, node('h3', () => t('status.searchResults')), result);
     options.presentation?.actions(actions);
     void run(true);
   };
@@ -1138,8 +1195,8 @@ export function mountController(container, options) {
   if (module && options.routeId === 'home') {
     if (moduleId !== 'steam') {
       const status = node('section', undefined, 'steam-dlc-source-panel');
-      root.append(node('h3', '来源状态'));
-      const refresh = node('button', '刷新来源状态', 'ui-button'); refresh.type = 'button'; refresh.dataset.action = 'refresh-status';
+      root.append(node('h3', () => t('status.sourceStatus')));
+      const refresh = node('button', () => t('status.refreshSourceStatus'), 'ui-button'); refresh.type = 'button'; refresh.dataset.action = 'refresh-status';
       const refreshStatus = async () => {
         if (!active() || pending) return;
         const ticket = ++previewGeneration; pending = true; sync(); refresh.setAttribute('aria-disabled', 'true');
@@ -1148,13 +1205,13 @@ export function mountController(container, options) {
           if (!active() || ticket !== previewGeneration) return;
           renderResult(response, status);
         } catch {
-          if (active() && ticket === previewGeneration) status.replaceChildren(node('p', '来源状态读取失败，请稍后刷新。', 'steam-dlc-field-error'));
+          if (active() && ticket === previewGeneration) status.replaceChildren(node('p', () => t('status.couldNotReadSourceStatusRefresh'), 'steam-dlc-field-error'));
         } finally {
           if (current() && ticket === previewGeneration) { pending = false; refresh.setAttribute('aria-disabled', String(!active())); sync(); }
         }
       };
       if (template) {
-        template.bind('refresh', refreshStatus, {label: refresh.textContent});
+        template.bind('refresh', refreshStatus, {label: () => t('status.refreshSourceStatus')});
         root.append(status);
       } else {
         listen(refresh, 'click', () => { void refreshStatus(); });
@@ -1163,37 +1220,37 @@ export function mountController(container, options) {
       void refreshStatus();
     }
     const help = node('details', undefined, 'steam-dlc-disclosure');
-    help.append(node('summary', '命令帮助'));
+    help.append(node('summary', () => t('help.commandHelp')));
     const list = node('dl', undefined, 'steam-dlc-help');
-    for (const [command, help] of module.commands) {
+    for (const [index, [command]] of module.commands.entries()) {
       const term = node('dt');
       term.append(node('code', command));
-      list.append(term, node('dd', help));
+      list.append(term, node('dd', () => moduleDefinitions(t)[moduleId].commands[index][1]));
     }
     help.append(list);
     root.append(help);
     if (moduleId === 'steam') {
       const details = node('details', undefined, 'steam-dlc-disclosure');
-      details.append(node('summary', '游戏生涯拼图说明'));
-      details.append(node('p', '游戏生涯拼图用累计小时映射每张作品的目标面积，提供单机、标准和长玩预设。大图跨行、小图填空，封面保持纵向比例；旧布局可以显式选择。未知时长不补零。', 'steam-dlc-hint'));
-      details.append(node('p', '公开主页与近期记录各有其样本范围；完整游戏库需要可选 Steam Key，完整性以本次来源返回为准。默认纵向 2:3，可切换 9:16 或 1:2；作品数量和输出预算共同约束分页，兼容旧布局最多 200 项。包含全部应用会纳入软件，旧设置中的关闭值继续保留。', 'steam-dlc-hint'));
-      root.append(details, node('h3', '缓存状态'));
-      cacheValue = node('p', '尚未读取缓存状态。', 'steam-dlc-cache-value');
-      cacheButton = node('button', '刷新缓存状态'); cacheButton.className = 'ui-button'; cacheButton.type = 'button'; cacheButton.dataset.action = 'refresh-cache';
+      details.append(node('summary', () => t('help.aboutGameHistoryCollages')));
+      details.append(node('p', () => t('help.theCollageMapsPlaytimeToEach'), 'steam-dlc-hint'));
+      details.append(node('p', () => t('help.publicProfileAndRecentActivityHave'), 'steam-dlc-hint'));
+      root.append(details, node('h3', () => t('help.cacheStatus')));
+      cacheValue = node('p', () => t('help.cacheStatusHasNotBeenRead'), 'steam-dlc-cache-value');
+      cacheButton = node('button', () => t('help.refreshCacheStatus')); cacheButton.className = 'ui-button'; cacheButton.type = 'button'; cacheButton.dataset.action = 'refresh-cache';
       if (template) {
-        template.bind('refresh', refreshCache, {label: cacheButton.textContent});
+        template.bind('refresh', refreshCache, {label: () => t('help.refreshCacheStatus')});
         root.append(cacheValue);
       } else {
         listen(cacheButton, 'click', () => { void refreshCache(); });
         root.append(cacheValue, cacheButton);
       }
     }
-    if (moduleId === 'dota2') { const details = node('details', undefined, 'steam-dlc-disclosure'); details.append(node('summary', '账号与订阅说明'), node('p', '账号可用 Dota ID32 或 SteamID64。订阅创建、查看和取消通过当前群或私聊中的命令完成。OpenDota Key 可选，匿名与有 Key 都遵守同一每小时预算；模型短评失败不会阻止基础通知。', 'steam-dlc-hint')); root.append(details); }
+    if (moduleId === 'dota2') { const details = node('details', undefined, 'steam-dlc-disclosure'); details.append(node('summary', () => t('help.aboutAccountsAndSubscriptions')), node('p', () => t('help.useADotaId32OrSteamid64'), 'steam-dlc-hint')); root.append(details); }
   } else if (module && options.routeId === 'settings') {
     const discard = () => {
       if (!active() || pending || !baseline) return;
       if (drafts.size) draftVersion += 1;
-      drafts.clear(); displayValues(); say('已放弃本模块修改。', 'success'); sync();
+      drafts.clear(); displayValues(); say(() => t('settings.moduleChangesDiscarded'), 'success'); sync();
     };
     if (template) {
       form = node('div');
@@ -1205,16 +1262,16 @@ export function mountController(container, options) {
     form = node('form');
     listen(form, 'submit', event => { event.preventDefault(); void save(); });
     const actions = node('div', undefined, 'steam-dlc-actions');
-    saveButton = node('button', '保存修改');
+    saveButton = node('button', () => t('settings.saveChanges'));
     saveButton.className = 'ui-button';
     saveButton.dataset.variant = 'primary';
     saveButton.type = 'submit';
     saveButton.dataset.action = 'save';
-    refreshButton = node('button', '刷新配置');
+    refreshButton = node('button', () => t('settings.refreshSettings'));
     refreshButton.className = 'ui-button';
     refreshButton.type = 'button';
     refreshButton.dataset.action = 'refresh';
-    discardButton = node('button', '放弃本模块修改');
+    discardButton = node('button', () => t('settings.discardModuleChanges'));
     discardButton.className = 'ui-button';
     discardButton.type = 'button';
     discardButton.dataset.action = 'discard';
@@ -1225,27 +1282,27 @@ export function mountController(container, options) {
     root.append(form);
     form.append(actions);
     }
-    root.append(node('p', '回复主题中的“跟随核心”清除模块覆盖值。恢复默认先形成草稿，保存后生效。', 'steam-dlc-hint'));
+    root.append(node('p', () => t('settings.followCoreClearsTheModulesReply'), 'steam-dlc-hint'));
   } else if (moduleId === 'cs2' && options.routeId === 'query') buildPublicForm(false);
   else if (moduleId === 'steam' && options.routeId === 'collage') {
-    const job = mountJobForm(root, {options, active, field: publicField, parseLimit: parsePosterLimit, validatePNG: bytes => previewPNG(bytes, document.defaultView), say});
+    const job = mountJobForm(root, {options: {...options, copy}, active, field: publicField, parseLimit: (value, translate = t) => parsePosterLimit(value, translate), validatePNG: bytes => previewPNG(bytes, document.defaultView, t), say});
     invalidatePublic = job.dispose;
     updatePublicAvailability = job.setAvailable;
     listeners.push(job.dispose);
   }
   else if (moduleId === 'steam' && options.routeId === 'wishlist') {
-    const wishlist = mountWishlistForm(root, {options, active, field: publicField, say});
+    const wishlist = mountWishlistForm(root, {options: {...options, copy}, active, field: publicField, say});
     invalidatePublic = wishlist.dispose;
     updatePublicAvailability = wishlist.setAvailable;
     listeners.push(wishlist.dispose);
   }
   else if (moduleId === 'dota2' && options.routeId === 'analysis') {
-    const analysis = mountAnalysisForm(root, {options, active, field: publicField, renderResult, say});
+    const analysis = mountAnalysisForm(root, {options: {...options, copy}, active, field: publicField, renderResult, say});
     invalidatePublic = analysis.dispose;
     updatePublicAvailability = analysis.setAvailable;
     listeners.push(analysis.dispose);
   }
-  else root.append(node('p', '该页面入口未声明，请返回模块列表重新进入。'));
+  else root.append(node('p', () => t('page.thisPageIsNotDeclaredReturn')));
   if (!template) root.append(message);
 
   const dispose = () => {
@@ -1273,21 +1330,27 @@ export function mountController(container, options) {
     update(next) {
       if (disposed || revoked) return;
       const wasAvailable = context.available;
+      const localeChanged = next.locale !== context.locale;
       context = { ...next };
       if (identity(context) !== initialIdentity || !current()) {
         invalidatePublic();
         previewGeneration += 1; revokePreviews(); publicInputs.forEach(input => { input.value = ''; });
         revokePartition();
-        say('模块运行上下文已变化，请重新进入页面。', 'error');
+        say(() => t('page.moduleRuntimeContextChangedOpenThe'), 'error');
       } else if (wasAvailable !== context.available) {
         updatePublicAvailability(context.available);
         previewGeneration += 1; revokePreviews();
         credentialGeneration += 1; stopAuthorization(); clearCredentialInputs(); authorizationSession = null; credentialPending = false; authorizationPending = false;
         cacheGeneration += 1;
         generation += 1; pending = false; ready = false;
-        say('页面可用状态已变化，请核对刷新后的配置。');
+        say(() => t('page.pageAvailabilityChangedReviewTheRefreshed'));
       }
       sync();
+      if (localeChanged) {
+        publishNotice();
+        if (baseline && current()) relabelFields();
+        if (!options.copy) copy.refresh();
+      }
       // A directory refresh may restore this same binding. The user explicitly
       // refreshes config before any new request; never resend an old operation.
     },

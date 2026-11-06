@@ -1,7 +1,7 @@
 import {JSDOM} from 'jsdom';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {buildPage, defaultCore} from '../../scripts/build_pages.mjs';
+import {buildPage, defaultCore, modules} from '../../scripts/build_pages.mjs';
 
 const {sourceRuntimeURL} = await import(pathToFileURL(resolve(defaultCore, 'tests/pages/shell/source-build.mjs')).href);
 
@@ -16,10 +16,15 @@ export function installDOM(dom) {
 }
 installDOM(bootstrap);
 const runtimeURL = await sourceRuntimeURL();
-const code = await buildPage({runtimePath: './runtime.js'});
 export const runtime = await import(runtimeURL);
-const source = code.replaceAll('"./runtime.js"', JSON.stringify(runtimeURL)).replaceAll("'./runtime.js'", JSON.stringify(runtimeURL));
-let app;
-try { app = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64')); }
-catch (error) { throw Error('Public facade source import failed: ' + error.message.split('data:text')[0]); }
-export const mount = app.mount;
+const apps = new Map();
+for (const moduleId of modules) {
+  const code = await buildPage({moduleId, runtimePath: './runtime.js'});
+  const source = code.replaceAll('"./runtime.js"', JSON.stringify(runtimeURL)).replaceAll("'./runtime.js'", JSON.stringify(runtimeURL));
+  try { apps.set(moduleId, await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'))); }
+  catch (error) { throw Error(`Public facade source import failed for ${moduleId}: ` + error.message.split('data:text')[0]); }
+}
+export function mount(container, options) {
+  const moduleId = options.context.owner.split('/').at(-1);
+  return apps.get(moduleId)?.mount(container, options);
+}

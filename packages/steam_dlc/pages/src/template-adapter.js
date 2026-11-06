@@ -1,6 +1,6 @@
 // The controller owns requests and validity. Modern Core owns the actual
 // submit element and dispatch; legacy Core keeps the original DOM form.
-export function primaryForm(root, {presentation}, {id, label, className = '', legacyLabel = label}) {
+export function primaryForm(root, {presentation, copy}, {id, label, className = '', legacyLabel = label}) {
   const template = presentation?.template;
   const body = root.ownerDocument.createElement(template ? 'div' : 'form');
   body.className = className;
@@ -13,7 +13,8 @@ export function primaryForm(root, {presentation}, {id, label, className = '', le
     button.className = 'ui-button';
     button.dataset.action = id;
     button.dataset.variant = 'primary';
-    button.textContent = legacyLabel;
+    if (typeof legacyLabel === 'function') copy.bind(button, legacyLabel);
+    else button.textContent = legacyLabel;
     actions.append(button);
   }
   return {

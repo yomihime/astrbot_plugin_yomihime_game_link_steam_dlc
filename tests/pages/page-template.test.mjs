@@ -93,6 +93,30 @@ for (const [moduleId, moduleRoutes] of Object.entries(routes)) {
             assert.ok(calls.every(([, parameters]) => !Object.keys(parameters).length));
           }
         }
+        const heading = root.querySelector('.ui-group-heading h3');
+        const callsBefore = calls.length;
+        const active = root.querySelector('input[name=account]') || root.querySelector('select[name=reply_theme]');
+        if (active) {
+          if (active.tagName === 'INPUT') active.value = '76561198000000001';
+          active.focus();
+        }
+        const value = active?.value;
+        for (const [locale, availability] of [
+          ['en-US', 'This page is available.'],
+          ['ja-JP', 'このページは利用できます。'],
+          ['zh-TW', '目前頁面入口可用。'],
+        ]) {
+          page.update({...context, locale});
+          await settle();
+          assert.ok(root.textContent.includes(availability), locale);
+          assert.equal(container.querySelector('.ui-page-template'), root);
+          assert.equal(root.querySelector('.ui-group-heading h3'), heading);
+          assert.equal(calls.length, callsBefore);
+          if (active) {
+            assert.equal(dom.window.document.activeElement, active);
+            assert.equal(active.value, value);
+          }
+        }
       } finally {
         page.dispose();
         dom.window.close();
