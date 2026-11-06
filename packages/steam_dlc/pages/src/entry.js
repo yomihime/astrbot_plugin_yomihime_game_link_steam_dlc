@@ -1,8 +1,10 @@
 import {createApp, h, shallowRef} from 'vue';
 import * as ui from '@game-link/ui';
 import {moduleAppearance} from './appearance.js';
+import {createPageCopy} from './copy.js';
 const {UiProvider, PageHeader, SettingsLayout, Surface, SettingsGroup, StatusHint, FormField, FormGrid, ActionBar} = ui;
 let nextTemplate = 0;
+const compiledModuleId = typeof __DLC_MODULE_ID__ === 'string' ? __DLC_MODULE_ID__ : null;
 import {mountController, MODULES} from './controller.js';
 import steamLogo from '../../steam/assets/steam.svg?raw';
 import dota2Logo from '../../dota2/assets/dota2.svg?raw';
@@ -34,14 +36,24 @@ function artworkNode(id, doc) {
  */
 export function mount(container, options) {
   const context = shallowRef({...options.context});
-  const moduleId = options.context.owner.startsWith('steam_dlc/')
+  const routeModuleId = options.context.owner.startsWith('steam_dlc/')
     ? options.context.owner.slice('steam_dlc/'.length) : '';
+  if (compiledModuleId && routeModuleId !== compiledModuleId) throw Error('module_owner_mismatch');
+  const moduleId = compiledModuleId || routeModuleId;
+  const copy = createPageCopy(() => context.value.locale, ui.translateUi, moduleId);
+  const t = copy.text;
+  const themeLabel = (value, fallback) => {
+    if (value === null && fallback !== copy.textAt('zh-CN', 'choice.followCore')) return fallback;
+    return ui.uiThemeLabel?.(value, fallback, context.value.locale) ?? (value === null ? t('choice.followCore') : fallback);
+  };
   const module = MODULES[moduleId];
   const settings = options.routeId === 'settings';
   const home = options.routeId === 'home';
   const hasCredentials = settings && ['steam', 'dota2', 'cs2'].includes(moduleId);
-  const workspaceTitle = options.routeId === 'collage' ? '游戏生涯拼图' : options.routeId === 'wishlist' ? '公开愿望单' : options.routeId === 'analysis' ? '指定玩家分析' : options.routeId === 'query' ? '平台查询' : '';
-  const criteriaTitle = {collage: '创建拼图任务', wishlist: '查询条件', analysis: '分析条件', query: '查询条件'}[options.routeId];
+  const workspaceKey = {collage: 'route.collage', wishlist: 'workspace.wishlist', analysis: 'workspace.analysis', query: 'route.query'}[options.routeId];
+  const criteriaKey = {collage: 'section.createCollage', wishlist: 'section.queryCriteria', analysis: 'section.analysisCriteria', query: 'section.queryCriteria'}[options.routeId];
+  const summary = () => module ? t('module.' + moduleId + '.summary') : t('page.moduleMissing');
+  const source = () => module ? t('module.' + moduleId + '.source') : '';
   const modern = Boolean(module && ui.PageTemplate && ui.uiText);
   const idPrefix = `steam-dlc-${++nextTemplate}`;
   let host, credentialHost, resultHost, controller, disposed = false, unregister = () => {};
@@ -78,9 +90,10 @@ export function mount(container, options) {
         mount.append(label, control, ...(reset ? [reset] : []), hint, error);
         return {hint, error};
       }
-      const hintText = shallowRef(hint.textContent), errorText = shallowRef(error.textContent);
+      const labelText = copy.renderer(label), initialHint = copy.renderer(hint);
+      const hintText = shallowRef(), errorText = shallowRef(error.textContent);
       const app = createApp({setup: () => () => h(FormField, {
-        controlId: control.id, label: label.textContent, hint: hintText.value, error: errorText.value, layout: settings ? 'row' : 'stacked',
+        controlId: control.id, label: labelText(), hint: hintText.value ?? initialHint(), error: errorText.value, layout: settings ? 'row' : 'stacked',
         class: control.name === 'poster_limit' ? 'steam-dlc-limit-field' : undefined,
         hintId: hint.id, errorId: error.id,
       }, {default: ({controlAttrs}) => {
@@ -94,21 +107,21 @@ export function mount(container, options) {
       // Text setters update presentation props; the controller never writes to
       // Vue-owned label/hint/error children. Native control ownership stays here.
       return {
-        hint: {get textContent() {return hintText.value;}, set textContent(value) {hintText.value = value;}},
+        hint: {get textContent() {return hintText.value ?? initialHint();}, set textContent(value) {hintText.value = value;}},
         error: {get textContent() {return errorText.value;}, set textContent(value) {errorText.value = value;}},
       };
     },
   };
   const sourceDisclosure = () => h('details', {class: 'steam-dlc-disclosure'}, [
-    h('summary', '数据来源与范围'),
-    h('p', {class: 'steam-dlc-hint'}, module?.source || ''),
-    h('p', {class: 'steam-dlc-hint'}, '默认账号只在已授权的命令路径使用。自然语言工具必须提供明确账号或比赛编号。'),
+    h('summary', t('section.sourceScope')),
+    h('p', {class: 'steam-dlc-hint'}, source()),
+    h('p', {class: 'steam-dlc-hint'}, t('page.accountScope')),
   ]);
   const groups = new Map();
   const viewState = shallowRef({});
   const bindings = new Map(), actions = new Map();
   // Declare the submit form before mounting its imperative content host.
-  if (settings || workspaceTitle) {
+  if (settings || workspaceKey) {
     const id = settings ? 'save' : 'query';
     actions.set(id, {id, type: 'submit', disabled: true});
   }
@@ -126,23 +139,23 @@ export function mount(container, options) {
       publish({});
     },
     publish,
-    groupHost(title) {return groups.get(title);},
+    groupHost(id) {return groups.get(id);},
     text(key) {return ui.uiText(key, context.value.locale);},
   };
-  const aside = () => h(Surface, {title: hasCredentials ? '来源凭据与授权' : settings ? '设置说明' : '数据与账号', eyebrow: hasCredentials ? 'SOURCE ACCESS' : undefined}, {default: () => [
+  const aside = () => h(Surface, {title: hasCredentials ? t('section.sourceCredentials') : settings ? t('section.settingsHelp') : t('section.dataAndAccounts'), eyebrow: hasCredentials ? t('page.sourceAccess') : undefined}, {default: () => [
         h(StatusHint, {}, {default: () => settings
           ? moduleId === 'steam'
-            ? '选择公开样本或完整库、布局、时长预设、比例和输出预算。完整库需要可选 Steam Key；是否完整以来源实际返回为准。'
+            ? t('page.settings.steam')
             : moduleId === 'cs2'
-              ? '完美授权与 5E Token 仅用于来源请求，玩家查询目标保持独立。二维码需由账号本人亲自确认；离页将停止轮询。'
+              ? t('page.settings.cs2')
               : moduleId === 'dota2'
-                ? '订阅设置控制当前服务的采集与预算；具体群或私聊订阅通过本人命令管理。OpenDota Key 可选，不会自动扩大请求额度。'
-                : '网页浅深主题与命令图片回复主题分别设置。回复主题选项由当前授权配置提供。'
-          : module?.source || '当前页面没有可用的模块声明。'}),
+                ? t('page.settings.dota2')
+                : t('page.settings.deadlock')
+          : source() || t('page.moduleMissing')}),
         hasCredentials ? h('div', {ref: element => { credentialHost = element; }}) : null,
         h('p', {class: 'steam-dlc-hint'}, settings
-          ? '保存后会重新读取并核对结果；冲突或未确认结果需要手动刷新。'
-          : '默认账号只在已授权的命令路径使用。自然语言工具必须提供明确账号或比赛编号。'),
+          ? t('page.saveVerification')
+          : t('page.accountScope')),
       ]});
   const templateView = () => {
     const {themeField, themeValue, themeError, themeReadonly, notice, pending, availability} = viewState.value;
@@ -150,16 +163,16 @@ export function mount(container, options) {
       idPrefix, class: 'steam-dlc-view', lang: context.value.locale,
       context: context.value, styleMountTarget: container, appearance: moduleAppearance(moduleId),
       content: {
-        title: home ? module.title : settings ? `${module.title} 业务配置` : `${module.title} ${workspaceTitle}`,
-        eyebrow: home ? `${module.title.toUpperCase()} / MODULE` : 'YOMIHIME GAME LINK / STEAM DLC',
-        intro: module.summary,
+        title: home ? module.title : settings ? t('page.settingsTitle', {module: module.title}) : `${module.title} ${t(workspaceKey)}`,
+        eyebrow: home ? t('page.moduleEyebrow', {module: module.title.toUpperCase()}) : 'YOMIHIME GAME LINK / STEAM DLC',
+        intro: summary(),
         sections: [
-          {id: 'workspace', title: settings ? '查询与回复' : criteriaTitle || '状态与帮助', fields: themeField ? [themeField] : []},
-          ...(settings && moduleId === 'steam' ? [{id: 'poster', title: '游戏生涯拼图'}] : []),
-          ...(settings && moduleId === 'dota2' ? [{id: 'subscriptions', title: '订阅与数据来源'}] : []),
+          {id: 'workspace', title: settings ? t('section.queryAndReply') : t(criteriaKey || 'section.statusAndHelp'), fields: themeField ? [themeField] : []},
+          ...(settings && moduleId === 'steam' ? [{id: 'poster', title: t('route.collage')}] : []),
+          ...(settings && moduleId === 'dota2' ? [{id: 'subscriptions', title: t('section.subscriptions')}] : []),
         ],
-        actions: [...actions.values()],
-        notes: home ? ['请从模块导航选择查询，或进入业务配置调整设置。'] : undefined,
+        actions: [...actions.values()].map(action => typeof action.label === 'function' ? {...action, label: action.label()} : action),
+        notes: home ? [t('page.homeNavigation')] : undefined,
       },
       state: {values: {reply_theme: themeValue ?? ''}, errors: {reply_theme: themeError}, readonly: themeReadonly, pending, notice},
       onFieldChange: ({id, value}) => bindings.get(id)?.(value),
@@ -168,7 +181,7 @@ export function mount(container, options) {
       ...(home ? {logo: () => artworkNode(moduleId, container.ownerDocument)} : {}),
       sectionExtra: ({section}) => h('div', {ref: element => {
         if (section.id === 'workspace') host = element;
-        else groups.set(section.title, element);
+        else groups.set(section.id, element);
       }}),
       aside,
       results: () => h('div', {ref: element => {resultHost = element;}}),
@@ -180,19 +193,19 @@ export function mount(container, options) {
   const app = createApp({setup: () => () => modern ? templateView() : h(UiProvider, {
     theme: context.value.theme, locale: context.value.locale, styleMountTarget: container,
   }, {default: () => h('section', {class: 'steam-dlc-view', lang: context.value.locale}, [
-    home ? h(Surface, {title: module?.title || '模块页面不可用', eyebrow: `${module?.title?.toUpperCase() || 'STEAM DLC'} / MODULE`}, {default: () => [
+    home ? h(Surface, {title: module?.title || t('page.moduleUnavailable'), eyebrow: t('page.moduleEyebrow', {module: module?.title?.toUpperCase() || 'STEAM DLC'})}, {default: () => [
       artworkNode(moduleId, container.ownerDocument),
-      h('p', module?.summary || '当前页面没有可用的模块声明。'),
-      h(StatusHint, {}, {default: () => '请从模块导航选择查询，或进入业务配置调整设置。'}),
+      h('p', summary()),
+      h(StatusHint, {}, {default: () => t('page.homeNavigation')}),
       h('div', {ref: element => { host = element; }}),
       sourceDisclosure(),
     ]}) : [
     !settings ? h(PageHeader, {
-      title: module ? `${module.title}${workspaceTitle ? ` ${workspaceTitle}` : ''}` : '模块页面不可用',
-      eyebrow: 'YOMIHIME GAME LINK / STEAM DLC', subtitle: module?.summary,
+      title: module ? `${module.title}${workspaceKey ? ` ${t(workspaceKey)}` : ''}` : t('page.moduleUnavailable'),
+      eyebrow: 'YOMIHIME GAME LINK / STEAM DLC', subtitle: summary(),
     }) : null,
     h(SettingsLayout, {}, {
-      default: () => settings ? h('div', {ref: element => { host = element; }}) : h(SettingsGroup, {title: workspaceTitle || '状态与帮助', number: '01'}, {
+      default: () => settings ? h('div', {ref: element => { host = element; }}) : h(SettingsGroup, {title: t(workspaceKey || 'section.statusAndHelp'), number: '01'}, {
         default: () => h('div', {ref: element => { host = element; }}),
       }),
       aside,
@@ -205,13 +218,14 @@ export function mount(container, options) {
     presentation.template = template;
     presentation.resultHost = resultHost;
   }
-  controller = mountController(host, {...options, presentation, scope: {
+  controller = mountController(host, {...options, copy, themeLabel, presentation, scope: {
     signal: options.scope.signal, isCurrent: () => options.scope.isCurrent(), onDispose: () => () => {},
   }});
   const dispose = () => {
     if (disposed) return;
     disposed = true;
     controller.dispose();
+    copy.clear();
     fieldApps.splice(0).reverse().forEach(field => field.unmount());
     app.unmount();
     options.scope.signal.removeEventListener('abort', dispose);
@@ -222,8 +236,10 @@ export function mount(container, options) {
   return {
     update(next) {
       if (disposed) return;
-      controller.update(next);
+      const localeChanged = context.value.locale !== next.locale;
       context.value = {...next};
+      controller.update(next);
+      if (localeChanged) copy.refresh();
     },
     dispose,
     navigationImpact: controller.navigationImpact,

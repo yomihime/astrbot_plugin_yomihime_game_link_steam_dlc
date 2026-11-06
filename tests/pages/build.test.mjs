@@ -59,7 +59,55 @@ test('published manifest closes the required module route and public explicit ca
   assertPublishedRoutes(manifest);
 });
 
-test('each published presentation is a pure owner-specific palette with the approved colors', async () => {
+test('presentation generation embeds only its owner copy and retains the legacy palette export', async () => {
+  const prefix = '// ygl-copy-v1 ';
+  const locales = ['zh-CN', 'zh-TW', 'ja-JP', 'en-US'];
+  for (const [id, routes] of Object.entries(requiredPageRoutes)) {
+    const catalogs = await Promise.all(locales.map(async locale =>
+      JSON.parse(await readFile(new URL(`../../packages/steam_dlc/pages/src/locales/${id}/${locale}.json`, import.meta.url), 'utf8'))));
+    const generated = buildPresentation(id);
+    const [header, statement, end] = generated.split('\n');
+    assert.ok(header.startsWith(prefix));
+    assert.ok(Buffer.byteLength(header) <= 16_384);
+    assert.match(statement, /^export const presentation = /);
+    assert.equal(end, '');
+    assert.deepEqual(JSON.parse(header.slice(prefix.length)), Object.fromEntries(locales.map((locale, index) => [
+      locale,
+      {
+        summary: catalogs[index][`module.${id}.summary`],
+        titles: Object.fromEntries(Object.keys(routes).map(route => [route, catalogs[index][`route.${route}`]])),
+      },
+    ])));
+    const exports = await import('data:text/javascript;base64,' + Buffer.from(generated).toString('base64'));
+    assert.deepEqual(Object.keys(exports), ['presentation']);
+    assert.deepEqual(Object.keys(exports.presentation), ['schemaVersion', 'appearance']);
+  }
+});
+
+test('module locale resources retain stable IDs and placeholder parity without crossing generated page chunks', async () => {
+  const locales = ['zh-CN', 'zh-TW', 'ja-JP', 'en-US'];
+  const placeholderSignature = value => [...value.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)].map(match => match[1]).sort();
+  for (const owner of modules) {
+    const catalogs = await Promise.all(locales.map(async locale =>
+      JSON.parse(await readFile(new URL(`../../packages/steam_dlc/pages/src/locales/${owner}/${locale}.json`, import.meta.url), 'utf8'))));
+    const keys = Object.keys(catalogs[0]).sort();
+    assert.ok(keys.length > 0);
+    assert.ok(keys.every(key => /^[a-z][a-zA-Z0-9]*(?:\.[a-zA-Z0-9_]+)+$/.test(key)), `${owner} copy uses stable resource IDs`);
+    for (let index = 1; index < catalogs.length; index++) assert.deepEqual(Object.keys(catalogs[index]).sort(), keys, `${owner} locale key parity`);
+    for (const key of keys) {
+      for (const catalog of catalogs) assert.deepEqual(placeholderSignature(catalog[key]), placeholderSignature(catalogs[0][key]), `${owner}/${key} placeholder parity`);
+    }
+  }
+  for (const owner of modules) {
+    const code = await buildPage({moduleId: owner});
+    for (const other of modules.filter(value => value !== owner)) {
+      const otherZh = JSON.parse(await readFile(new URL(`../../packages/steam_dlc/pages/src/locales/${other}/zh-CN.json`, import.meta.url), 'utf8'));
+      assert.equal(code.includes(otherZh[`module.${other}.summary`]), false, `${owner} chunk must not embed ${other} catalog copy`);
+    }
+  }
+});
+
+test('each published presentation matches its owner copy and approved palette', async () => {
   const packageRoot = new URL('../../packages/steam_dlc/', import.meta.url);
   const manifest = JSON.parse(await readFile(new URL('yomihime.manifest.json', packageRoot), 'utf8'));
   const expected = {
@@ -88,8 +136,8 @@ test('each published presentation is a pure owner-specific palette with the appr
 test('published auxiliary descriptors select their real built forms with only the declared capability', async () => {
   const manifest = JSON.parse(await readFile(new URL('../../packages/steam_dlc/yomihime.manifest.json', import.meta.url), 'utf8'));
   assertPublishedRoutes(manifest);
-  const code = await buildPage();
   for (const module of manifest.modules) {
+    const code = await buildPage({moduleId: module.module_id});
     for (const path of new Set(module.pages.flatMap(page => [page.entry, ...page.styles]))) {
       const bytes = await readFile(new URL(`../../packages/steam_dlc/${path}`, import.meta.url));
       assert.equal(createHash('sha256').update(bytes).digest('hex'), module.resources.find(item => item.path === path)?.sha256,
@@ -160,19 +208,17 @@ test('build tooling accepts absolute and repository-relative CI Core roots', () 
 test('external fixed-pair paths resolve every module import to the sole shell runtime', async () => {
   const manifest = await readFile(new URL('../../packages/steam_dlc/yomihime.manifest.json', import.meta.url));
   const digest = createHash('sha256').update(manifest).digest('hex');
-  const code = await buildPage();
-  const imports = [...code.matchAll(/from\s*["']([^"']+)["']/g)].map(match => match[1]);
-  assert.ok(imports.length > 0);
-  assert.equal(new Set(imports).size, 1);
   for (const moduleId of modules) {
+    const code = await buildPage({moduleId});
+    const imports = [...code.matchAll(/from\s*["']([^"']+)["']/g)].map(match => match[1]);
     const projected = projectedEntry(moduleId, digest);
     assert.equal(projected, `module-assets/steam_dlc/${moduleId}/pages/p${digest}/pages/${moduleId}/entry.js`);
     assert.equal(imports[0], runtimeImport(moduleId, digest));
     assert.equal(posix.normalize(posix.join(posix.dirname(projected), imports[0])), 'runtime.js');
     assert.equal(runtimeImport(moduleId, digest), '../../../../../../../runtime.js');
+    assert.match(code, /UiProvider/);
+    assert.doesNotMatch(code, /createRenderer|createHydrationRenderer|frontend\/src|node_modules|Naive UI/);
   }
-  assert.match(code, /UiProvider/);
-  assert.doesNotMatch(code, /createRenderer|createHydrationRenderer|frontend\/src|node_modules|Naive UI/);
 });
 
 test('page source consumes the public facade and does not copy themes or import Core internals', async () => {

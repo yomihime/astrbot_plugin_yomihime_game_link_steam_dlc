@@ -855,7 +855,7 @@
         },
         {
           "path": "pages/steam/entry.js",
-          "sha256": "253f8c428a5034bf7cf22c6686525aef8edf6e38521b4e4388dc1b7cc2c393a2"
+          "sha256": "f9e066d4f66b9f94ab13f2da2cdaba7bb32006926e8ff0044cf92c5907780c42"
         },
         {
           "path": "pages/steam/style.css",
@@ -863,7 +863,7 @@
         },
         {
           "path": "pages/dist/presentation-steam.js",
-          "sha256": "60464a125470507512f72dd2b7802aa9d2f43a4f0f3a1565faa138f54aff75a3"
+          "sha256": "65fbe671ed313b77263c0dc397dc94daba06f1f029e98afa2cc9e09981b98e57"
         }
       ],
       "sources": [
@@ -1806,7 +1806,7 @@
         },
         {
           "path": "pages/dota2/entry.js",
-          "sha256": "253f8c428a5034bf7cf22c6686525aef8edf6e38521b4e4388dc1b7cc2c393a2"
+          "sha256": "e8a1235d5b081b861ef61e529df2616fbfd20640405492ceca5fd850740e8bfe"
         },
         {
           "path": "pages/dota2/style.css",
@@ -1814,7 +1814,7 @@
         },
         {
           "path": "pages/dist/presentation-dota2.js",
-          "sha256": "016b5f5f203a5064d3749895245ff7ce47e2a59df2035974a54593bdf33725b3"
+          "sha256": "e9727161b6f6796a72b514cac7f3cabc7520b1a352db74650e9a13b36eb1d548"
         }
       ],
       "schedules": [
@@ -2503,7 +2503,7 @@
         },
         {
           "path": "pages/cs2/entry.js",
-          "sha256": "253f8c428a5034bf7cf22c6686525aef8edf6e38521b4e4388dc1b7cc2c393a2"
+          "sha256": "7fcfaa528a7b7c356685ef3e170706f7c159da6ba55e4a61dd4eb737a907372b"
         },
         {
           "path": "pages/cs2/style.css",
@@ -2511,7 +2511,7 @@
         },
         {
           "path": "pages/dist/presentation-cs2.js",
-          "sha256": "8316d0d19a941257ba45c4d38875f1eecd50d6a02b4b0ea8b675dc34c9cf38ba"
+          "sha256": "0c6fe8e6dda73ac0ffca6a50fcbff048619d852b58261847db23a591024027c8"
         }
       ],
       "sources": [
@@ -3020,7 +3020,7 @@
         },
         {
           "path": "pages/deadlock/entry.js",
-          "sha256": "253f8c428a5034bf7cf22c6686525aef8edf6e38521b4e4388dc1b7cc2c393a2"
+          "sha256": "9a08e124d674f9f1e8c3cd3d3e089d7c80d1e02b694db3de8f63a2bcf3613f7a"
         },
         {
           "path": "pages/deadlock/style.css",
@@ -3028,7 +3028,7 @@
         },
         {
           "path": "pages/dist/presentation-deadlock.js",
-          "sha256": "7713ed5a6dd94393b2877ee81efa47c616aadf8bdc7d4695e9ae8ef68382349d"
+          "sha256": "ed2ddcdefd0e20be4f1bafd8e30899981caea010de1586b65f3d46c1bb0e26d2"
         }
       ],
       "sources": [

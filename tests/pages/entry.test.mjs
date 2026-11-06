@@ -215,7 +215,7 @@ test('theme update during a pending write retains its focus, single-flight state
   await f.submit();
   pending.resolve(); await settle();
   assert.deepEqual(f.calls, [['current'], ['save', 7, {timezone: 'UTC'}], ['current']]);
-  assert.match(f.text(), /已保存/);
+  assert.match(f.text(), /Saved\./);
   f.close();
 });
 

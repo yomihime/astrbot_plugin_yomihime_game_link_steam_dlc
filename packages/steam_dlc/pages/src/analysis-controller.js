@@ -1,22 +1,34 @@
+import {dlcText} from './copy.js';
 import {primaryForm} from './template-adapter.js';
 // Explicit public focus facts only. Host model generation remains COMMAND-only.
 import {metric} from './metric.js';
-const ANALYSIS_LABELS = {"timeline": "发育时间线", "purchases": "购买时间线", "lane": "对线位置", "teamfights": "团战", "objectives": "目标事件", "team_advantage": "团队经济/经验差", "benchmarks": "表现基准", "players": "玩家名单", "invalid_player": "无效玩家记录", "gold_t": "经济时间线", "xp_t": "经验时间线", "team_gold": "团队经济差", "team_xp": "团队经验差", "teamfight_players": "团战玩家记录", "account_id32": "玩家账号", "player_slot": "玩家位置", "name": "玩家名称", "hero_id": "英雄", "team": "阵营", "outcome": "胜负", "kills": "击杀", "deaths": "死亡", "assists": "助攻", "last_hits": "补刀", "denies": "反补", "gold_per_min": "每分钟金钱", "xp_per_min": "每分钟经验", "hero_damage": "英雄伤害", "tower_damage": "建筑伤害", "hero_healing": "治疗量", "items": "装备", "backpack": "背包", "level": "等级"};
-export function analysisLabel(value) {
-  const [key, suffix] = value.split(".");
-  const label = Object.hasOwn(ANALYSIS_LABELS, key) ? ANALYSIS_LABELS[key] : "未知数据项";
-  return label + (suffix === "invalid_rows" ? "（含无效记录）" : suffix === "missing_points" ? "（采样点缺失）" : suffix ? "（范围待确认）" : "");
+const ANALYSIS_LABELS = new Set([
+  'timeline', 'purchases', 'lane', 'teamfights', 'objectives', 'team_advantage', 'benchmarks',
+  'players', 'invalid_player', 'gold_t', 'xp_t', 'team_gold', 'team_xp', 'teamfight_players',
+  'account_id32', 'player_slot', 'name', 'hero_id', 'team', 'outcome', 'kills',
+  'deaths', 'assists', 'last_hits', 'denies', 'gold_per_min', 'xp_per_min', 'hero_damage',
+  'tower_damage', 'hero_healing', 'items', 'backpack', 'level',
+]);
+const dotaText = (key, params) => dlcText(key, params, 'zh-CN', 'dota2');
+export function analysisLabel(value, t = dotaText) {
+  const [key, suffix] = value.split('.');
+  const label = t(`analysis.label.${ANALYSIS_LABELS.has(key) ? key : 'unknown'}`);
+  if (!suffix) return label;
+  const qualifier = suffix === 'invalid_rows' || suffix === 'missing_points' ? suffix : 'unknown';
+  return t(`analysis.suffix.${qualifier}`, {label});
 }
 export function mountAnalysisForm(root, {options, active, field, renderResult, say}) {
   const document = root.ownerDocument, listeners = [];
   let disposed = false, generation = 0, busy = false;
-  const node = (tag, text) => {const value = document.createElement(tag); if (text !== undefined) value.textContent = text; return value;};
-  const primary = primaryForm(root, options, {id: 'analysis-query', label: '查看指定玩家分析'});
+  const {text: t, bind} = options.copy;
+  const copy = key => () => t(`analysis.${key}`);
+  const node = (tag, text) => {const value = document.createElement(tag); if (text) bind(value, text); return value;};
+  const primary = primaryForm(root, options, {id: 'analysis-query', label: copy('query')});
   const {body: form, actions} = primary, grid = options.presentation?.grid(form) || form;
-  const match = field(grid, 'match_id', '比赛ID'); match.maxLength = 20; match.inputMode = 'numeric';
-  const account = field(grid, 'account', '焦点玩家（Dota ID32 / SteamID64 / 本场唯一昵称）');
-  const refresh = field(grid, 'refresh', '来源缓存', ['false', 'true'], 'false');
-  refresh.options[0].textContent = '优先有效缓存'; refresh.options[1].textContent = '刷新公开来源';
+  const match = field(grid, 'match_id', copy('match')); match.maxLength = 20; match.inputMode = 'numeric';
+  const account = field(grid, 'account', copy('focusPlayer'));
+  const refresh = field(grid, 'refresh', copy('cache'), ['false', 'true'], 'false');
+  bind(refresh.options[0], copy('preferCache')); bind(refresh.options[1], copy('refresh'));
   form.append(actions);
   const result = node('section'); result.className = 'steam-dlc-public-result'; result.setAttribute('aria-live', 'polite');
   const sync = () => {
@@ -26,31 +38,43 @@ export function mountAnalysisForm(root, {options, active, field, renderResult, s
   const run = async () => {
     if (!active() || disposed || busy) return;
     const parameters = {match_id: match.value.trim(), account: account.value.trim(), refresh: refresh.value === 'true'};
-    if (!/^[1-9][0-9]{0,19}$/u.test(parameters.match_id) || !parameters.account) {say('请提供有效比赛ID和明确焦点玩家。', 'error'); return;}
+    if (!/^[1-9][0-9]{0,19}$/u.test(parameters.match_id) || !parameters.account) {say(copy('parametersRequired'), 'error'); return;}
     say('');
-    const ticket = ++generation; busy = true; sync(); result.replaceChildren(node('p', '正在读取公开结算与可用时间线。'));
+    const ticket = ++generation; busy = true; sync(); result.replaceChildren(node('p', copy('loading')));
     try {
       const response = await options.services.invoke('analyze_explicit', parameters);
       if (disposed || !active() || ticket !== generation) return;
       renderResult(response, result);
       const facts = response.model_facts;
       if (!facts || typeof facts !== 'object') return;
-      const coverage = {settlement_only: '仅基础结算', partial: '部分分析段可用', supported_sections_complete: '支持的分析段已提供'};
-      result.prepend(node('p', `数据覆盖：${Object.hasOwn(coverage, facts.data_completeness) ? coverage[facts.data_completeness] : '待确认'}。本页展示基于公开事实的分析。`));
+      const coverages = ['settlement_only', 'partial', 'supported_sections_complete'];
+      const coverage = coverages.includes(facts.data_completeness) ? facts.data_completeness : 'unknown';
+      result.prepend(node('p', () => t('analysis.coverageSummary', {coverage: t(`analysis.coverage.${coverage}`)})));
       const focus = facts.focus || {};
-      const accountId = typeof focus.account_id32 === 'string' && /^[0-9]+$/u.test(focus.account_id32) ? focus.account_id32 : metric(focus.account_id32);
-      result.append(node('p', `焦点：${typeof focus.name === 'string' ? focus.name : '名称未提供'} · ID32 ${accountId} · 英雄${metric(focus.hero_id)} · K/D/A ${metric(focus.kills)}/${metric(focus.deaths)}/${metric(focus.assists)}`));
-      for (const [key, label] of [['missing_sections', '缺失分析段'], ['missing_fields', '缺失字段'], ['truncated_sections', '来源截断段']]) {
+      result.append(node('p', () => t('analysis.focusSummary', {
+        name: typeof focus.name === 'string' ? focus.name : t('analysis.nameUnavailable'),
+        account: typeof focus.account_id32 === 'string' && /^[0-9]+$/u.test(focus.account_id32)
+          ? focus.account_id32 : metric(focus.account_id32, t),
+        hero: metric(focus.hero_id, t), kills: metric(focus.kills, t), deaths: metric(focus.deaths, t), assists: metric(focus.assists, t),
+      })));
+      for (const key of ['missing_sections', 'missing_fields', 'truncated_sections']) {
         const values = facts[key];
-        if (Array.isArray(values)) result.append(node('p', `${label}：${values.filter(value => typeof value === 'string').slice(0, 32).map(analysisLabel).join('、') || '未列出'}。`));
+        if (!Array.isArray(values)) continue;
+        const labels = values.filter(value => typeof value === 'string').slice(0, 32);
+        result.append(node('p', () => t(`analysis.${key}`, {
+          values: labels.map(value => analysisLabel(value, t)).join(t('analysis.separator')) || t('analysis.unlisted'),
+        })));
       }
-      result.append(node('p', `来源：${facts.source === 'opendota' ? 'OpenDota' : '来源未知'} · 获取时间：${typeof facts.fetched_at === 'string' ? facts.fetched_at : '未提供'}。缺失分析段保持未知；时间线范围以来源返回为准。`));
-    } catch {if (!disposed && active() && ticket === generation) {result.replaceChildren(node('p', '分析请求未完成，请核对比赛与焦点后重试。')); say('未取得可确认的分析结果。', 'error');}}
+      result.append(node('p', () => t('analysis.sourceSummary', {
+        source: facts.source === 'opendota' ? 'OpenDota' : t('analysis.sourceUnknown'),
+        fetchedAt: typeof facts.fetched_at === 'string' ? facts.fetched_at : t('analysis.notProvided'),
+      })));
+    } catch {if (!disposed && active() && ticket === generation) {result.replaceChildren(node('p', copy('requestFailed'))); say(copy('queryFailed'), 'error');}}
     finally {if (!disposed && ticket === generation) {busy = false; sync();}}
   };
   listeners.push(primary.bind(run));
-  root.append(node('p', '按明确比赛与玩家读取OpenDota公开事实。未收录的时间线、装备、团战或目标保持未知，不提交录像解析。'), ...(options.presentation?.template ? [] : [node('h3', '分析条件')]), form);
-  primary.result(node('h3', '分析结果'), result);
+  root.append(node('p', copy('description')), ...(options.presentation?.template ? [] : [node('h3', copy('filters'))]), form);
+  primary.result(node('h3', copy('results')), result);
   options.presentation?.actions(actions);
   sync();
   return {
