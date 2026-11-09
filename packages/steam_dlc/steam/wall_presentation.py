@@ -1,8 +1,8 @@
 """Literal collage declaration and compact facts from one normalized selection."""
 
-import yomihime_game_link_sdk as ygl
-from yomihime_game_link_sdk import cards
-from yomihime_game_link_sdk.storage import CacheVisibility
+from .. import _api_v2 as ygl
+from .._api_v2 import cards
+from .._api_v2.storage import CacheVisibility
 
 
 def _legacy_result(selection, *, private=True, theme="warm_paper"):

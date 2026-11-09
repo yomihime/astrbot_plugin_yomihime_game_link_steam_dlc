@@ -7,8 +7,7 @@ authorize and inject material according to the reviewed host policy.
 import json
 from datetime import UTC, datetime
 
-from yomihime_game_link_sdk.errors import SourceHttpError
-
+from .._api_v2.errors import SourceHttpError
 from .contracts import (
     SchemaError,
     account_id,

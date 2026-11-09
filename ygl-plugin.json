@@ -1,0 +1,10 @@
+{
+  "schema": "ygl.plugin/1",
+  "role": "dlc",
+  "package_id": "steam_dlc",
+  "manifest": "packages/steam_dlc/yomihime.manifest.json",
+  "control_protocol": {
+    "name": "ygl.control",
+    "major": 1
+  }
+}

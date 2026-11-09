@@ -11,6 +11,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import yomihime_game_link_sdk as ygl
+from sl07_core.extensions.hot_update_protocol import (
+    b05_manifest_bytes,
+    parse_package_manifest,
+)
 from test_cs2_facts import projections
 from test_cs2_provider import GAME, OTHER, PLAYER, Http, full_match, profile, summary
 
@@ -126,7 +130,11 @@ class FrozenCoreCS2Consumers(unittest.IsolatedAsyncioTestCase):
             )
         )
         manifest = parse_manifest(
-            (ROOT / "packages/steam_dlc/yomihime.manifest.json").read_bytes()
+            b05_manifest_bytes(
+                parse_package_manifest(
+                    (ROOT / "packages/steam_dlc/yomihime.manifest.json").read_bytes()
+                )
+            )
         )
         lease = SimpleNamespace(
             _complete=True,

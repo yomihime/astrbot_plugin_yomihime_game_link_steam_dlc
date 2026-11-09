@@ -1,7 +1,7 @@
 """One Steam projection supplies literal SDK cards, fallback text and facts."""
 
-import yomihime_game_link_sdk as ygl
-from yomihime_game_link_sdk import cards
+from .. import _api_v2 as ygl
+from .._api_v2 import cards
 
 
 def _label(value):

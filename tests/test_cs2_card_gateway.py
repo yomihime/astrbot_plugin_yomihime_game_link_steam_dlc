@@ -8,6 +8,10 @@ from types import SimpleNamespace
 from unicodedata import category
 
 import yomihime_game_link_sdk as ygl
+from sl07_core.extensions.hot_update_protocol import (
+    b05_manifest_bytes,
+    parse_package_manifest,
+)
 from test_cs2_provider import DOMAIN, PLAYER, Http, fivee_home, profile
 from test_frozen_core_consumers import AVAILABLE, ROOT
 from yomihime_game_link_sdk import cards
@@ -55,7 +59,11 @@ class ProfileCardGatewayTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         manifest = parse_manifest(
-            (ROOT / "packages/steam_dlc/yomihime.manifest.json").read_bytes()
+            b05_manifest_bytes(
+                parse_package_manifest(
+                    (ROOT / "packages/steam_dlc/yomihime.manifest.json").read_bytes()
+                )
+            )
         )
         lease = SimpleNamespace(
             _complete=True,

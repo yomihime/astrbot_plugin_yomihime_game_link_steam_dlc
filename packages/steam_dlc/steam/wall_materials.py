@@ -9,14 +9,13 @@ import re
 import time
 from collections.abc import Mapping
 
-import yomihime_game_link_sdk as ygl
-from yomihime_game_link_sdk.services import ResourceCacheClass
-from yomihime_game_link_sdk.storage import (
+from .. import _api_v2 as ygl
+from .._api_v2.services import ResourceCacheClass
+from .._api_v2.storage import (
     CacheLookupStatus,
     CacheQuery,
     CacheVisibility,
 )
-
 from .cache_validation import mutable_json
 from .normalization import app_id, literal
 from .queries import QueryFailure, _dimensions

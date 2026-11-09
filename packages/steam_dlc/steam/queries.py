@@ -7,15 +7,14 @@ import re
 from datetime import UTC, datetime
 from urllib.parse import urlencode, urlsplit
 
-import yomihime_game_link_sdk as ygl
-from yomihime_game_link_sdk import cards
-from yomihime_game_link_sdk.errors import CacheUnavailable, SourceHttpError
-from yomihime_game_link_sdk.storage import (
+from .. import _api_v2 as ygl
+from .._api_v2 import cards
+from .._api_v2.errors import CacheUnavailable, SourceHttpError
+from .._api_v2.storage import (
     CacheLookupStatus,
     CacheQuery,
     CacheVisibility,
 )
-
 from .cache_validation import mutable_json, valid_projection
 from .normalization import (
     VERSION,

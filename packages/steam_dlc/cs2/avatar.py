@@ -5,8 +5,8 @@ import re
 from collections.abc import Mapping
 from urllib.parse import urlsplit
 
-from yomihime_game_link_sdk import cards
-from yomihime_game_link_sdk.errors import (
+from .._api_v2 import cards
+from .._api_v2.errors import (
     AccessDenied,
     CacheUnavailable,
     OperationTimeout,
@@ -14,8 +14,8 @@ from yomihime_game_link_sdk.errors import (
     ServiceUnavailable,
     SourceHttpError,
 )
-from yomihime_game_link_sdk.services import HttpRequest, ResourceCacheClass
-from yomihime_game_link_sdk.storage import (
+from .._api_v2.services import HttpRequest, ResourceCacheClass
+from .._api_v2.storage import (
     CacheLookupStatus,
     CacheQuery,
     CacheVisibility,

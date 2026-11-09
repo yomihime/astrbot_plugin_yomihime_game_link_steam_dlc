@@ -360,8 +360,7 @@ class MaterialsHandler:
         self.owner = owner
 
     async def invoke(self, context, parameters):
-        import yomihime_game_link_sdk as ygl
-
+        from .. import _api_v2 as ygl
         from ..shared.output import failure
 
         if not self.owner._running:
@@ -412,9 +411,8 @@ class CacheStatusHandler:
         self.owner = owner
 
     async def invoke(self, context, parameters):
-        import yomihime_game_link_sdk as ygl
-        from yomihime_game_link_sdk.storage import CacheVisibility
-
+        from .. import _api_v2 as ygl
+        from .._api_v2.storage import CacheVisibility
         from ..shared.output import failure
 
         if not self.owner._running:

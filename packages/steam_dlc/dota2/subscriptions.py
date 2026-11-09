@@ -11,11 +11,11 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from yomihime_game_link_sdk.display import DisplayDocument, Privacy, TextBlock
-from yomihime_game_link_sdk.errors import CacheUnavailable, SourceHttpError
-from yomihime_game_link_sdk.services import HttpRequest
-from yomihime_game_link_sdk.storage import JsonObject, JsonValue
-from yomihime_game_link_sdk.subscriptions import (
+from .._api_v2.display import DisplayDocument, Privacy, TextBlock
+from .._api_v2.errors import CacheUnavailable, SourceHttpError
+from .._api_v2.services import HttpRequest
+from .._api_v2.storage import JsonObject, JsonValue
+from .._api_v2.subscriptions import (
     CommentaryRequest,
     ComposedPublicEvent,
     EvaluationDecision,
@@ -25,7 +25,6 @@ from yomihime_game_link_sdk.subscriptions import (
     ObservationCompleteness,
     PublicEventContribution,
 )
-
 from ..shared.hero_names import HERO_NAMES
 from ..shared.steam_ids import parse_dota_account
 from .normalization import normalize_match, normalize_recent

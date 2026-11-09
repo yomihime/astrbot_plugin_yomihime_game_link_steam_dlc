@@ -7,13 +7,12 @@ from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import NamedTuple, NoReturn
 
-import yomihime_game_link_sdk as ygl
-from yomihime_game_link_sdk.storage import (
+from .. import _api_v2 as ygl
+from .._api_v2.storage import (
     CacheLookupStatus,
     CacheQuery,
     CacheVisibility,
 )
-
 from . import webapi
 from .cache_validation import mutable_json
 from .normalization import avatar_source, literal

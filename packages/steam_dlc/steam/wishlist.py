@@ -7,13 +7,12 @@ import shlex
 from collections.abc import Mapping
 from datetime import UTC, datetime
 
-import yomihime_game_link_sdk as ygl
-from yomihime_game_link_sdk.storage import (
+from .. import _api_v2 as ygl
+from .._api_v2.storage import (
     CacheLookupStatus,
     CacheQuery,
     CacheVisibility,
 )
-
 from ..shared.output import failure
 from .cache_validation import mutable_json
 from .normalization import app_id, literal

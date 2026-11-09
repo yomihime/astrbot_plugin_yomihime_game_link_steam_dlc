@@ -1,12 +1,11 @@
 """Exercise the DLC protocol descriptor with the paired Core state machine."""
 
-import importlib.util
 import json
 import os
-import sys
 import unittest
 from pathlib import Path
 
+from sl07_core.services import source_authorizations as CORE
 from yomihime_game_link_sdk.services import HttpResponse
 
 from packages.steam_dlc.cs2.authorization import PERFECT_QR_FLOW
@@ -27,13 +26,7 @@ CORE_SOURCE = next(
 )
 if CORE_SOURCE is None:
     raise FileNotFoundError("Paired Core source is required for authorization checks")
-SPEC = importlib.util.spec_from_file_location(
-    "dlc_test_core_source_authorizations", CORE_SOURCE
-)
-assert SPEC is not None and SPEC.loader is not None
-CORE = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = CORE
-SPEC.loader.exec_module(CORE)
+# Preserve the actual Core package context for private sibling imports.
 
 PLAYER = "76561197960265851"
 

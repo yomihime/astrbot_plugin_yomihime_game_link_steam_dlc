@@ -1,5 +1,4 @@
 {
-  "schema_version": 1,
   "credentials": [
     {
       "owner": "steam_dlc/steam",
@@ -178,104 +177,96 @@
       ]
     }
   ],
-  "authorizations": {
-    "steam_dlc/cs2": {
-      "perfect_qr": {
-        "credential_field": "credential_perfect",
-        "descriptor": {
-          "flow_id": "perfect_qr",
-          "apply": {
-            "source_id": "perfect_auth",
-            "path": "/qrAuth/applyToken",
-            "method": "POST",
-            "json_body": {
-              "appId": "5",
-              "qrType": "1",
-              "redirect": false,
-              "website": "pvp"
-            },
-            "headers": {
-              "Content-Type": "application/json"
-            }
+  "authorizations": [
+    {
+      "owner": "steam_dlc/cs2",
+      "flow_id": "perfect_qr",
+      "credential_field": "credential_perfect",
+      "descriptor": {
+        "flow_id": "perfect_qr",
+        "apply": {
+          "source_id": "perfect_auth",
+          "path": "/qrAuth/applyToken",
+          "method": "POST",
+          "json_body": {
+            "appId": "5",
+            "qrType": "1",
+            "redirect": false,
+            "website": "pvp"
           },
-          "poll": {
-            "source_id": "perfect_auth",
-            "path": "/qrAuth/check",
-            "method": "POST",
-            "json_body": {
-              "appId": "5"
-            },
-            "headers": {
-              "Content-Type": "application/json"
-            },
-            "secret_json_fields": {
-              "accessToken": "ticket"
-            }
+          "headers": {
+            "Content-Type": "application/json"
+          }
+        },
+        "poll": {
+          "source_id": "perfect_auth",
+          "path": "/qrAuth/check",
+          "method": "POST",
+          "json_body": {
+            "appId": "5"
           },
-          "qr_url_path": [
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "secret_json_fields": {
+            "accessToken": "ticket"
+          }
+        },
+        "qr_url_path": [
+          "result",
+          "accessUrl"
+        ],
+        "ticket_capture": {
+          "slot": "ticket",
+          "path": [
             "result",
             "accessUrl"
           ],
-          "ticket_capture": {
-            "slot": "ticket",
+          "url_query": "accessToken"
+        },
+        "state_path": [
+          "result",
+          "status"
+        ],
+        "pending_values": [
+          0,
+          1
+        ],
+        "success_values": [
+          2
+        ],
+        "expired_values": [
+          3
+        ],
+        "success_captures": [
+          {
+            "slot": "token",
             "path": [
               "result",
-              "accessUrl"
-            ],
-            "url_query": "accessToken"
+              "token"
+            ]
           },
-          "state_path": [
-            "result",
-            "status"
-          ],
-          "pending_values": [
-            0,
-            1
-          ],
-          "success_values": [
-            2
-          ],
-          "expired_values": [
-            3
-          ],
-          "success_captures": [
-            {
-              "slot": "token",
-              "path": [
-                "result",
-                "token"
-              ]
-            },
-            {
-              "slot": "subject",
-              "path": [
-                "result",
-                "accountItem",
-                "steamId"
-              ],
-              "pattern": "[0-9]{17}"
-            }
-          ],
-          "subject_slot": "subject",
-          "poll_interval_seconds": 2,
-          "ttl_seconds": 60,
-          "max_polls": 30
-        }
+          {
+            "slot": "subject",
+            "path": [
+              "result",
+              "accountItem",
+              "steamId"
+            ],
+            "pattern": "[0-9]{17}"
+          }
+        ],
+        "subject_slot": "subject",
+        "poll_interval_seconds": 2,
+        "ttl_seconds": 60,
+        "max_polls": 30
       }
     }
-  },
+  ],
   "capability_timeouts": {
     "steam_dlc/steam": {
       "wall_preview": 90
     }
   },
-  "config_migrations": [
-    {
-      "owner": "steam_dlc/steam",
-      "field": "poster_limit",
-      "kind": "integer_floor",
-      "from_minimum": 1,
-      "to_minimum": 20
-    }
-  ]
+  "schema": "ygl.source-policy/1"
 }

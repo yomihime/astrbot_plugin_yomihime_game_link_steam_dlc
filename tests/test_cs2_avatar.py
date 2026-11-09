@@ -403,10 +403,9 @@ class AvatarTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(
             set(policy),
             {
-                "schema_version",
+                "schema",
                 "credentials",
                 "authorizations",
-                "config_migrations",
                 "capability_timeouts",
             },
         )
