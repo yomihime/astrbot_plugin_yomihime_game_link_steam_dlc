@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import yomihime_game_link_sdk as ygl
-from yomihime_game_link_sdk import cards
-
+from .. import _api_v2 as ygl
+from .._api_v2 import cards
 from .normalization import literal
 
 

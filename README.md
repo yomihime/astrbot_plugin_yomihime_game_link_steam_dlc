@@ -1,18 +1,18 @@
 # 如月怜的游戏连结：Steam DLC
 
-独立 AstrBot 插件，提供共享 Steam 身份、商店与完整库、游戏生涯拼图、Dota 2 比赛订阅、CS2 完美/官匹/5E 查询和 Deadlock 查询。当前版本 `0.2.0-beta.4` 与 Core `0.1.13`、canonical SDK `0.1.0a24`、模块 ABI `2.0`、外包桥接 `1` 与 schema `210` 精确配对。Beta 表示部分外部来源和现场环境仍未验收。请安装审核后的插件 ZIP，不要用自动生成的 Source code.zip 代替。来源可用性见[支持矩阵](docs/support-matrix.md)。
+独立 AstrBot 插件，提供共享 Steam 身份、商店与完整库、游戏生涯拼图、Dota 2 比赛订阅、CS2 完美/官匹/5E 查询和 Deadlock 查询。当前版本 `0.3.0` 使用 `ygl.control/1`、模块契约 `2.0` 与 manifest 声明的版本化 features 协商兼容 Core。部分外部来源和现场环境仍未验收。请安装审核后的插件 ZIP，不要用自动生成的 Source code.zip 代替。来源可用性见[支持矩阵](docs/support-matrix.md)。
 
 ## 安装与凭据
 
-配对安装入口：[v0.2.0-beta.4 Release](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.4)。使用同一 Release 的 Core/DLC ZIP 与 `SHA256SUMS`；历史 beta.1/beta.2 的 a22 资产保持原样，早先 a23 源码候选也不能代替本版 a24 配对。
+`0.3.0` 当前为本地候选，完整 ZIP 与发布信息尚待后续构建。Core 与 DLC 分别安装和发布；更新使用 AstrBot 原生插件市场更新或已审核 ZIP 覆盖流程。核对包来源、签名与摘要，并备份配置和数据。
 
-DLC 不包含第二份 SDK。a24 必须由匹配的 Core 提供，Core 与 DLC 作为一对更新：先核对两个包的来源提交、SDK/ABI 和 SHA256，备份现有 Core/DLC 插件目录以及配置和数据；通过宿主正常停止目标实例，在停止状态先安装 Core、再安装 DLC，随后正常冷启动一次，并核对实际加载路径、SDK 版本与候选哈希。不要热替换 SDK、只更新一侧、清空数据库或重建绑定。
+DLC 不包含第二份 SDK；业务 API 门面由当前 Core 的私有运行时代提供。普通兼容更新不要求重启整个 Host，DLC 在 Core 尚未就绪时等待，并在 Core 更新后重新协商接入。共享或原生依赖变化仍需要单独维护。实际插件市场、ZIP 覆盖及完整 Host 热更新流程尚待后续现场验收。
 
-回滚也必须使用匹配的一对包：正常停止同一实例，保留届时最新配置和数据，恢复同一次备份中的 Core/DLC 代码，再正常启动并核对 SDK 与插件来源。不要把旧数据库覆盖到新数据上，也不要将历史 a22/a23 Core 与 a24 DLC（或反向组合）作为回滚。模块 ABI 仍为 2.0 不代表 Python SDK 单例可以跨版本混用。
+回退代码同样需要通过当前 Core 的契约、features、权限与数据格式检查。保留最新配置和数据，不把旧数据库覆盖到新数据上。此候选不提供历史版本兼容迁移。
 
-新安装按匹配 Core → DLC 的顺序安装并启用宿主插件，再在 Core 可信管理页审阅并批准本次具体扩展安装计划。读取计划要求 DLC 宿主插件已启用；批准前 Core 会拒绝未授权的模块接入，启用插件本身不授予新来源权限。普通 DLC 更新沿用既有来源许可；扩大来源权限须批准新计划。使用 localhost/回环或可信 HTTPS 管理安装；远程普通 HTTP 可能在父壳资源摘要校验前失败，不要绕过校验。
+新安装可分别安装并启用 Core 与 DLC，再在 Core 可信管理页审阅并批准本次具体扩展安装计划。读取计划要求 DLC 宿主插件已启用；批准前 Core 会拒绝未授权的模块接入，启用插件本身不授予新来源权限。普通 DLC 更新沿用既有来源许可；扩大来源权限须批准新计划。使用 localhost/回环或可信 HTTPS 管理安装；远程普通 HTTP 可能在父壳资源摘要校验前失败，不要绕过校验。
 
-首次来源授权可在 Core 模块管理的“独立扩展安装授权”读取并批准当前安装计划：宿主插件名 `astrbot_plugin_yomihime_game_link_steam_dlc`，包 ID `steam_dlc`。核对来源/注入规则后批准并正常重启；已有等价配对授权可审计迁移。普通 DLC 版本和页面更新沿用许可；本版 SDK 变更须同时更新匹配 Core ZIP。新增敏感权限须批准新计划，不自动信任扩展自己的策略文件，也不要求重填现有 Key。
+首次来源授权可在 Core 模块管理的“独立扩展安装授权”读取并批准当前安装计划：宿主插件名 `astrbot_plugin_yomihime_game_link_steam_dlc`，包 ID `steam_dlc`。核对来源/注入规则后批准，DLC 后台重新协商接入。普通兼容 DLC 版本和页面更新沿用既有权限；权限投影变化需要重新批准。新增敏感权限须批准新计划，不自动信任扩展自己的策略文件，也不要求重填现有 Key。
 
 在 Core 模块管理中打开相应模块的设置：
 
@@ -94,7 +94,7 @@ CS2 以 CS2UID 为行为和接口参考，退休旧 Leetify 主方案。perfect�
 
 页面复用 Core `@game-link/ui`、主题与生命周期，包含普通设置、受控凭据、CS2查询和Steam拼图下载。普通草稿按 scope 隔离，Token不留草稿；CAS冲突先重读，未知写入不自动重试，旧响应不覆盖新状态。桌面和390px移动视口模拟、真实手机、扫码与线上来源是不同验收层。
 
-开发分支的统一页面使用配对 Core runtime 的 `PageTemplate` 和 `uiText`。运行时缺少这些导出时使用原页面布局。统一页面的验收使用配对的 Core 源码与构建产物。四个模块各自声明一份浅深 Logo 色板，目录和模块页共用该声明。
+统一页面通过协商的 Core runtime 使用 `PageTemplate` 和 `uiText`。运行时缺少这些导出时使用原页面布局。页面功能按声明的协议和 features 对兼容 Core 验收，不要求精确版本配对。四个模块各自声明一份浅深 Logo 色板，目录和模块页共用该声明。
 
 同一页面身份短暂不可用会暂停请求和轮询；恢复后可重新手动操作，不自动重放提交。切换身份、撤权或离开页面后，旧响应继续失效。CS2 的 rating、PW rating、ADR 等支持合法小数显示，缺失值仍显示未知。
 
@@ -125,6 +125,8 @@ mypy packages/steam_dlc
 python scripts/build_release.py
 ```
 
-页面构建需要配对 Core 源码的锁定前端依赖，可通过 `YGL_CORE_ROOT` 指定只读源码位置。先构建页面/同步摘要，再在干净已提交源码生成正式 DLC 包。消费者验证使用同一 Core 源码生成的 canonical a24 wheel，仅安装在隔离环境；Core/DLC 必须共同构建和验收。CI 的 Python 消费者回归生成去标识 CS2 序列化结果，再由页面测试读取 `CS2_GATEWAY_FIXTURE` 验证真实跨层数字显示。独立扩展通过受信管理安装计划授权并在运行时发布当前页面；包声明不自动取得秘密权限。`--allow-dirty`仅供本地开发，正式包要求已提交源码和干净工作树。
+开发页面构建可通过 `YGL_CORE_ROOT` 指定兼容 Core 的前端开发依赖；这不构成安装包的运行依赖或版本配对。先构建页面并同步资源摘要，再独立执行 `python scripts/build_release.py` 生成完整 DLC ZIP 和 `SHA256SUMS`，无需 Core checkout 或全局 SDK。开发 dirty overlay 使用 `--allow-dirty`，`BUILD.json` 记录实际提交、dirty 状态、各源文件与构建器摘要。可选 `--test-signing` 仅在内存生成临时测试密钥；正式 `--signing-key` 使用外部受保护 PEM，本轮不配置生产密钥或发布。
+
+完整 ZIP 包含 `ygl-plugin.json`、`release.json`、业务 manifest、私有 facade 使用的模块源码、声明的页面与 Logo、来源策略和许可证；签名 DLC 另含 `release.sig.json`。无签名 DLC 需要可信管理页针对准确 artifact digest 授权；签名 DLC 仍需已登记的发布者 key/channel 与具体包授权，不因签名自动授予敏感权限。Core 与 DLC 分别安装、更新和发布。市场 `download_url` 指向不可变完整 ZIP asset；源码归档不可安装。无市场条目可通过正常 AstrBot ZIP 上传更新，没有插件自更新器。同协议兼容更新无需整个 Host 重启，共享/原生依赖变更属于环境维护；旧 pre-coordinator alpha 首次迁移不承诺热切换。外部降级含普通手动上传均拒绝，仅允许当前授权内部 last-good 回退，无公开跳过版本检查。正式发布者密钥保管与登记是后续发布配置。
 
 双插件 harness 入口为 `scripts/smoke_two_plugins.py`，分别在新隔离目录运行 `--order core-first` 和 `--order dlc-first`，同时给 `--core-zip`、`--dlc-zip`、`--host-source`、`--work-root`。其事件与接口响应为合成数据；不证明真实新比赛、IM、扫码或线上平台通过。未配置凭据时先使用已有公开能力，实际Key、扫码、目标发送授权和IPv6-only测试应分别记录。安装前备份最新数据；不要把旧 schema 数据库覆盖到已升级实例。过程证据、账号、Key、附件、缓存均不进入公开仓库或安装包。

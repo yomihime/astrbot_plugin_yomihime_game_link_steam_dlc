@@ -7,8 +7,7 @@ Game-specific protocol knowledge stays in the DLC.
 import json
 import re
 
-from yomihime_game_link_sdk.services import HttpRequest
-
+from .._api_v2.services import HttpRequest
 from ..shared.steam_ids import parse_steam_id
 
 SCHEMA_VERSION = "cs2.platform.v1"

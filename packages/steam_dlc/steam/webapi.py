@@ -7,8 +7,7 @@ can be enabled. A missing response is not an empty library or zero playtime.
 
 from collections.abc import Mapping
 
-from yomihime_game_link_sdk import HttpRequest
-
+from .._api_v2 import HttpRequest
 from ..shared.steam_ids import parse_steam_id
 from .normalization import app_id, availability, integer, literal
 

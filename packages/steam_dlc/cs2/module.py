@@ -5,18 +5,17 @@ import shlex
 from collections.abc import Mapping
 from unicodedata import category
 
-import yomihime_game_link_sdk as ygl
-from yomihime_game_link_sdk import cards
-from yomihime_game_link_sdk.contexts import InvocationOrigin
-from yomihime_game_link_sdk.declarations import CapabilityReference
-from yomihime_game_link_sdk.errors import (
+from .. import _api_v2 as ygl
+from .._api_v2 import cards
+from .._api_v2.contexts import InvocationOrigin
+from .._api_v2.declarations import CapabilityReference
+from .._api_v2.errors import (
     AccessDenied,
     InvalidInvocation,
     OperationTimeout,
     ServiceUnavailable,
 )
-from yomihime_game_link_sdk.storage import SecretMetadataState
-
+from .._api_v2.storage import SecretMetadataState
 from ..shared.output import failure
 from ..shared.steam_ids import account_id32
 from .avatar import avatar_asset

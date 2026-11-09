@@ -11,11 +11,11 @@ from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import yomihime_game_link_sdk as ygl
-from yomihime_game_link_sdk.contexts import InvocationOrigin, InvocationView
-from yomihime_game_link_sdk.declarations import CapabilityReference
-from yomihime_game_link_sdk.display import FieldsBlock
-from yomihime_game_link_sdk.errors import (
+from .. import _api_v2 as ygl
+from .._api_v2.contexts import InvocationOrigin, InvocationView
+from .._api_v2.declarations import CapabilityReference
+from .._api_v2.display import FieldsBlock
+from .._api_v2.errors import (
     AccessDenied,
     CacheUnavailable,
     InvalidInvocation,
@@ -23,8 +23,8 @@ from yomihime_game_link_sdk.errors import (
     ServiceUnavailable,
     SourceHttpError,
 )
-from yomihime_game_link_sdk.results import ErrorCode, ResultStatus
-from yomihime_game_link_sdk.services import (
+from .._api_v2.results import ErrorCode, ResultStatus
+from .._api_v2.services import (
     CapabilityHealth,
     HealthReport,
     HealthStatus,
@@ -32,12 +32,11 @@ from yomihime_game_link_sdk.services import (
     ModuleHandlers,
     ModuleServices,
 )
-from yomihime_game_link_sdk.storage import (
+from .._api_v2.storage import (
     CacheLookupStatus,
     CacheQuery,
     CacheVisibility,
 )
-
 from ..shared.contracts import MatchSummary, PlayerProfile, RecentMatch
 from ..shared.hero_names import HERO_NAMES
 from ..shared.output import failure, success

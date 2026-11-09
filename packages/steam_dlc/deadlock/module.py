@@ -9,12 +9,12 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
-import yomihime_game_link_sdk as ygl
-from yomihime_game_link_sdk import cards
-from yomihime_game_link_sdk.contexts import InvocationOrigin
-from yomihime_game_link_sdk.declarations import CapabilityReference
-from yomihime_game_link_sdk.display import FieldsBlock
-from yomihime_game_link_sdk.errors import (
+from .. import _api_v2 as ygl
+from .._api_v2 import cards
+from .._api_v2.contexts import InvocationOrigin
+from .._api_v2.declarations import CapabilityReference
+from .._api_v2.display import FieldsBlock
+from .._api_v2.errors import (
     AccessDenied,
     CacheUnavailable,
     InvalidInvocation,
@@ -22,13 +22,12 @@ from yomihime_game_link_sdk.errors import (
     ServiceUnavailable,
     SourceHttpError,
 )
-from yomihime_game_link_sdk.services import HttpRequest
-from yomihime_game_link_sdk.storage import (
+from .._api_v2.services import HttpRequest
+from .._api_v2.storage import (
     CacheLookupStatus,
     CacheQuery,
     CacheVisibility,
 )
-
 from ..shared.output import failure, success
 from ..shared.steam_ids import account_id32, parse_dota_account, parse_steam_id
 from . import normalization as norm

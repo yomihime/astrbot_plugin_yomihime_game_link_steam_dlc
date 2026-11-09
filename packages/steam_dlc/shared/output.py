@@ -1,6 +1,6 @@
 """Pure SDK result construction shared by the four modules."""
 
-import yomihime_game_link_sdk as ygl
+from .. import _api_v2 as ygl
 
 
 def success(title, lines, facts=None, *, privacy=ygl.Privacy.PUBLIC, warnings=()):

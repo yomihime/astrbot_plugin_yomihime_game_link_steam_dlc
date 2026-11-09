@@ -10,6 +10,10 @@ from unittest.mock import AsyncMock
 import test_frozen_core_consumers as core
 import test_steam_wishlist as wishlist_ports
 import yomihime_game_link_sdk as ygl
+from sl07_core.extensions.hot_update_protocol import (
+    b05_manifest_bytes,
+    parse_package_manifest,
+)
 
 from packages.steam_dlc.steam.module import SteamModule
 
@@ -41,7 +45,13 @@ class FrozenWishlistConsumers(unittest.IsolatedAsyncioTestCase):
             )
         )
         manifest = core.parse_manifest(
-            (core.ROOT / "packages/steam_dlc/yomihime.manifest.json").read_bytes()
+            b05_manifest_bytes(
+                parse_package_manifest(
+                    (
+                        core.ROOT / "packages/steam_dlc/yomihime.manifest.json"
+                    ).read_bytes()
+                )
+            )
         )
         lease = SimpleNamespace(
             _complete=True,

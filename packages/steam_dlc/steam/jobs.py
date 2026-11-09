@@ -8,10 +8,9 @@ from collections.abc import Mapping
 from dataclasses import replace
 from decimal import Decimal
 
-import yomihime_game_link_sdk as ygl
-from yomihime_game_link_sdk.jobs import JobRequest
-from yomihime_game_link_sdk.storage import SecretMetadataState
-
+from .. import _api_v2 as ygl
+from .._api_v2.jobs import JobRequest
+from .._api_v2.storage import SecretMetadataState
 from ..shared.output import failure
 from .career import grid_spec, load_full, preflight
 from .queries import QueryFailure, load

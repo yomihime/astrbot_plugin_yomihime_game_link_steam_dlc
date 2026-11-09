@@ -3,8 +3,7 @@
 import re
 import shlex
 
-import yomihime_game_link_sdk as ygl
-
+from .. import _api_v2 as ygl
 from ..shared.output import failure, success
 from ..shared.steam_ids import (
     account_id32,

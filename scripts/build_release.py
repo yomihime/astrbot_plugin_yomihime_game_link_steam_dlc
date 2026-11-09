@@ -4,15 +4,18 @@ import argparse
 import ast
 import hashlib
 import json
+import os
 import re
 import stat
 import subprocess
+import tempfile
 import zipfile
+from importlib.util import module_from_spec, spec_from_file_location
 from io import BytesIO
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SDK_VERSION = "0.1.0a24"
+
 QUERY_TOOLS = {
     "steam": {
         "search": ("search", "query"),
@@ -55,6 +58,7 @@ ROOT_FILES = (
     "LICENSE",
     "README.md",
     "THIRD_PARTY_NOTICES.md",
+    "ygl-plugin.json",
 )
 LOCAL_PROCESS_PATHS = {"agents.md", "docs/plan.md", "docs/collaboration.md"}
 FORBIDDEN_IMPORTS = {
@@ -75,7 +79,21 @@ FORBIDDEN_IMPORTS = {
 def validate_public_paths(paths):
     for path in paths:
         normalized = str(path).replace("\\", "/").casefold()
-        if ".local-dev" in normalized.split("/") or normalized in LOCAL_PROCESS_PATHS:
+        if (
+            any(
+                part
+                in {
+                    ".local-dev",
+                    ".agent-workspace",
+                    ".git",
+                    "node_modules",
+                    ".venv",
+                    "venv",
+                }
+                for part in normalized.split("/")
+            )
+            or normalized in LOCAL_PROCESS_PATHS
+        ):
             raise ValueError(f"local development material is not public input: {path}")
 
 
@@ -123,8 +141,6 @@ def validate_version_declarations(files):
     readme = files["README.md"].decode("utf-8")
     if f"当前版本 `{version}`" not in readme:
         raise ValueError("README version differs from manifest package version")
-    if f"canonical SDK `{SDK_VERSION}`" not in readme:
-        raise ValueError("README SDK version differs from release requirement")
 
 
 def source_bytes(path, root):
@@ -141,7 +157,32 @@ def source_bytes(path, root):
     metadata = path.lstat()
     if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink > 1:
         raise ValueError(f"release source must be a regular file: {relative}")
-    return path.read_bytes()
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink > 1:
+            raise ValueError(f"release source must be a regular file: {relative}")
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            content = stream.read()
+
+        def token(info):
+            return (
+                info.st_dev,
+                info.st_ino,
+                info.st_size,
+                info.st_mtime_ns,
+                info.st_nlink,
+            )
+
+        if (
+            token(metadata) != token(before)
+            or token(before) != token(os.fstat(descriptor))
+            or token(before) != token(path.lstat())
+        ):
+            raise ValueError(f"release source changed during capture: {relative}")
+        return content
+    finally:
+        os.close(descriptor)
 
 
 def inventory(root):
@@ -232,7 +273,7 @@ def inventory(root):
             raise ValueError("factory is not contained in the captured package")
         validate_query_tools(module)
     if any(name.startswith("yomihime_game_link_sdk/") for name in result):
-        raise ValueError("release must reuse the canonical Core SDK")
+        raise ValueError("DLC must use the negotiated private Core facade")
     validate_version_declarations(result)
     return result
 
@@ -286,7 +327,15 @@ def validate_query_tools(module):
             )
 
 
-def build(root=ROOT, output=None, *, allow_dirty=False):
+def build(
+    root=ROOT,
+    output=None,
+    *,
+    allow_dirty=False,
+    signing_key=None,
+    channel="preview",
+    sequence=1,
+):
     root = Path(root).resolve(strict=True)
     validate_tracked_paths(root)
     files = inventory(root)
@@ -306,49 +355,66 @@ def build(root=ROOT, output=None, *, allow_dirty=False):
     ).strip()
     if dirty and not allow_dirty:
         raise ValueError("commit the reviewed source before a final release build")
-    receipt = {
-        "package_version": version,
-        "source_commit": revision,
-        "dirty": bool(dirty),
-        "sdk_version": SDK_VERSION,
-        "module_abi": "2.0",
-        "bridge_version": 1,
-        "files": {
-            name: hashlib.sha256(payload).hexdigest()
-            for name, payload in sorted(files.items())
-        },
-    }
-    files["BUILD.json"] = (
-        json.dumps(receipt, ensure_ascii=False, indent=2) + "\n"
-    ).encode()
-    stream = BytesIO()
-    with zipfile.ZipFile(
-        stream, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
-    ) as archive:
-        for name, payload in sorted(files.items()):
-            entry = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
-            entry.compress_type = zipfile.ZIP_DEFLATED
-            entry.external_attr = (stat.S_IFREG | 0o644) << 16
-            archive.writestr(entry, payload)
-    payload = stream.getvalue()
-    output = Path(output)
-    output = output.absolute()
-    if output.is_symlink() or output.exists() and output.read_bytes() != payload:
-        raise ValueError("output already exists with different bytes")
-    for parent in output.parents:
-        if parent.exists() and parent.resolve() != parent:
-            raise ValueError("output traverses a link")
-    output.parent.mkdir(parents=True, exist_ok=True)
+    # No Core checkout or globally installed SDK is needed to build this ZIP.
+    spec = spec_from_file_location(
+        "dlc_release_envelope", Path(__file__).with_name("release_envelope.py")
+    )
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    complete = module.complete
+
+    payload = complete(
+        files, root, "dlc", signing_key=signing_key, channel=channel, sequence=sequence
+    )
+    captured_sources = files
+    with zipfile.ZipFile(BytesIO(payload)) as built:
+        files = {name: built.read(name) for name in built.namelist()}
+    output = Path(os.path.abspath(output))
+    sums = output.parent / "SHA256SUMS"
+    protected = {root / name for name in files}
+    protected.update(Path(__file__).parent.glob("*.py"))
+    if output == sums:
+        raise ValueError("release outputs must be distinct")
+    for destination in (output, sums):
+        if destination in protected:
+            raise ValueError("output overlaps release input")
+        for component in (destination, *destination.parents):
+            if component.is_symlink():
+                raise ValueError("output traverses a link")
+            if component.exists():
+                info = component.lstat()
+                if (
+                    getattr(info, "st_file_attributes", 0) & 0x400
+                    or info.st_nlink > 1
+                    and stat.S_ISREG(info.st_mode)
+                ):
+                    raise ValueError("output traverses a link")
+                if component == destination and not stat.S_ISREG(info.st_mode):
+                    raise ValueError("output must be a regular file")
+                if component != destination and not stat.S_ISDIR(info.st_mode):
+                    raise ValueError("output parent must be a directory")
     reused = output.exists()
-    if not reused:
-        with output.open("xb") as target:
-            target.write(payload)
-    with zipfile.ZipFile(output) as archive:
-        if archive.testzip() is not None or set(archive.namelist()) != set(files):
-            raise ValueError("built archive failed its content audit")
-        for name, content in files.items():
-            if archive.read(name) != content:
-                raise ValueError("built archive source bytes differ")
+    if reused and output.read_bytes() != payload:
+        raise ValueError("output already exists with different bytes")
+    if inventory(root) != captured_sources:
+        raise ValueError("DLC source changed before publication")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    checksum = f"{hashlib.sha256(payload).hexdigest()}  {output.name}\n".encode("ascii")
+    staged = []
+    try:
+        for destination, content in ((output, payload), (sums, checksum)):
+            if destination == output and reused:
+                continue
+            fd, name = tempfile.mkstemp(prefix=".release-", dir=output.parent)
+            temporary = Path(name)
+            staged.append((temporary, destination))
+            with os.fdopen(fd, "wb") as target:
+                target.write(content)
+        for temporary, destination in staged:
+            temporary.replace(destination)
+    finally:
+        for temporary, _ in staged:
+            temporary.unlink(missing_ok=True)
     report = {
         "path": str(output),
         "source_commit": revision,
@@ -371,5 +437,19 @@ if __name__ == "__main__":
         action="store_true",
         help="interim local harness only; final packages require committed source",
     )
+    parser.add_argument("--test-signing", action="store_true")
+    parser.add_argument("--signing-key", type=Path)
+    parser.add_argument("--channel", choices=("preview", "stable"), default="preview")
+    parser.add_argument("--sequence", type=int, default=1)
     args = parser.parse_args()
-    build(output=args.output, allow_dirty=args.allow_dirty)
+    if args.test_signing and args.channel != "preview":
+        parser.error("test signing is preview-only")
+    from release_envelope import signing_key
+
+    build(
+        output=args.output,
+        allow_dirty=args.allow_dirty,
+        signing_key=signing_key(args.signing_key, test=args.test_signing),
+        channel=args.channel,
+        sequence=args.sequence,
+    )

@@ -6,14 +6,13 @@ from collections.abc import Mapping
 from dataclasses import asdict
 from math import isfinite
 
-from yomihime_game_link_sdk.display import DisplayDocument, FieldsBlock, TextBlock
-from yomihime_game_link_sdk.results import (
+from .._api_v2.display import DisplayDocument, FieldsBlock, TextBlock
+from .._api_v2.results import (
     AnalysisRequest,
     CapabilityResult,
     FactDocument,
     ResultStatus,
 )
-
 from ..shared.steam_ids import parse_dota_account
 from .normalization import _bounded_text, _int, normalize_match
 
