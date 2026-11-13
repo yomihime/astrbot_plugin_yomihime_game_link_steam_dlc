@@ -72,10 +72,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13.9"
-      - name: Install signing implementation
-        run: python -m pip install cryptography
-      - name: Build independent complete preview candidate
-        run: python scripts/build_release.py --test-signing
+      - name: Build ordinary AstrBot plugin ZIP
+        run: python scripts/build_release.py
       - uses: actions/upload-artifact@v4
         with:
           name: complete-dlc-candidate

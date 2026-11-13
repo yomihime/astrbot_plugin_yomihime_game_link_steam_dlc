@@ -17,7 +17,7 @@ PROTOCOL = "ygl.control/1"
 ROOT = Path(__file__).resolve().parent
 
 
-@register(PLUGIN_NAME, "yomihime", "如月怜的游戏连结：Steam DLC", "0.3.0")
+@register(PLUGIN_NAME, "yomihime", "如月怜的游戏连结：Steam DLC", "0.3.1")
 class SteamDLC(Star):
     REQUEST_TIMEOUT = 3.0
     RETRY_INTERVAL = 2.0

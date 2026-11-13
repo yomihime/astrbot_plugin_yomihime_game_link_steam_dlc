@@ -32,7 +32,7 @@ class CompleteDLCReleaseTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             return release.build(output=self.output, allow_dirty=True, **kwargs)
 
-    def test_unsigned_complete_inventory_checksum_and_repeat_identity(self):
+    def test_ordinary_complete_inventory_checksum_and_repeat_identity(self):
         self.build()
         original = self.output.read_bytes()
         self.build()
@@ -40,7 +40,18 @@ class CompleteDLCReleaseTests(unittest.TestCase):
         with zipfile.ZipFile(self.output) as archive:
             names = set(archive.namelist())
             doc = json.loads(archive.read("release.json"))
-            self.assertNotIn("release.sig.json", names)
+            self.assertTrue({"release.sig.json", "release-key.json"}.isdisjoint(names))
+            self.assertEqual(
+                set(doc),
+                {
+                    "schema",
+                    "plugin_id",
+                    "package_id",
+                    "release",
+                    "payload_digest",
+                    "files",
+                },
+            )
             self.assertEqual(
                 set(row["path"] for row in doc["files"]), names - {"release.json"}
             )
@@ -52,8 +63,8 @@ class CompleteDLCReleaseTests(unittest.TestCase):
                 },
             )
             self.assertEqual(
-                (doc["release"], doc["channel"], doc["release_sequence"]),
-                ("0.3.0", "preview", 1),
+                (doc["schema"], doc["package_id"], doc["release"]),
+                ("ygl.release/2", "steam_dlc", "0.3.1"),
             )
             for row in doc["files"]:
                 content = archive.read(row["path"])
@@ -61,6 +72,13 @@ class CompleteDLCReleaseTests(unittest.TestCase):
                     (row["size"], row["sha256"]),
                     (len(content), hashlib.sha256(content).hexdigest()),
                 )
+            records = "".join(
+                f"{row['path']}\0{row['size']}\0{row['sha256']}\n"
+                for row in sorted(doc["files"], key=lambda row: row["path"].encode())
+            )
+            self.assertEqual(
+                doc["payload_digest"], hashlib.sha256(records.encode()).hexdigest()
+            )
             self.assertFalse(
                 any(name.startswith("yomihime_game_link_sdk/") for name in names)
             )
@@ -75,13 +93,27 @@ class CompleteDLCReleaseTests(unittest.TestCase):
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
         key = Ed25519PrivateKey.generate()
-        self.build(signing_key=key)
+        self.build(signing_key=key, channel="stable", sequence=42)
         with zipfile.ZipFile(self.output) as archive:
             raw = archive.read("release.json")
+            doc = json.loads(raw)
             sig = json.loads(archive.read("release.sig.json"))
+            self.assertEqual(
+                (doc["schema"], doc["channel"], doc["release_sequence"]),
+                ("ygl.release/1", "stable", 42),
+            )
             key.public_key().verify(base64.b64decode(sig["signature_base64"]), raw)
             self.assertEqual(set(sig), {"algorithm", "key_id", "signature_base64"})
             self.assertNotIn("release-key.json", archive.namelist())
+
+    def test_legacy_release_options_require_signing(self):
+        for options in ({"channel": "preview"}, {"sequence": 1}):
+            with (
+                self.subTest(options=options),
+                self.assertRaisesRegex(ValueError, "require legacy signing"),
+            ):
+                self.build(**options)
+        self.assertFalse(self.output.exists())
 
     def test_checksum_link_preflight_preserves_archive_and_target(self):
         self.output.write_bytes(b"previous archive")

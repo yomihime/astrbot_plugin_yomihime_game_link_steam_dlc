@@ -82,7 +82,7 @@ def validate_files(files, role):
             raise ValueError("file/directory collision")
 
 
-def complete(files, root, role, *, signing_key=None, channel="preview", sequence=1):
+def complete(files, root, role, *, signing_key=None, channel=None, sequence=None):
     files = dict(files)
     descriptor = json.loads(files["ygl-plugin.json"])
     if descriptor["role"] != role:
@@ -90,12 +90,18 @@ def complete(files, root, role, *, signing_key=None, channel="preview", sequence
     info = metadata(files)
     if role == "core" and signing_key is None:
         raise ValueError("Core requires an Ed25519 signing key; no unsigned Core build")
-    if (
-        channel not in ("stable", "preview")
-        or type(sequence) is not int
-        or sequence < 0
-    ):
-        raise ValueError("invalid release channel/sequence")
+    if signing_key is None:
+        if channel is not None or sequence is not None:
+            raise ValueError("channel and sequence require legacy signing")
+    else:
+        channel = "preview" if channel is None else channel
+        sequence = 1 if sequence is None else sequence
+        if (
+            channel not in ("stable", "preview")
+            or type(sequence) is not int
+            or not 0 <= sequence <= 9007199254740991
+        ):
+            raise ValueError("invalid release channel/sequence")
     source_files = {
         name: hashlib.sha256(data).hexdigest() for name, data in sorted(files.items())
     }
@@ -171,7 +177,9 @@ def complete(files, root, role, *, signing_key=None, channel="preview", sequence
             "source_files": source_files,
             "builder_files": builders,
             "source_digest": hashlib.sha256(encode(source_files)).hexdigest(),
-            "development_candidate": channel == "preview",
+            "development_candidate": dirty
+            if signing_key is None
+            else channel == "preview",
         }
     )
     validate_files(files, role)
@@ -189,18 +197,19 @@ def complete(files, root, role, *, signing_key=None, channel="preview", sequence
             + row["sha256"].encode()
             + b"\n"
         )
-    raw = encode(
-        {
-            "schema": "ygl.release/1",
-            "plugin_id": {"author": info["author"], "name": info["name"]},
-            "package_id": descriptor["package_id"],
-            "release": info["version"],
-            "channel": channel,
-            "release_sequence": sequence,
-            "payload_digest": digest.hexdigest(),
-            "files": rows,
-        }
-    )
+    release = {
+        "schema": "ygl.release/2",
+        "plugin_id": {"author": info["author"], "name": info["name"]},
+        "package_id": descriptor["package_id"],
+        "release": info["version"],
+        "payload_digest": digest.hexdigest(),
+        "files": rows,
+    }
+    if signing_key is not None:
+        release.update(
+            schema="ygl.release/1", channel=channel, release_sequence=sequence
+        )
+    raw = encode(release)
     if len(raw) > 2 * 1024 * 1024:
         raise ValueError("release manifest exceeds budget")
     files["release.json"] = raw

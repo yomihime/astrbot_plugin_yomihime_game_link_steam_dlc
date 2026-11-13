@@ -110,6 +110,8 @@ def validate_version_declarations(files):
         r"0\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", version
     ):
         raise ValueError("manifest package version is invalid")
+    if manifest.get("release") != version:
+        raise ValueError("manifest release differs from package version")
     module_versions = [module.get("module_version") for module in manifest["modules"]]
     if not module_versions or any(item != version for item in module_versions):
         raise ValueError("manifest module versions differ from package version")
@@ -333,8 +335,8 @@ def build(
     *,
     allow_dirty=False,
     signing_key=None,
-    channel="preview",
-    sequence=1,
+    channel=None,
+    sequence=None,
 ):
     root = Path(root).resolve(strict=True)
     validate_tracked_paths(root)
@@ -437,13 +439,20 @@ if __name__ == "__main__":
         action="store_true",
         help="interim local harness only; final packages require committed source",
     )
-    parser.add_argument("--test-signing", action="store_true")
-    parser.add_argument("--signing-key", type=Path)
-    parser.add_argument("--channel", choices=("preview", "stable"), default="preview")
-    parser.add_argument("--sequence", type=int, default=1)
+    signing = parser.add_mutually_exclusive_group()
+    signing.add_argument(
+        "--test-signing", action="store_true", help="legacy preview ZIP"
+    )
+    signing.add_argument("--signing-key", type=Path, help="legacy signed ZIP")
+    parser.add_argument("--channel", choices=("preview", "stable"), help="legacy only")
+    parser.add_argument("--sequence", type=int, help="legacy only")
     args = parser.parse_args()
-    if args.test_signing and args.channel != "preview":
+    if args.test_signing and args.channel == "stable":
         parser.error("test signing is preview-only")
+    if (args.channel is not None or args.sequence is not None) and not (
+        args.test_signing or args.signing_key
+    ):
+        parser.error("--channel and --sequence require legacy signing")
     from release_envelope import signing_key
 
     build(

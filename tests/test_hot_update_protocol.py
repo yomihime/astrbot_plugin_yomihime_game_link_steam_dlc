@@ -93,8 +93,8 @@ class Endpoint:
             "lease": self.lease,
             "core_epoch": self.epoch,
             "package_epoch": 1,
-            "installed_version": "0.3.0",
-            "running_version": "0.3.0",
+            "installed_version": MANIFEST["release"],
+            "running_version": MANIFEST["release"],
         }
 
 
@@ -325,7 +325,7 @@ class ManifestTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         self.assertTrue(parsed_policy)
-        self.assertEqual(MANIFEST["release"], "0.3.0")
+        self.assertEqual(parsed.package_version, "0.3.1")
         with self.assertRaisesRegex(ProtocolError, "missing_feature"):
             negotiate_manifest(MANIFEST, 0, [])
         self.assertEqual(
