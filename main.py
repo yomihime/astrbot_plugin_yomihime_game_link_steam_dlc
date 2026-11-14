@@ -14,6 +14,7 @@ from astrbot.api.star import Context, Star, register
 PLUGIN_NAME = "astrbot_plugin_yomihime_game_link_steam_dlc"
 CORE_NAME = "astrbot_plugin_yomihime_game_link"
 PROTOCOL = "ygl.control/1"
+RETIRE_FEATURE = "control.retire/1"
 ROOT = Path(__file__).resolve().parent
 
 
@@ -31,6 +32,7 @@ class SteamDLC(Star):
         self._wake = asyncio.Event()
         self._core_instance = None
         self._endpoint = None
+        self._supports_retire = None
         self._lease = None
         self._core_epoch = None
         self._package_epoch = None
@@ -71,6 +73,7 @@ class SteamDLC(Star):
 
     def _forget(self):
         self._core_instance = self._endpoint = self._lease = None
+        self._supports_retire = None
         self._core_epoch = self._package_epoch = None
         self._request_id = self._operation_id = None
 
@@ -119,6 +122,8 @@ class SteamDLC(Star):
             old_endpoint, old_lease = self._endpoint, self._lease
             self._forget()
             await self._disconnect(old_endpoint, old_lease)
+        if self._closed:
+            return self.RETRY_INTERVAL
         if core is None:
             self.connection_state = "waiting_core"
             return self.RETRY_INTERVAL
@@ -130,8 +135,12 @@ class SteamDLC(Star):
             old_endpoint, old_lease = self._endpoint, self._lease
             self._forget()
             await self._disconnect(old_endpoint, old_lease)
+            if self._closed:
+                return self.RETRY_INTERVAL
             self._core_instance, self._endpoint = core, endpoint
         described = await self._request(endpoint, "describe")
+        if self._closed:
+            return self.RETRY_INTERVAL
         state = self._state(described)
         if state != "ready":
             self.connection_state = state
@@ -141,6 +150,8 @@ class SteamDLC(Star):
             raise ValueError("invalid Core epoch")
         contract = described.get("module_contract")
         features = described.get("features")
+        if type(features) is list:
+            self._supports_retire = RETIRE_FEATURE in features
         manifest = json.loads(
             (ROOT / "packages/steam_dlc/yomihime.manifest.json").read_bytes()
         )
@@ -163,6 +174,8 @@ class SteamDLC(Star):
             self._lease = self._package_epoch = self._operation_id = None
             self._request_id = None
             await self._disconnect(endpoint, old_lease)
+            if self._closed:
+                return self.RETRY_INTERVAL
         self._core_epoch = epoch
         if self._lease is not None:
             reply = await self._request(endpoint, "status", lease=self._lease)
@@ -179,7 +192,7 @@ class SteamDLC(Star):
                     ).hexdigest(),
                 )
                 operation_id = reply.get("operation_id")
-                if reply["ok"] and reply["state"] == "queued":
+                if not self._closed and reply["ok"] and reply["state"] == "queued":
                     if (
                         type(operation_id) is not str
                         or not 0 < len(operation_id) <= 128
@@ -191,6 +204,12 @@ class SteamDLC(Star):
                     endpoint, "status", operation_id=self._operation_id
                 )
         state = self._state(reply)
+        if self._closed:
+            if state == "active":
+                lease = reply.get("lease")
+                if type(lease) is str and re.fullmatch(r"[0-9a-f]{64}", lease):
+                    await self._disconnect(endpoint, lease)
+            return self.RETRY_INTERVAL
         if state == "active":
             lease = reply.get("lease")
             package_epoch = reply.get("package_epoch")
@@ -211,7 +230,7 @@ class SteamDLC(Star):
                 or not 0 <= package_epoch <= 2**53 - 1
             ):
                 raise ValueError("invalid active lease")
-            if self._closed or self._core() is not core:
+            if self._core() is not core:
                 await self._disconnect(endpoint, lease)
                 self._forget()
                 return self.POLL_INTERVAL
@@ -234,6 +253,8 @@ class SteamDLC(Star):
             except asyncio.CancelledError:
                 raise
             except Exception:
+                if self._closed:
+                    return
                 self.connection_state = "endpoint_unavailable"
                 logger.warning("Steam DLC control endpoint unavailable; retrying.")
             try:
@@ -249,21 +270,54 @@ class SteamDLC(Star):
     async def plugin_unloaded(self, metadata):
         self._schedule()
 
+    async def _retire(self, endpoint, supports_retire):
+        if endpoint is None:
+            return False
+        try:
+            if supports_retire is None:
+                described = await self._request(endpoint, "describe")
+                features = described.get("features")
+                supports_retire = type(features) is list and RETIRE_FEATURE in features
+            if supports_retire:
+                reply = await self._request(endpoint, "retire")
+                return reply["ok"] and reply["state"] in {"queued", "already_detached"}
+        except Exception:
+            logger.warning("Steam DLC retirement acknowledgment was unavailable.")
+        return False
+
     async def terminate(self):
+        if self._closed:
+            return
         # Close synchronously before the first await; lifecycle never waits for prepare.
         self._closed = True
         self._wake.set()
         task, self._task = self._task, None
         endpoint, lease = self._endpoint, self._lease
+        supports_retire = self._supports_retire
         retiring = self._retiring
         self._forget()
         self.connection_state = "unloaded"
-        if task is not None:
-            task.cancel()
+        try:
+            # Core can discover an exact instance before its first local poll,
+            # including while it is switching from a previous Core generation.
             try:
-                await asyncio.wait_for(task, self.REQUEST_TIMEOUT)
-            except (TimeoutError, asyncio.CancelledError):
-                pass
-        await self._disconnect(endpoint, lease)
-        if retiring is not None and retiring != (endpoint, lease):
-            await self._disconnect(*retiring)
+                core = self._core()
+                current = core.get_ygl_endpoint_v1() if core is not None else None
+            except Exception:
+                current = None
+                logger.warning(
+                    "Steam DLC could not find the current Core endpoint during unload."
+                )
+            if current is not None and current is not endpoint:
+                await self._retire(current, None)
+            if not await self._retire(endpoint, supports_retire):
+                await self._disconnect(endpoint, lease)
+            if retiring is not None and retiring != (endpoint, lease):
+                await self._disconnect(*retiring)
+        finally:
+            if task is not None:
+                task.cancel()
+                try:
+                    await asyncio.wait_for(task, self.REQUEST_TIMEOUT)
+                except (TimeoutError, asyncio.CancelledError):
+                    pass

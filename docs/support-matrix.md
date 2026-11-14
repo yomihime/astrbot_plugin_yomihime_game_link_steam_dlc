@@ -1,6 +1,6 @@
 # 支持与验证矩阵
 
-本表区分代码/隔离证据与真实环境验收。当前源码候选要求支持模块聚合工具的配对 Core、canonical SDK `0.1.0a24`、module ABI `2.0`、bridge `1`、schema `210`。DLC `0.2.0-beta.4` 的 AstrBot 元数据下限是 `>=4.29.1`，它不是对所有未来 Host 版本的兼容保证。历史 beta.2 Release 是 a22 配对；本版配对安装资产见 [v0.2.0-beta.4 Release](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.4)，Core 为 `0.1.13`。历史 a22/a23 不能与本版 a24 混装。
+Steam DLC 通过 AstrBot 插件管理安装，依赖支持普通 ZIP 安装的游戏连结 Core。可按任意顺序安装两个插件。Core 就绪且通过兼容性检查后，Steam DLC 会自动接入。DLC 的 AstrBot 元数据下限为 4.29.1，具体环境的验证范围请看对应版本的记录。
 
 | 类别 | 能力/环境 | 证据边界 |
 | --- | --- | --- |
@@ -12,12 +12,14 @@
 | 未验 | Dota 真实 IM 投递和自然新比赛 | 没有受信目标、允许发送条数、时间窗和消息授权，本轮测试出站数为 0。管理页或合成事件不替代真实会话身份。 |
 | 未验 | 非空 CS2/Deadlock 样本、真实手机、OS 重启、生产磁盘恢复 | 外部条件未提供或未执行；390px 视口模拟不代表真实手机，备份校验不代表生产磁盘恢复。 |
 | 来源限制 | Steam 私密库、OpenDota 收录范围、完美/官匹/5E摘要、Deadlock 社区数据 | 受上游可见性、收录和凭据限制；官匹是完美收录口径，官匹/5E近期摘要不等于完整历史或完整单场。可选 OpenDota Key 不扩大 RPH。 |
-| 部署条件 | Core 动态页面资源 | 复用 PR17 accepted head `fd713227c00094974c82df969e7883880cbbc8b3`（当时标记 0.1.12 候选）的真实 LAN HTTP iframe 无 WebCrypto与 localhost 原生校验、页面和图标验收；本次 Core 0.1.13 仅更新发布元数据并正式构建，未重新安装 Host。两路径均保留摘要校验，LAN 状态接口仍受原 localhost 单来源策略限制；不关闭校验或放宽授权。 |
+| 历史部署验证 | Core 动态页面资源 | PR17 的 Core 0.1.12 候选（`fd713227c00094974c82df969e7883880cbbc8b3`）验证过 LAN HTTP 环境的摘要校验回退、localhost 原生校验、页面和图标。Core 0.1.13 当时只更新元数据并构建。此行仅记录该批历史结果。 |
 | Core 既有限制 | `CORE-K01` | 队列整批候选无法入场后，后续 queued 作业可能没有新唤醒；queued 仅查询或取消，不提示 retry。 |
 | Core 既有限制 | `CORE-K02` | 同群同模块/类型/来源累计 101 条 active PUBLIC 订阅可能超过投影 100 上限，影响共享 observation 的其他目标。 |
 
-新安装只使用同一候选的 Core/DLC ZIP。备份代码、配置和数据后正常停止 Host，在停止状态先安装 Core、再安装 DLC，然后正常冷启动并核对 SDK、加载路径与哈希。GitHub 自动生成的 Source code.zip 是源码归档，不是插件安装包。回滚恢复同一次备份的配对代码并保留最新数据；不能混用历史 a22/a23 与 a24。新增敏感权限仍需批准新的具体计划。
+使用完整插件 ZIP 安装和更新。GitHub 自动生成的 `Source code.zip` 缺少安装所需的生成文件。更新前请备份配置、数据库和现有密钥。回退前应核对目标版本与当前数据库的兼容性，保护最近的配置和数据。普通安装无需额外批准。
 
-## 当前候选状态
+## 查阅验证结果
 
-此文档本身不把待执行或待复核工作标成通过。请以最终 beta Release 所附的公开摘要及对应提交 CI 查看候选的精确 Host、Python、操作系统和逐项结果；未列出可访问证据的项目仍按未验处理。
+请在对应版本的发布说明和 CI 中查看使用的 AstrBot、Python、操作系统及验证结果。未列出可查证结果的项目仍按未验处理。
+
+[历史 v0.2.0-beta.4 发布记录](https://github.com/yomihime/astrbot_plugin_yomihime_game_link_steam_dlc/releases/tag/v0.2.0-beta.4)对应旧版 Core 0.1.13 与 SDK a24 的安装方案。历史 beta.2 使用 a22。相关记录适用于各自版本。

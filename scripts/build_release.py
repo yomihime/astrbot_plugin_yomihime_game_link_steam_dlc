@@ -15,6 +15,11 @@ from io import BytesIO
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+_ENVELOPE_SPEC = spec_from_file_location(
+    "dlc_release_envelope", Path(__file__).with_name("release_envelope.py")
+)
+_ENVELOPE = module_from_spec(_ENVELOPE_SPEC)
+_ENVELOPE_SPEC.loader.exec_module(_ENVELOPE)
 
 QUERY_TOOLS = {
     "steam": {
@@ -106,43 +111,16 @@ def validate_version_declarations(files):
     """Check public version declarations without importing the plugin."""
     manifest = json.loads(files["packages/steam_dlc/yomihime.manifest.json"])
     version = manifest.get("package_version")
-    if not isinstance(version, str) or not re.fullmatch(
-        r"0\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", version
-    ):
-        raise ValueError("manifest package version is invalid")
+    info = _ENVELOPE.metadata(files)
+    if version != info["version"]:
+        raise ValueError("metadata version differs from manifest package version")
     if manifest.get("release") != version:
         raise ValueError("manifest release differs from package version")
     module_versions = [module.get("module_version") for module in manifest["modules"]]
     if not module_versions or any(item != version for item in module_versions):
         raise ValueError("manifest module versions differ from package version")
 
-    main = ast.parse(files["main.py"], filename="main.py")
-    registrations = []
-    for node in ast.walk(main):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            continue
-        for decorator in node.decorator_list:
-            if (
-                isinstance(decorator, ast.Call)
-                and isinstance(decorator.func, ast.Name)
-                and decorator.func.id == "register"
-            ):
-                if len(decorator.args) >= 4 and isinstance(
-                    decorator.args[3], ast.Constant
-                ):
-                    registrations.append(decorator.args[3].value)
-    if registrations != [version]:
-        raise ValueError(
-            "plugin register version differs from manifest package version"
-        )
-
-    metadata = files["metadata.yaml"].decode("utf-8")
-    metadata_versions = re.findall(r"(?m)^version:\s*['\"]?v?([^'\"\s]+)", metadata)
-    if metadata_versions != [version]:
-        raise ValueError("metadata version differs from manifest package version")
-    readme = files["README.md"].decode("utf-8")
-    if f"当前版本 `{version}`" not in readme:
-        raise ValueError("README version differs from manifest package version")
+    _ENVELOPE.validate_registration(files, info)
 
 
 def source_bytes(path, root):
@@ -357,15 +335,7 @@ def build(
     ).strip()
     if dirty and not allow_dirty:
         raise ValueError("commit the reviewed source before a final release build")
-    # No Core checkout or globally installed SDK is needed to build this ZIP.
-    spec = spec_from_file_location(
-        "dlc_release_envelope", Path(__file__).with_name("release_envelope.py")
-    )
-    module = module_from_spec(spec)
-    spec.loader.exec_module(module)
-    complete = module.complete
-
-    payload = complete(
+    payload = _ENVELOPE.complete(
         files, root, "dlc", signing_key=signing_key, channel=channel, sequence=sequence
     )
     captured_sources = files
@@ -453,12 +423,10 @@ if __name__ == "__main__":
         args.test_signing or args.signing_key
     ):
         parser.error("--channel and --sequence require legacy signing")
-    from release_envelope import signing_key
-
     build(
         output=args.output,
         allow_dirty=args.allow_dirty,
-        signing_key=signing_key(args.signing_key, test=args.test_signing),
+        signing_key=_ENVELOPE.signing_key(args.signing_key, test=args.test_signing),
         channel=args.channel,
         sequence=args.sequence,
     )

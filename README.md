@@ -1,12 +1,14 @@
 # 如月怜的游戏连结：Steam DLC
 
-独立 AstrBot 插件，提供共享 Steam 身份、商店与完整库、游戏生涯拼图、Dota 2 比赛订阅、CS2 完美/官匹/5E 查询和 Deadlock 查询。当前版本 `0.3.1` 使用 `ygl.control/1`、模块契约 `2.0` 与 manifest 声明的版本化 features 协商兼容 Core。来源可用性见[支持矩阵](docs/support-matrix.md)。
+Steam DLC 是游戏连结的 AstrBot 扩展，提供 Steam 账号绑定、商店和游戏库查询、游戏生涯拼图、Dota 2 比赛订阅，以及 CS2 和 Deadlock 查询。各功能的数据来源和验证范围见[支持矩阵](docs/support-matrix.md)。
 
 ## 安装与凭据
 
-在 AstrBot 管理端上传并启用 Core（`0.2.8` 或更高版本）和 Steam DLC 的完整插件 ZIP。可先装任一插件，Core 就绪后 DLC 会自动接入。更新时在同一入口上传较新的完整 ZIP 覆盖安装，也可使用提供完整 ZIP 的 AstrBot 插件市场更新。普通兼容更新保留已有配置和数据，DLC 会在 Core 更新后重新接入，无需重启 AstrBot。
+在 AstrBot 的插件管理中分别上传并启用游戏连结 Core 和 Steam DLC 的完整 ZIP。两个插件可按任意顺序安装。Core 就绪且通过兼容性检查后，Steam DLC 会自动接入。
 
-安装包使用 `ygl.release/2` 文件清单。Core 校验已启用的 AstrBot 插件实例、包内容、模块契约和数据兼容性，通过后自动加载。普通包的安装和更新无需配置签名密钥、登记发布者或在 Core 中重复批准。Steam、Dota 2、CS2 和 Deadlock 的凭据、账号绑定、查询及订阅仍按各模块的权限规则使用。
+更新时在同一入口上传新版本。如果 AstrBot 插件市场提供完整 ZIP，也可从市场更新。普通安装无需额外批准。兼容更新保留配置和数据，无需重启 AstrBot。Core 更新完成后，Steam DLC 会自动重新接入。
+
+更新前请备份配置、数据库和现有密钥。新出现的兼容问题可在游戏连结的模块管理中检查扩展状态。游戏账号绑定、凭据、查询与订阅继续按各模块的权限规则使用。
 
 在 Core 模块管理中打开相应模块的设置：
 

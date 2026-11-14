@@ -670,7 +670,7 @@
           "parameter_mapping": {},
           "parameter_mode": "raw_tail",
           "raw_tail_parameter": "command",
-          "help_text": "最多5款 legacy mostPlayedGames 样本，非全部游戏库；可指定 ID32/SteamID64。"
+          "help_text": "查看主页公开样本（最多 5 款游戏），可指定 ID32/SteamID64。"
         },
         {
           "operation_path": "wall",
@@ -678,7 +678,7 @@
           "parameter_mapping": {},
           "parameter_mode": "raw_tail",
           "raw_tail_parameter": "command",
-          "help_text": "游戏生涯拼图，games/recent是公开样本，full需要可选Steam Key。可选 --source games|recent|full、--mode dense|legacy、--preset single|standard|long、--aspect 2:3|9:16|1:2、--quality normal|hd、--fit cover|contain、--all-apps、--games-only、--limit 20以上有限数值或all、--refresh；默认500项，支持1500等超过1000的数量，不限覆盖来源实际范围，任务分批发布；legacy最多200项。"
+          "help_text": "生成游戏生涯拼图。games/recent 使用公开样本，full 需要配置 Steam Key。可选 --source games|recent|full、--mode dense|legacy、--preset single|standard|long、--aspect 2:3|9:16|1:2、--quality normal|hd、--fit cover|contain、--all-apps、--games-only、--limit 20以上有限数值或all、--refresh；默认500项，支持1500等超过1000的数量，不限覆盖来源实际范围，任务分批发布；legacy最多200项。"
         },
         {
           "operation_path": "wishlist",
@@ -855,7 +855,7 @@
         },
         {
           "path": "pages/steam/entry.js",
-          "sha256": "f9e066d4f66b9f94ab13f2da2cdaba7bb32006926e8ff0044cf92c5907780c42"
+          "sha256": "56f918dd5eb26c946278537b8535b26d0565b61042972b85d5e6eb80fc00592f"
         },
         {
           "path": "pages/steam/style.css",
@@ -1584,7 +1584,7 @@
           "operation_path": "watch",
           "capability_id": "watch",
           "parameter_mapping": {},
-          "help_text": "在当前会话关注玩家 [ID32或SteamID64]；无参数使用本人Steam绑定；首次完整采样建立基线，重复创建复用现有关注。",
+          "help_text": "在当前会话关注玩家 [ID32或SteamID64]。省略账号时使用本人 Steam 绑定。首次完整读取只记录已有比赛，重复订阅沿用已有关注。",
           "parameter_mode": "raw_tail",
           "raw_tail_parameter": "command"
         },
@@ -1806,7 +1806,7 @@
         },
         {
           "path": "pages/dota2/entry.js",
-          "sha256": "e8a1235d5b081b861ef61e529df2616fbfd20640405492ceca5fd850740e8bfe"
+          "sha256": "c9c73fb2f39612642d24cdbdeb066157e1e5ebc76190867a99a01d1d61e74724"
         },
         {
           "path": "pages/dota2/style.css",
@@ -1814,7 +1814,7 @@
         },
         {
           "path": "pages/dist/presentation-dota2.js",
-          "sha256": "e9727161b6f6796a72b514cac7f3cabc7520b1a352db74650e9a13b36eb1d548"
+          "sha256": "c676d35bd94925e0ae569f8d30ee2d6e80dd0fa7536e54ac0f17168124a50a95"
         }
       ],
       "schedules": [
@@ -2385,7 +2385,7 @@
           "parameter_mapping": {},
           "parameter_mode": "raw_tail",
           "raw_tail_parameter": "command",
-          "help_text": "CS2 match [账号] --platform perfect|official|5e；5E 使用明确 domain，单场按来源 ID。"
+          "help_text": "match <来源比赛ID> --platform perfect|official|5e。完美可加 --focus SteamID64。官匹和 5E 需要 --account，5E 使用 domain。"
         }
       ],
       "tools": [
@@ -2503,7 +2503,7 @@
         },
         {
           "path": "pages/cs2/entry.js",
-          "sha256": "7fcfaa528a7b7c356685ef3e170706f7c159da6ba55e4a61dd4eb737a907372b"
+          "sha256": "74189b38d9fb54b7230b46a20157f0524b5bb15a1a339fed6e1b6fea07f3461c"
         },
         {
           "path": "pages/cs2/style.css",
@@ -3020,7 +3020,7 @@
         },
         {
           "path": "pages/deadlock/entry.js",
-          "sha256": "9a08e124d674f9f1e8c3cd3d3e089d7c80d1e02b694db3de8f63a2bcf3613f7a"
+          "sha256": "3dd0d6ed7beeed02f2716c980505c11729f5707e1cd26bb3d67506354d3e85b4"
         },
         {
           "path": "pages/deadlock/style.css",
@@ -3028,7 +3028,7 @@
         },
         {
           "path": "pages/dist/presentation-deadlock.js",
-          "sha256": "ed2ddcdefd0e20be4f1bafd8e30899981caea010de1586b65f3d46c1bb0e26d2"
+          "sha256": "7c786edde6be93e1c4154a66abeab36c9c256039b45aa6747b8a4bf49bd2c1e7"
         }
       ],
       "sources": [
