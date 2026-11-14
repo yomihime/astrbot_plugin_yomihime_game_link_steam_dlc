@@ -14,6 +14,17 @@ from io import BytesIO
 from pathlib import Path, PurePosixPath
 
 MAX_ZIP_BYTES = 16_000_000
+_NUMERIC_VERSION = r"(?:0|[1-9][0-9]*)"
+_PRERELEASE_ID = rf"(?:{_NUMERIC_VERSION}|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+_BUILD_ID = r"[0-9A-Za-z-]+"
+_STABLE_VERSION = re.compile(
+    rf"{_NUMERIC_VERSION}\.{_NUMERIC_VERSION}\.{_NUMERIC_VERSION}"
+)
+_SEMVER = re.compile(
+    rf"{_STABLE_VERSION.pattern}"
+    rf"(?:-{_PRERELEASE_ID}(?:\.{_PRERELEASE_ID})*)?"
+    rf"(?:\+{_BUILD_ID}(?:\.{_BUILD_ID})*)?"
+)
 
 
 def encode(value):
@@ -22,7 +33,7 @@ def encode(value):
     ).encode()
 
 
-def metadata(files):
+def metadata(files, *, legacy=False):
     result = {}
     for key in ("name", "author", "version"):
         matches = re.findall(
@@ -32,10 +43,14 @@ def metadata(files):
             raise ValueError("metadata requires one " + key)
         result[key] = matches[0].strip().strip("\"'")
     result["version"] = result["version"].removeprefix("v")
-    if not re.fullmatch(
-        r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", result["version"]
-    ):
-        raise ValueError("release requires numeric MAJOR.MINOR.PATCH")
+    version = result["version"]
+    if legacy:
+        if _STABLE_VERSION.fullmatch(version) is None:
+            raise ValueError("legacy release requires numeric MAJOR.MINOR.PATCH")
+    elif len(version) > 128 or _SEMVER.fullmatch(version) is None:
+        raise ValueError(
+            "release requires a semantic version of at most 128 characters"
+        )
     return result
 
 
@@ -82,23 +97,7 @@ def validate_files(files, role):
             raise ValueError("file/directory collision")
 
 
-def complete(files, root, role, *, signing_key=None, channel="preview", sequence=1):
-    files = dict(files)
-    descriptor = json.loads(files["ygl-plugin.json"])
-    if descriptor["role"] != role:
-        raise ValueError("plugin role differs from release")
-    info = metadata(files)
-    if role == "core" and signing_key is None:
-        raise ValueError("Core requires an Ed25519 signing key; no unsigned Core build")
-    if (
-        channel not in ("stable", "preview")
-        or type(sequence) is not int
-        or sequence < 0
-    ):
-        raise ValueError("invalid release channel/sequence")
-    source_files = {
-        name: hashlib.sha256(data).hexdigest() for name, data in sorted(files.items())
-    }
+def validate_registration(files, info):
     tree = ast.parse(files["main.py"])
     constants = {
         node.targets[0].id: node.value.value
@@ -127,7 +126,33 @@ def complete(files, root, role, *, signing_key=None, channel="preview", sequence
                 tuple(literal(node.args[index]) for index in (0, 1, 3))
             )
     if registrations != [(info["name"], info["author"], info["version"])]:
-        raise ValueError("register author/name/version differs from metadata")
+        raise ValueError("register version or identity differs from metadata")
+
+
+def complete(files, root, role, *, signing_key=None, channel=None, sequence=None):
+    files = dict(files)
+    descriptor = json.loads(files["ygl-plugin.json"])
+    if descriptor["role"] != role:
+        raise ValueError("plugin role differs from release")
+    info = metadata(files, legacy=signing_key is not None)
+    validate_registration(files, info)
+    if role == "core" and signing_key is None:
+        raise ValueError("Core requires an Ed25519 signing key; no unsigned Core build")
+    if signing_key is None:
+        if channel is not None or sequence is not None:
+            raise ValueError("channel and sequence require legacy signing")
+    else:
+        channel = "preview" if channel is None else channel
+        sequence = 1 if sequence is None else sequence
+        if (
+            channel not in ("stable", "preview")
+            or type(sequence) is not int
+            or not 0 <= sequence <= 9007199254740991
+        ):
+            raise ValueError("invalid release channel/sequence")
+    source_files = {
+        name: hashlib.sha256(data).hexdigest() for name, data in sorted(files.items())
+    }
     if signing_key is not None:
         from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
@@ -171,7 +196,9 @@ def complete(files, root, role, *, signing_key=None, channel="preview", sequence
             "source_files": source_files,
             "builder_files": builders,
             "source_digest": hashlib.sha256(encode(source_files)).hexdigest(),
-            "development_candidate": channel == "preview",
+            "development_candidate": dirty
+            if signing_key is None
+            else channel == "preview",
         }
     )
     validate_files(files, role)
@@ -189,18 +216,19 @@ def complete(files, root, role, *, signing_key=None, channel="preview", sequence
             + row["sha256"].encode()
             + b"\n"
         )
-    raw = encode(
-        {
-            "schema": "ygl.release/1",
-            "plugin_id": {"author": info["author"], "name": info["name"]},
-            "package_id": descriptor["package_id"],
-            "release": info["version"],
-            "channel": channel,
-            "release_sequence": sequence,
-            "payload_digest": digest.hexdigest(),
-            "files": rows,
-        }
-    )
+    release = {
+        "schema": "ygl.release/2",
+        "plugin_id": {"author": info["author"], "name": info["name"]},
+        "package_id": descriptor["package_id"],
+        "release": info["version"],
+        "payload_digest": digest.hexdigest(),
+        "files": rows,
+    }
+    if signing_key is not None:
+        release.update(
+            schema="ygl.release/1", channel=channel, release_sequence=sequence
+        )
+    raw = encode(release)
     if len(raw) > 2 * 1024 * 1024:
         raise ValueError("release manifest exceeds budget")
     files["release.json"] = raw

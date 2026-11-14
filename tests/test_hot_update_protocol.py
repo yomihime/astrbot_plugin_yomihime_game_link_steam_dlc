@@ -68,7 +68,12 @@ class Endpoint:
         self.lease = str(epoch) * 64
 
     async def request(self, caller, message):
-        parse_control(json.dumps(message).encode())
+        if message["op"] == "retire" and SHELL.RETIRE_FEATURE in self.features:
+            # The pinned compatibility Core predates the optional retirement op.
+            if message != {"protocol": SHELL.PROTOCOL, "op": "retire"}:
+                raise ValueError("invalid retirement request")
+        else:
+            parse_control(json.dumps(message).encode())
         self.calls.append((caller, message))
         base = {"protocol": "ygl.control/1", "ok": True}
         if self.reply_override:
@@ -83,7 +88,7 @@ class Endpoint:
             }
         if message["op"] == "connect":
             return {**base, "state": "queued", "operation_id": "operation"}
-        if message["op"] == "disconnect":
+        if message["op"] in {"disconnect", "retire"}:
             return {**base, "state": "already_detached"}
         if self.preparing:
             return {**base, "state": "preparing", "operation_id": "operation"}
@@ -93,8 +98,8 @@ class Endpoint:
             "lease": self.lease,
             "core_epoch": self.epoch,
             "package_epoch": 1,
-            "installed_version": "0.3.0",
-            "running_version": "0.3.0",
+            "installed_version": MANIFEST["release"],
+            "running_version": MANIFEST["release"],
         }
 
 
@@ -217,9 +222,10 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
             lambda: self.dlc._core_epoch == 2 and self.dlc._lease == endpoint.lease
         )
 
-    async def test_terminate_cancels_owned_pending_prepare(self):
+    async def test_terminate_retires_pending_prepare_and_stops_poll(self):
         endpoint = Endpoint()
         endpoint.preparing = True
+        endpoint.features = [*endpoint.features, SHELL.RETIRE_FEATURE]
         self.context.activate(endpoint)
         await self.dlc.initialize()
         await eventually(lambda: self.dlc.connection_state == "preparing")
@@ -230,6 +236,124 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(endpoint.calls), count)
         self.assertTrue(self.dlc._closed)
         self.assertIsNone(self.dlc._task)
+        self.assertEqual(endpoint.calls[-1][1]["op"], "retire")
+
+    async def test_terminate_before_poll_retires_core_discovery_operation(self):
+        endpoint = Endpoint()
+        endpoint.features = [*endpoint.features, SHELL.RETIRE_FEATURE]
+        self.context.activate(endpoint)
+        await self.dlc.initialize()
+        await self.dlc.terminate()
+        self.assertEqual(
+            [message["op"] for _, message in endpoint.calls], ["describe", "retire"]
+        )
+        self.assertTrue(all(caller is self.dlc for caller, _ in endpoint.calls))
+
+    async def test_terminate_notifies_cached_endpoint_when_current_lookup_fails(self):
+        for failure in ("registry", "endpoint"):
+            for supports_retire in (True, False):
+                with self.subTest(failure=failure, supports_retire=supports_retire):
+                    context = Context()
+                    dlc = SHELL.SteamDLC(context)
+                    dlc.RETRY_INTERVAL = 0.01
+                    dlc.POLL_INTERVAL = 0.002
+                    dlc.REQUEST_TIMEOUT = 0.1
+                    self.addAsyncCleanup(dlc.terminate)
+                    endpoint = Endpoint()
+                    if supports_retire:
+                        endpoint.features = [*endpoint.features, SHELL.RETIRE_FEATURE]
+                    core = context.activate(endpoint)
+                    await dlc.initialize()
+                    if supports_retire:
+                        endpoint.preparing = True
+                        await eventually(lambda: dlc.connection_state == "preparing")
+                        self.assertIsNone(dlc._lease)
+                    else:
+                        await eventually(lambda: dlc.connection_state == "connected")
+                    poll = dlc._task
+                    target, name = (
+                        (context, "get_registered_star")
+                        if failure == "registry"
+                        else (core, "get_ygl_endpoint_v1")
+                    )
+                    with patch.object(target, name, side_effect=RuntimeError):
+                        await dlc.terminate()
+                    expected = (
+                        {"protocol": SHELL.PROTOCOL, "op": "retire"}
+                        if supports_retire
+                        else {
+                            "protocol": SHELL.PROTOCOL,
+                            "op": "disconnect",
+                            "lease": endpoint.lease,
+                        }
+                    )
+                    self.assertEqual(
+                        [
+                            call
+                            for call in endpoint.calls
+                            if call[1]["op"] in {"retire", "disconnect"}
+                        ],
+                        [(dlc, expected)],
+                    )
+                    self.assertTrue(poll.done())
+                    self.assertEqual(dlc.connection_state, "unloaded")
+
+    async def test_terminate_notifies_fresh_core_and_disconnects_cached_legacy_lease(
+        self,
+    ):
+        old = Endpoint()
+        self.context.activate(old)
+        await self.dlc.initialize()
+        await eventually(lambda: self.dlc.connection_state == "connected")
+
+        new = Endpoint(2)
+        new.features = [*new.features, SHELL.RETIRE_FEATURE]
+        self.context.activate(new)
+        await self.dlc.terminate()
+
+        self.assertEqual(
+            new.calls,
+            [
+                (self.dlc, {"protocol": SHELL.PROTOCOL, "op": "describe"}),
+                (self.dlc, {"protocol": SHELL.PROTOCOL, "op": "retire"}),
+            ],
+        )
+        self.assertEqual(
+            old.calls[-1],
+            (
+                self.dlc,
+                {"protocol": SHELL.PROTOCOL, "op": "disconnect", "lease": old.lease},
+            ),
+        )
+
+    async def test_terminate_retires_unobserved_lease_before_cancelling_status(self):
+        endpoint = Endpoint()
+        endpoint.features = [*endpoint.features, SHELL.RETIRE_FEATURE]
+        original = endpoint.request
+        status_waiting = asyncio.Event()
+        order = []
+
+        async def request(caller, message):
+            reply = await original(caller, message)
+            if message["op"] == "status":
+                status_waiting.set()
+                try:
+                    await asyncio.Future()
+                except asyncio.CancelledError:
+                    order.append("status_cancelled")
+                    raise
+            if message["op"] == "retire":
+                order.append("retired")
+            return reply
+
+        endpoint.request = request
+        self.context.activate(endpoint)
+        await self.dlc.initialize()
+        await asyncio.wait_for(status_waiting.wait(), 1)
+        self.assertIsNone(self.dlc._lease)
+        await self.dlc.terminate()
+        self.assertEqual(order, ["retired", "status_cancelled"])
+        self.assertEqual(self.dlc.connection_state, "unloaded")
 
     async def test_timeout_connect_reuses_request_uuid(self):
         endpoint = Endpoint()
@@ -325,7 +449,7 @@ class ManifestTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         self.assertTrue(parsed_policy)
-        self.assertEqual(MANIFEST["release"], "0.3.0")
+        self.assertEqual(parsed.package_version, "0.3.1")
         with self.assertRaisesRegex(ProtocolError, "missing_feature"):
             negotiate_manifest(MANIFEST, 0, [])
         self.assertEqual(
@@ -341,9 +465,9 @@ class ManifestTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsInstance(instance.handlers(), ModuleHandlers)
 
     def test_shell_has_no_business_or_sdk_imports_and_no_payload_facade(self):
-        source = (ROOT / "main.py").read_text()
+        source = (ROOT / "main.py").read_text(encoding="utf-8")
         self.assertNotIn("yomihime_game_link_sdk", source)
         self.assertNotIn("from packages", source)
         for file in (ROOT / "packages").rglob("*.py"):
             self.assertNotEqual(file.name, "_api_v2.py")
-            self.assertNotIn("yomihime_game_link_sdk", file.read_text())
+            self.assertNotIn("yomihime_game_link_sdk", file.read_text(encoding="utf-8"))

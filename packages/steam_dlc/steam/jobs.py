@@ -58,7 +58,7 @@ def _feedback(job):
     if status in ("queued", "running"):
         text += f"可取消：/ygl steam wall cancel {job.job_id}；当前不可重试。"
     elif status in ("failed", "cancelled", "interrupted"):
-        text += f"显式重新执行：/ygl steam wall retry {job.job_id}；从头重新计算并复用有效缓存。"
+        text += f"手动重试：/ygl steam wall retry {job.job_id}。任务从头开始，并复用有效缓存。"
     published = counts.get("result_entries")
     if type(published) is int and published > 0:
         text += f"已发布{published}项图片资源，可查看：/ygl steam wall result {job.job_id}。"
@@ -492,9 +492,7 @@ class JobHandler:
             "cancelled",
             "interrupted",
         ):
-            raise ValueError(
-                "只有失败、取消或中断的任务可以显式重新执行，请先查询状态。"
-            )
+            raise ValueError("只有失败、取消或中断的任务可以重试，请先查询任务状态。")
         if action in ("cancel", "retry"):
             job = await getattr(scope.jobs, action)(
                 job_id, expected_revision=job.revision

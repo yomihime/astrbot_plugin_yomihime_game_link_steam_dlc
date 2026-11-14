@@ -139,7 +139,7 @@ for (const moduleId of ['steam', 'dota2', 'cs2', 'deadlock']) {
     const f = fixture({ moduleId, routeId: 'home' });
     await settle();
     assert.match(f.text(), new RegExp(`/ygl ${moduleId} `));
-    assert.match(f.text(), /运行健康请在模块管理中查看/);
+    assert.match(f.text(), /模块运行状态请在模块管理中查看/);
     if (moduleId === 'cs2') { assert.match(f.text(), /完美收录官匹与 5E/); assert.doesNotMatch(f.text(), /Leetify|留存政策限制/); }
     if (moduleId === 'deadlock') assert.match(f.text(), /使用社区来源最近 20 条已收录记录/);
     assert.ok(f.container.querySelector('.ui-page .ui-surface h2'));
@@ -154,7 +154,7 @@ for (const moduleId of ['steam', 'dota2', 'cs2', 'deadlock']) {
     }
     f.page.update({ ...f.context, available: false });
     await runtime.nextTick();
-    assert.match(f.text(), /当前页面入口不可用/);
+    assert.match(f.text(), /此页面暂不可用/);
     if (moduleId !== 'steam') assert.deepEqual(f.calls, [['invoke', 'status', {}]]);
     assert.deepEqual(Object.keys(f.page.navigationImpact()).sort(), ['credentials', 'ordinary', 'pending', 'version']);
     f.close();
@@ -315,7 +315,7 @@ for (const key of ['owner', 'runtimeId', 'epoch', 'boundary']) {
     f.page.update({ ...f.context, [key]: key === 'epoch' ? 4 : 'changed' });
     read.resolve(snapshot()); await settle();
     assert.equal(f.container.querySelector('input'), null);
-    assert.match(f.text(), /上下文已变化/);
+    assert.match(f.text(), /模块运行状态已变化/);
     f.click('refresh'); await settle();
     assert.equal(f.page.navigationImpact().pending, false);
     f.close();
@@ -332,7 +332,7 @@ test('unavailable update fences an outstanding write before a subsequent clear',
   write.resolve({ revision: 8 }); await settle();
   assert.equal(clearCount, 0);
   assert.equal(f.page.navigationImpact().ordinary, true);
-  assert.match(f.text(), /当前页面入口不可用/); f.close();
+  assert.match(f.text(), /此页面暂不可用/); f.close();
 });
 
 for (const disposal of ['disposeScope', 'abort', 'revokeScope']) {
@@ -1313,7 +1313,7 @@ test('Steam job status separates metrics, reason and recovery guidance', async (
     assert.equal(status.getAttribute('role'), 'status');
     assert.ok(sections.some(text => /已生成1/.test(text)));
     assert.ok(sections.some(text => /资源预算不足/.test(text)));
-    assert.ok(sections.some(text => /不会从最后一项自动断点续跑/.test(text)));
+    assert.ok(sections.some(text => /任务会从头开始，并复用有效缓存/.test(text)));
   } finally {f.close();}
 });
 
@@ -1370,7 +1370,7 @@ for (const platform of ['official', '5e']) {
     await settle(); f.input('account', response.document.blocks[1].fields.cs2.target.id); f.input('platform', platform); f.input('action', 'match'); f.input('match_id', 'summary-10001'); await f.submit(); await settle();
     const output = f.container.querySelector('.steam-dlc-public-result');
     assert.match(output.textContent, /比分：0 : 未知/); assert.match(output.textContent, /K\/D\/A：7\/0\/未知 · rating：未知/);
-    assert.match(output.textContent, /有界近期玩家摘要/); assert.match(output.textContent, /该来源提供该玩家的近期样本摘要/);
+    assert.match(output.textContent, /近期玩家摘要/); assert.match(output.textContent, /该来源提供该玩家的近期样本摘要/);
     assert.equal(output.querySelector('table'), null); assert.doesNotMatch(output.textContent, /undefined|NaN|null/);
     f.close();
   });

@@ -132,5 +132,6 @@ class BackendDisplayCopyTests(unittest.TestCase):
         self.assertIn("授权或访问受限", text)
         self.assertIn("库内容仍待确认", text)
         self.assertIn("公开设置", text)
-        self.assertIn("从头重新计算", text)
+        self.assertIn("任务从头开始", text)
+        self.assertIn("复用有效缓存", text)
         self.assertNotIn("future_status", text)
