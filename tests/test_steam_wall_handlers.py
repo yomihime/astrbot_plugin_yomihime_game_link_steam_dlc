@@ -126,7 +126,7 @@ class HandlerTests(unittest.IsolatedAsyncioTestCase):
                     JobStatus.INTERRUPTED,
                 ):
                     self.assertIn("复用有效缓存", text)
-                    self.assertIn("从头重新计算并复用有效缓存", text)
+                    self.assertIn("任务从头开始", text)
                 if (
                     progress.get("reason") == "rate_limited"
                     and "retry_after" not in progress

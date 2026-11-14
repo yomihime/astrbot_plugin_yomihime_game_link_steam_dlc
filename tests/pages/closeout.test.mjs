@@ -220,7 +220,7 @@ test('Steam job reasons are safe Chinese with known bounded retry_after and fres
     try {
       f.input('account', '123'); await f.submit(); await settle();
       assert.match(f.text(), expected); assert.doesNotMatch(f.text(), /unknown secret body|private trace stack/);
-      assert.match(f.text(), /显式重新执行并复用有效缓存/);
+      assert.match(f.text(), /任务会从头开始，并复用有效缓存/);
       assert.equal(f.container.querySelector('[data-action="job-retry"]').hidden, false);
       assert.doesNotMatch(f.text(), /wall result synthetic-job/);
     } finally {f.close();}
@@ -231,7 +231,7 @@ test('Steam job reasons are safe Chinese with known bounded retry_after and fres
       f.input('account', '123'); await f.submit(); await settle();
       assert.match(f.text(), /来源限流/);
       if ([0, 30, 86400].includes(wait)) assert.ok(f.text().includes(`来源建议等待${wait}秒`));
-      else {assert.doesNotMatch(f.text(), /来源建议等待/); assert.match(f.text(), /稍后重试/);}
+      else {assert.doesNotMatch(f.text(), /来源建议等待/); assert.match(f.text(), /稍后手动重试/);}
     } finally {f.close();}
   }
 });
@@ -259,7 +259,7 @@ test('Steam cancelled/interrupted retry is explicit, uses current revision and n
     const f = jobFixture(view);
     try {
       f.input('account', '123'); await f.submit(); await settle();
-      assert.match(f.text(), /不会从最后一项自动断点续跑/); assert.match(f.text(), /wall result synthetic-job/);
+      assert.match(f.text(), /任务会从头开始，并复用有效缓存/); assert.match(f.text(), /wall result synthetic-job/);
       assert.equal(f.jobCalls.filter(call => call[0] === 'retry').length, 0);
       f.click('job-retry'); await settle();
       assert.deepEqual(f.jobCalls.filter(call => call[0] === 'retry'), [['retry', 'synthetic-job', 7]]);

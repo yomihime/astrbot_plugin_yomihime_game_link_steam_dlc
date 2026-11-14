@@ -350,7 +350,7 @@ class _Manage:
                     [
                         f"已关注玩家 {account}；重复创建会复用当前订阅。",
                         f"订阅编号：{view.subscription_id}；版本：{view.revision}。",
-                        "首次完整采样只建立基线；新比赛收录后发送到当前会话。",
+                        "首次完整读取只记录已有比赛，之后收录的新比赛会发到当前会话。",
                         "取消：/ygl dota2 unwatch <玩家ID或订阅编号>",
                     ],
                     privacy=ygl.Privacy.PUBLIC,
@@ -394,7 +394,7 @@ class _Manage:
                 )
             return success(
                 "Dota 2 订阅",
-                ["已取消该关注；重新创建将建立新基线。"],
+                ["已取消关注。重新订阅后会重新记录已有比赛。"],
                 privacy=ygl.Privacy.PUBLIC,
             )
         except _QueryFailure as exc:
@@ -418,8 +418,8 @@ def _subscription_state(view):
         state.value if state is not None and isinstance(state.value, Mapping) else {}
     )
     if not values.get("initialized"):
-        return "等待首次完整采样建立基线"
-    return f"已建立基线；待处理 {len(values.get('pending', ()))} 场；窗口/积压限制已跳过 {values.get('omitted_count', 0)} 场"
+        return "正在等待首次完整读取比赛记录"
+    return f"已记录已有比赛。待处理 {len(values.get('pending', ()))} 场，因恢复窗口或积压上限跳过 {values.get('omitted_count', 0)} 场"
 
 
 class _QueryFailure(Exception):
