@@ -49,6 +49,13 @@ class CompleteDLCReleaseTests(unittest.TestCase):
         self.assertEqual(original, self.output.read_bytes())
         with zipfile.ZipFile(self.output) as archive:
             names = set(archive.namelist())
+            self.assertIn("logo.png", names)
+            logo = archive.read("logo.png")
+            self.assertEqual(logo, (ROOT / "logo.png").read_bytes())
+            self.assertEqual(logo[:8], b"\x89PNG\r\n\x1a\n")
+            self.assertEqual(int.from_bytes(logo[16:20], "big"), 256)
+            self.assertEqual(int.from_bytes(logo[20:24], "big"), 256)
+            self.assertEqual(logo[25], 6)  # RGBA: retain the transparent background.
             doc = json.loads(archive.read("release.json"))
             self.assertTrue({"release.sig.json", "release-key.json"}.isdisjoint(names))
             self.assertEqual(

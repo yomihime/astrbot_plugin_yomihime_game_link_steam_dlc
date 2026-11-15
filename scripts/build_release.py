@@ -56,6 +56,7 @@ MODEL_TOOL_DESCRIPTIONS = {
     "deadlock": "查询 Deadlock 社区公开玩家资料、近期比赛、统计和单场详情。",
 }
 ROOT_FILES = (
+    "logo.png",
     "__init__.py",
     "main.py",
     "metadata.yaml",
