@@ -81,7 +81,7 @@ class CompleteDLCReleaseTests(unittest.TestCase):
             )
             self.assertEqual(
                 (doc["schema"], doc["package_id"], doc["release"]),
-                ("ygl.release/2", "steam_dlc", "0.3.1"),
+                ("ygl.release/2", "steam_dlc", "0.3.2"),
             )
             for row in doc["files"]:
                 content = archive.read(row["path"])

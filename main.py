@@ -18,7 +18,7 @@ RETIRE_FEATURE = "control.retire/1"
 ROOT = Path(__file__).resolve().parent
 
 
-@register(PLUGIN_NAME, "yomihime", "如月怜的游戏连结：Steam DLC", "0.3.1")
+@register(PLUGIN_NAME, "yomihime", "如月怜的游戏连结：Steam DLC", "0.3.2")
 class SteamDLC(Star):
     REQUEST_TIMEOUT = 3.0
     RETRY_INTERVAL = 2.0
