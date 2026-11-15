@@ -449,7 +449,7 @@ class ManifestTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         self.assertTrue(parsed_policy)
-        self.assertEqual(parsed.package_version, "0.3.1")
+        self.assertEqual(parsed.package_version, "0.3.2")
         with self.assertRaisesRegex(ProtocolError, "missing_feature"):
             negotiate_manifest(MANIFEST, 0, [])
         self.assertEqual(
